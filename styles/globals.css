@@ -1,0 +1,40 @@
+/* styles/globals.css */
+
+@font-face {
+  font-family: 'Courier PS';
+  src: url('/fonts/Courier-PS-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 105%; /* Equivalente a 18px (18/16 = 1.125) */
+  }
+  body {
+    font-family: 'Courier PS', 'Courier New', monospace;
+  }
+}
+
+/* Opcional: Si quieres optimizar la legibilidad de Courier en la interfaz */
+@layer base {
+  /* Mejora el espaciado de letras para mejor legibilidad */
+  body {
+    letter-spacing: 0.025em;
+  }
+  
+  /* Ajusta el line-height para tipografía monospace */
+  p, span, div {
+    line-height: 1.6;
+  }
+  
+  /* Mantiene proporciones en inputs y botones */
+  input, button, select, textarea {
+    font-family: inherit;
+  }
+}
