@@ -836,441 +836,439 @@ const NuevaCotizacionPage = () => {
 
   if (!user) return null;
 
-  return (
-    <Layout title="Nueva Cotización">
-      <div className="min-h-screen bg-gray-50 py-6">
-        {/* CAMBIAR max-w-7xl por max-w-full y agregar padding más amplio */}
-        <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
-          {error && (
-            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
-              {error}
-            </div>
-          )}
-
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-
-            <div className="grid grid-cols-12 gap-6 p-6">
-  {/* Panel Izquierdo - Cotizaciones Borrador - CAMBIO: de col-span-4 a col-span-3 */}
-  <div className="col-span-12 lg:col-span-3">
-    <div className="bg-gray-50 rounded-lg p-4 mb-6">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">Cotizaciones Borrador</h2>
-      <button
-        onClick={handleNuevaCotizacion}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
-        disabled={loading}
-      >
-        <PlusIcon className="h-5 w-5 mr-2" />
-        Nueva Cotización
-      </button>
-
-      <div className="max-h-100 overflow-y-auto space-y-2">
-        {cotizacionesPendientes.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">No hay cotizaciones en borrador</p>
-        ) : (
-          cotizacionesPendientes.map(cotizacion => (
-            <div
-              key={cotizacion.id}
-              className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                cotizacionActiva?.id === cotizacion.id
-                  ? 'bg-blue-50 border-blue-500 shadow-md'
-                  : 'bg-white hover:bg-gray-50 border-gray-200'
-              }`}
-              onClick={() => handleSelectCotizacion(cotizacion)}
-            >
-              <div className="font-medium text-sm text-gray-800">{cotizacion.numeroCotizacion}</div>
-              <div className="text-xs text-gray-600">{cotizacion.clienteNombre}</div>
-              <div className="text-xs font-semibold text-green-600">S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}</div>
-              <div className="text-xs text-gray-500">
-                {cotizacion.fechaCreacion?.toDate?.() ? 
-                  cotizacion.fechaCreacion.toDate().toLocaleDateString() : 
-                  'Fecha N/A'
-                }
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-
-    {/* Información de Cotización Activa - CON BOTÓN COLAPSABLE */}
-    {cotizacionActiva && (
-      <div className="bg-gray-50 rounded-lg overflow-hidden">
-        {/* Encabezado colapsable */}
-        <div 
-          className="p-4 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors flex items-center justify-between"
-          onClick={() => setShowCotizacionDetails(!showCotizacionDetails)}
-        >
-          <h3 className="font-semibold text-lg text-gray-800">Datos de la Cotización</h3>
-          <div className={`transform transition-transform duration-200 ${showCotizacionDetails ? 'rotate-180' : ''}`}>
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+ return (
+  <Layout title="Nueva Cotización">
+    <div className="w-full">
+        {error && (
+          <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+            {error}
           </div>
-        </div>
-        
-        {/* Contenido colapsable */}
-        <div className={`transition-all duration-300 overflow-hidden ${showCotizacionDetails ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="p-4 space-y-4">
-            {/* Cliente */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cliente:</label>
-              <Select
-                options={clienteOptions}
-                value={selectedCliente}
-                onChange={handleUpdateCliente}
-                placeholder="Seleccionar cliente..."
-                className="text-sm"
-                isClearable
-              />
-            </div>
+        )}
 
-            {/* Empleado */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Empleado:</label>
-              <Select
-                options={empleadoOptions}
-                value={selectedEmpleado}
-                onChange={handleUpdateEmpleado}
-                placeholder="Seleccionar empleado..."
-                className="text-sm"
-                isClearable
-              />
-            </div>
-
-            {/* Placa Moto */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Placa Moto:</label>
-              <input
-                type="text"
-                value={placaMoto}
-                onChange={(e) => handleUpdatePlaca(e.target.value)}
-                placeholder="Ej: ABC-123"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Configuración de Pago */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="block text-sm font-medium text-gray-700">Pago:</label>
+        {/* CONTENEDOR PRINCIPAL SIN RESTRICCIÓN DE ANCHO */}
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+          <div className="grid grid-cols-12 gap-6 p-4">
+            {/* Panel Izquierdo - Cotizaciones Borrador */}
+            <div className="col-span-12 xl:col-span-3 lg:col-span-4 md:col-span-5">
+              <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Cotizaciones Borrador</h2>
                 <button
-                  type="button"
-                  onClick={openPaymentModal}
-                  className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
+                  onClick={handleNuevaCotizacion}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
+                  disabled={loading}
                 >
-                  <CreditCardIcon className="h-4 w-4 mr-1" />
-                  Configurar
+                  <PlusIcon className="h-5 w-5 mr-2" />
+                  Nueva Cotización
                 </button>
+
+                <div className="max-h-96 overflow-y-auto space-y-2">
+                  {cotizacionesPendientes.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">No hay cotizaciones en borrador</p>
+                  ) : (
+                    cotizacionesPendientes.map(cotizacion => (
+                      <div
+                        key={cotizacion.id}
+                        className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                          cotizacionActiva?.id === cotizacion.id
+                            ? 'bg-blue-50 border-blue-500 shadow-md'
+                            : 'bg-white hover:bg-gray-50 border-gray-200'
+                        }`}
+                        onClick={() => handleSelectCotizacion(cotizacion)}
+                      >
+                        <div className="font-medium text-sm text-gray-800">{cotizacion.numeroCotizacion}</div>
+                        <div className="text-xs text-gray-600">{cotizacion.clienteNombre}</div>
+                        <div className="text-xs font-semibold text-green-600">S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">
+                          {cotizacion.fechaCreacion?.toDate?.() ? 
+                            cotizacion.fechaCreacion.toDate().toLocaleDateString() : 
+                            'Fecha N/A'
+                          }
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
 
-              <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-gray-700">Total:</span>
-                  <span className="text-lg font-bold text-gray-900">
-                    S/. {parseFloat(cotizacionActiva?.totalCotizacion || 0).toFixed(2)}
-                  </span>
-                </div>
-                
-                {paymentData.isMixedPayment ? (
-                  <div className="space-y-1">
-                    {paymentData.paymentMethods.map((pm, index) => (
-                      <div key={index} className="flex justify-between items-center text-sm">
-                        <span className="inline-flex items-center">
-                          <span className="mr-1">{pm.icon}</span>
-                          {pm.label}
-                        </span>
-                        <span>S/. {pm.amount.toFixed(2)}</span>
-                      </div>
-                    ))}
+              {/* Información de Cotización Activa - CON BOTÓN COLAPSABLE */}
+              {cotizacionActiva && (
+                <div className="bg-gray-50 rounded-lg overflow-hidden">
+                  {/* Encabezado colapsable */}
+                  <div 
+                    className="p-4 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors flex items-center justify-between"
+                    onClick={() => setShowCotizacionDetails(!showCotizacionDetails)}
+                  >
+                    <h3 className="font-semibold text-lg text-gray-800">Datos de la Cotización</h3>
+                    <div className={`transform transition-transform duration-200 ${showCotizacionDetails ? 'rotate-180' : ''}`}>
+                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="inline-flex items-center">
-                      <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
-                      {paymentData.paymentMethods[0]?.label}
-                    </span>
-                    <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                  
+                  {/* Contenido colapsable */}
+                  <div className={`transition-all duration-300 overflow-hidden ${showCotizacionDetails ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
+                    <div className="p-4 space-y-4">
+                      {/* Cliente */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Cliente:</label>
+                        <Select
+                          options={clienteOptions}
+                          value={selectedCliente}
+                          onChange={handleUpdateCliente}
+                          placeholder="Seleccionar cliente..."
+                          className="text-sm"
+                          isClearable
+                        />
+                      </div>
+
+                      {/* Empleado */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Empleado:</label>
+                        <Select
+                          options={empleadoOptions}
+                          value={selectedEmpleado}
+                          onChange={handleUpdateEmpleado}
+                          placeholder="Seleccionar empleado..."
+                          className="text-sm"
+                          isClearable
+                        />
+                      </div>
+
+                      {/* Placa Moto */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Placa Moto:</label>
+                        <input
+                          type="text"
+                          value={placaMoto}
+                          onChange={(e) => handleUpdatePlaca(e.target.value)}
+                          placeholder="Ej: ABC-123"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      {/* Configuración de Pago */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="block text-sm font-medium text-gray-700">Pago:</label>
+                          <button
+                            type="button"
+                            onClick={openPaymentModal}
+                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
+                          >
+                            <CreditCardIcon className="h-4 w-4 mr-1" />
+                            Configurar
+                          </button>
+                        </div>
+
+                        <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-700">Total:</span>
+                            <span className="text-lg font-bold text-gray-900">
+                              S/. {parseFloat(cotizacionActiva?.totalCotizacion || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          
+                          {paymentData.isMixedPayment ? (
+                            <div className="space-y-1">
+                              {paymentData.paymentMethods.map((pm, index) => (
+                                <div key={index} className="flex justify-between items-center text-sm">
+                                  <span className="inline-flex items-center">
+                                    <span className="mr-1">{pm.icon}</span>
+                                    {pm.label}
+                                  </span>
+                                  <span>S/. {pm.amount.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="inline-flex items-center">
+                                <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
+                                {paymentData.paymentMethods[0]?.label}
+                              </span>
+                              <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Observaciones */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
+                        <textarea
+                          value={observaciones}
+                          onChange={(e) => handleUpdateObservaciones(e.target.value)}
+                          placeholder="Observaciones adicionales..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          rows="3"
+                        />
+                      </div>
+
+                      {/* Total */}
+                      <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                        <div className="text-lg font-bold text-green-800">
+                          Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
+                        </div>
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="space-y-3">
+                        <button
+                          onClick={handleGuardarCotizacion}
+                          disabled={!selectedCliente || itemsCotizacionActiva.length === 0}
+                          className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <DocumentTextIcon className="h-5 w-5 mr-2" />
+                          Guardar como Pendiente
+                        </button>
+                        
+                        <button
+                          onClick={() => router.push('/cotizaciones')}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <CheckIcon className="h-5 w-5 mr-2" />
+                          Ver Todas las Cotizaciones
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Panel Derecho - Buscador y Items - EXPANDIDO */}
+            <div className="col-span-12 xl:col-span-9 lg:col-span-8 md:col-span-7">
+              {/* Buscador de Productos */}
+              <div className="bg-white border border-gray-400 rounded-lg mb-6 relative">
+                <div className="p-4">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
+                  <div className="relative">
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
+                      className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {isSearching && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-sm text-gray-600 mt-2">
+                    {searchTerm.trim() === '' ? (
+                      'Escribe para buscar productos...'
+                    ) : (
+                      `${filteredProductos.length} productos encontrados`
+                    )}
+                  </div>
+                </div>
+
+                {/* Dropdown de productos */}
+                {searchTerm.trim() !== '' && (
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-400 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
+                    {isSearching ? (
+                      <div className="flex justify-center py-8">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                      </div>
+                    ) : filteredProductos.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500">
+                        <p>No se encontraron productos</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-96">
+                        {filteredProductos.slice(0, 20).map(producto => (
+                          <ProductSearchItem
+                            key={producto.id}
+                            producto={producto}
+                            onSelectProduct={handleSelectProduct}
+                            onClearSearch={() => setSearchTerm('')}
+                          />
+                        ))}
+                        {filteredProductos.length > 20 && (
+                          <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                            Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Observaciones */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
-              <textarea
-                value={observaciones}
-                onChange={(e) => handleUpdateObservaciones(e.target.value)}
-                placeholder="Observaciones adicionales..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows="3"
-              />
-            </div>
+              {/* Items de la Cotización */}
+              {!cotizacionActiva ? (
+                <div className="bg-white border border-gray-400 rounded-lg p-8 text-center">
+                  <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-xl font-medium text-gray-600 mb-2">Selecciona o crea una cotización</h3>
+                  <p className="text-gray-500">Crea una nueva cotización o selecciona una existente para comenzar a agregar productos</p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-400 rounded-lg">
+                  <div className="p-4 border-b border-gray-400">
+                    <h3 className="text-xl font-semibold text-gray-800">
+                      Items de la Cotización: {cotizacionActiva.numeroCotizacion || 'Nueva'}
+                    </h3>
+                  </div>
 
-            {/* Total */}
-            <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
-              <div className="text-lg font-bold text-green-800">
-                Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
-              </div>
-            </div>
-
-            {/* Botones de acción */}
-            <div className="space-y-3">
-              <button
-                onClick={handleGuardarCotizacion}
-                disabled={!selectedCliente || itemsCotizacionActiva.length === 0}
-                className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
-              >
-                <DocumentTextIcon className="h-5 w-5 mr-2" />
-                Guardar como Pendiente
-              </button>
-              
-              <button
-                onClick={() => router.push('/cotizaciones')}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
-              >
-                <CheckIcon className="h-5 w-5 mr-2" />
-                Ver Todas las Cotizaciones
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-  </div>
-
-              {/* Panel Derecho - Buscador y Items */}
-              <div className="col-span-12 lg:col-span-9">
-                {/* Buscador de Productos */}
-                <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
                   <div className="p-4">
-                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
-                    <div className="relative">
-                      <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
-                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      {isSearching && (
-                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="text-sm text-gray-600 mt-2">
-                      {searchTerm.trim() === '' ? (
-                        'Escribe para buscar productos...'
-                      ) : (
-                        `${filteredProductos.length} productos encontrados`
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Dropdown de productos */}
-{searchTerm.trim() !== '' && (
-  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
-    {isSearching ? (
-      <div className="flex justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-      </div>
-    ) : filteredProductos.length === 0 ? (
-      <div className="p-4 text-center text-gray-500">
-        <p>No se encontraron productos</p>
-      </div>
-    ) : (
-      <div className="max-h-96">
-        {filteredProductos.slice(0, 20).map(producto => (
-          <ProductSearchItem
-            key={producto.id}
-            producto={producto}
-            onSelectProduct={handleSelectProduct}
-            onClearSearch={() => setSearchTerm('')}
-          />
-        ))}
-        {filteredProductos.length > 20 && (
-          <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-            Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
-</div>
-
-                {/* Items de la Cotización */}
-                {!cotizacionActiva ? (
-                  <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-                    <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                    <h3 className="text-xl font-medium text-gray-600 mb-2">Selecciona o crea una cotización</h3>
-                    <p className="text-gray-500">Crea una nueva cotización o selecciona una existente para comenzar a agregar productos</p>
-                  </div>
-                ) : (
-                  <div className="bg-white border border-gray-200 rounded-lg">
-                    <div className="p-4 border-b border-gray-200">
-                      <h3 className="text-xl font-semibold text-gray-800">
-                        Items de la Cotización: {cotizacionActiva.numeroCotizacion || 'Nueva'}
-                      </h3>
-                    </div>
-
-                    <div className="p-4">
-                      {itemsCotizacionActiva.length === 0 ? (
-                        <div className="text-center py-12">
-                          <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                          <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta cotización</h4>
-                          <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
-                        </div>
-                      ) : (
-                        <div className="bg-white rounded-lg overflow-hidden">
-                          {/* Tabla de items - USAR OVERFLOW RESPONSIVE */}
-                          <div className="overflow-x-auto">
-                            <table className="w-full border-collapse">
-                              {/* Encabezados */}
-                              <thead className="bg-blue-50">
-                              <tr className="border-b border-gray-300">
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
-                                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. COMPRA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA MIN</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
+                    {itemsCotizacionActiva.length === 0 ? (
+                      <div className="text-center py-12">
+                        <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                        <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta cotización</h4>
+                        <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-lg overflow-hidden">
+                        {/* Tabla de items - USAR OVERFLOW RESPONSIVE */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse min-w-full">
+                            {/* Encabezados */}
+                            <thead className="bg-blue-50">
+                              <tr className="border-b border-gray-400">
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. TIENDA</th>
+                                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide min-w-48">PRODUCTO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">LOTE</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MARCA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MEDIDA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">COLOR</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">CANT.</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. COMPRA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA MIN</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">SUBTOTAL</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">ACCIONES</th>
                               </tr>
                             </thead>
-                              
-                              {/* Cuerpo de la tabla */}
-                              <tbody>
-                                {itemsCotizacionActiva.map((item, index) => (
-                                  <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                    {/* Código */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-900 font-medium">
-                                        {item.codigoTienda || 'N/A'}
-                                      </span>
-                                    </td>
-                                    {/* Nombre */}
-                                    <td className="px-4 py-3">
-                                      <div className="font-medium text-gray-900 text-sm">
-                                        {item.nombreProducto}
-                                      </div>
-                                    </td>
-                                    {/* NUEVA COLUMNA: LOTE */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
-                                        {item.numeroLote || 'N/A'}
-                                      </span>
-                                    </td>
+                            
+                            {/* Cuerpo de la tabla - SE MANTIENE IGUAL */}
+                            <tbody>
+                              {itemsCotizacionActiva.map((item, index) => (
+                                <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  {/* Código */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.codigoTienda || 'N/A'}
+                                    </span>
+                                  </td>
+                                  {/* Nombre */}
+                                  <td className="px-4 py-3 min-w-48">
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {item.nombreProducto}
+                                    </div>
+                                  </td>
+                                  {/* NUEVA COLUMNA: LOTE */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
+                                      {item.numeroLote || 'N/A'}
+                                    </span>
+                                  </td>
 
-                                    {/* Marca */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-700">
-                                        {item.marca || 'Sin marca'}
-                                      </span>
-                                    </td>
-                                    {/* Medida */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-700">
-                                        {item.medida || 'N/A'}
-                                      </span>
-                                    </td>
-                                    {/* Color */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-600" title={item.color || item.descripcion || 'N/A'}>
-                                        {item.color || item.descripcion || "N/A"}
-                                      </span>
-                                    </td>
+                                  {/* Marca */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm text-gray-700">
+                                      {item.marca || 'Sin marca'}
+                                    </span>
+                                  </td>
+                                  {/* Medida */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm text-gray-700">
+                                      {item.medida || 'N/A'}
+                                    </span>
+                                  </td>
+                                  {/* Color */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm text-gray-600" title={item.color || item.descripcion || 'N/A'}>
+                                      {item.color || item.descripcion || "N/A"}
+                                    </span>
+                                  </td>
 
-                                    {/* Cantidad */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        {item.cantidad}
-                                      </span>
-                                    </td>
-                                    
-                                    {/* Precio unitario */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
-                                      </span>
-                                    </td>
-                                    {/* Precio unitario */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
-                                      </span>
-                                    </td>
-                                    {/* Precio unitario */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
-                                      </span>
-                                    </td>
+                                  {/* Cantidad */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {item.cantidad}
+                                    </span>
+                                  </td>
+                                  
+                                  {/* Precio compra */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
+                                    </span>
+                                  </td>
+                                  {/* Precio venta */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
+                                    </span>
+                                  </td>
+                                  {/* Precio venta mínimo */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
+                                    </span>
+                                  </td>
 
-                                    {/* Subtotal */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-semibold text-gray-900">
-                                        S/. {parseFloat(item.subtotal || 0).toFixed(2)}
-                                      </span>
-                                    </td>
+                                  {/* Subtotal */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm font-semibold text-gray-900">
+                                      S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+                                    </span>
+                                  </td>
 
-                                    {/* Acciones */}
-                                    <td className="px-3 py-3 text-center">
-                                      <div className="flex justify-center space-x-2">
-                                        <button
-                                          onClick={() => handleEditItem(item)}
-                                          className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                                          title="Editar"
-                                        >
-                                          <PencilIcon className="h-4 w-4" />
-                                        </button>
-                                        <button
-                                          onClick={() => handleRemoveItem(item.id, item.subtotal)}
-                                          className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
-                                          title="Eliminar"
-                                        >
-                                          <TrashIcon className="h-4 w-4" />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                                  {/* Acciones */}
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <div className="flex justify-center space-x-2">
+                                      <button
+                                        onClick={() => handleEditItem(item)}
+                                        className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                        title="Editar"
+                                      >
+                                        <PencilIcon className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleRemoveItem(item.id, item.subtotal)}
+                                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
+                                        title="Eliminar"
+                                      >
+                                        <TrashIcon className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
 
-                          {/* Total final */}
-                          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 border-t border-gray-300">
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <h3 className="text-lg font-semibold">Total de la Cotización</h3>
-                                <p className="text-blue-100 text-sm">{itemsCotizacionActiva.length} producto{itemsCotizacionActiva.length !== 1 ? 's' : ''}</p>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-3xl font-bold">
-                                  S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
-                                </div>
+                        {/* Total final */}
+                        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 border-t border-gray-400">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h3 className="text-lg font-semibold">Total de la Cotización</h3>
+                              <p className="text-blue-100 text-sm">{itemsCotizacionActiva.length} producto{itemsCotizacionActiva.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-3xl font-bold">
+                                S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
                               </div>
                             </div>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      </div>
+    </div>
+
 
      {/* Modal de Cantidad y Precio - VERSIÓN MEJORADA */}
 {/* Modal de Cantidad y Precio - VERSIÓN CORREGIDA CON PRECIO MÍNIMO */}
@@ -1371,7 +1369,7 @@ const NuevaCotizacionPage = () => {
                           onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
                           min="1"
                           max={selectedProduct.stockActual || 999}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                         />
                       </div>
 
@@ -1388,7 +1386,7 @@ const NuevaCotizacionPage = () => {
                           className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-lg ${
                             precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
                               ? 'border-red-300 focus:ring-red-500 bg-red-50'
-                              : 'border-gray-300 focus:ring-blue-500'
+                              : 'border-gray-400 focus:ring-blue-500'
                           }`}
                         />
                         {precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0) && (
@@ -1509,7 +1507,7 @@ const NuevaCotizacionPage = () => {
                           value={editQuantity}
                           onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
                           min="1"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                         />
                       </div>
 
@@ -1523,7 +1521,7 @@ const NuevaCotizacionPage = () => {
                           onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
                           min="0"
                           step="0.01"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                         />
                       </div>
                     </div>

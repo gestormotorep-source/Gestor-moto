@@ -529,8 +529,7 @@ const handleSubmit = async (e) => {
 
   return (
     <Layout title="Registrar Nuevo Ingreso con Lotes">
-      <div className="min-h-screen bg-gray-50 py-6">
-        <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
+        <div className="max-w-full ">
           {error && (
             <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50 max-w-md">
               {error}
@@ -866,7 +865,6 @@ const handleSubmit = async (e) => {
             </div>
           </div>
         </div>
-      </div>
 
       {/* Modal de Cantidad con Lote */}
       {showQuantityModal && (

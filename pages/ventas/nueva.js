@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
-import { useSale } from '../../contexts/SaleContext';
+import { useSale } from '../../contexts/SaleContext'; 
+import ProductSearchItem from '../../components/ProductSearchItem';
 import Layout from '../../components/Layout';
 import MixedPaymentModal from '../../components/modals/MixedPaymentModal';
 import { db } from '../../lib/firebase';
@@ -916,433 +917,381 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
     );
   }
 
-  return (
-    <Layout title="Registrar Nueva Venta Directa">
-      <div className="min-h-screen bg-gray-50 py-6">
-        <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
-          {error && (
-            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
-              {error}
-            </div>
-          )}
 
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="grid grid-cols-12 gap-6 p-6">
-              
-              {/* Panel Izquierdo - Información de la Venta */}
-              <div className="col-span-12 lg:col-span-3">
-                <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Nueva Venta Directa</h2>
+
+return (
+  <Layout title="Registrar Nueva Venta Directa">
+    <div className="w-full">
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div className="grid grid-cols-12 gap-6 p-4">
+          
+          {/* Panel Izquierdo - Información de la Venta */}
+          <div className="col-span-12 xl:col-span-3 lg:col-span-4 md:col-span-5">
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-gray-800">Nueva Venta Directa</h2>
+                <button
+                  onClick={() => {
+                    if (activeSale && window.confirm('¿Desea descartar la venta en progreso y volver a la lista de ventas?')) {
+                      clearActiveSale();
+                      router.push('/ventas');
+                    } else if (!activeSale) {
+                      router.push('/ventas');
+                    }
+                  }}
+                  className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <ArrowLeftIcon className="h-4 w-4 mr-1" />
+                  Volver
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Número de Venta */}
+                <div>
+                  <label htmlFor="numeroVenta" className="block text-sm font-medium text-gray-700 mb-2">
+                    Número de Venta (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    name="numeroVenta"
+                    id="numeroVenta"
+                    value={ventaPrincipalData.numeroVenta}
+                    onChange={handleVentaPrincipalChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Se autogenerará si está vacío"
+                  />
+                </div>
+
+                {/* Cliente */}
+                <div>
+                  <label htmlFor="clienteId" className="block text-sm font-medium text-gray-700 mb-2">
+                    Cliente
+                  </label>
+                  <select
+                    id="clienteId"
+                    name="clienteId"
+                    value={ventaPrincipalData.clienteId}
+                    onChange={handleVentaPrincipalChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Seleccione un cliente</option>
+                    {clientes.map((cli) => (
+                      cli.id && (
+                        <option key={cli.id} value={cli.id}>
+                          {cli.nombre} {cli.apellido} ({cli.dni || cli.numeroDocumento || 'N/A'})
+                        </option>
+                      )
+                    ))}
+                  </select>
+                </div>
+
+                {/* Observaciones */}
+                <div>
+                  <label htmlFor="observaciones" className="block text-sm font-medium text-gray-700 mb-2">
+                    Observaciones (Opcional)
+                  </label>
+                  <textarea
+                    id="observaciones"
+                    name="observaciones"
+                    rows="3"
+                    value={ventaPrincipalData.observaciones}
+                    onChange={handleVentaPrincipalChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Notas adicionales sobre esta venta..."
+                  />
+                </div>
+
+                {/* Configuración de Pago */}
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800">Pago</h3>
                     <button
-                      onClick={() => {
-                        if (activeSale && window.confirm('¿Desea descartar la venta en progreso y volver a la lista de ventas?')) {
-                          clearActiveSale();
-                          router.push('/ventas');
-                        } else if (!activeSale) {
-                          router.push('/ventas');
-                        }
-                      }}
-                      className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                      type="button"
+                      onClick={openPaymentModal}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
                     >
-                      <ArrowLeftIcon className="h-4 w-4 mr-1" />
-                      Volver
+                      <CreditCardIcon className="h-4 w-4 mr-1" />
+                      Configurar
                     </button>
                   </div>
 
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Número de Venta */}
-                    <div>
-                      <label htmlFor="numeroVenta" className="block text-sm font-medium text-gray-700 mb-2">
-                        Número de Venta (Opcional)
-                      </label>
-                      <input
-                        type="text"
-                        name="numeroVenta"
-                        id="numeroVenta"
-                        value={ventaPrincipalData.numeroVenta}
-                        onChange={handleVentaPrincipalChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        placeholder="Se autogenerará si está vacío"
-                      />
+                  <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-700">Total:</span>
+                      <span className="text-lg font-bold text-gray-900">S/. {totalGeneralVenta}</span>
                     </div>
-
-                    {/* Cliente */}
-                    <div>
-                      <label htmlFor="clienteId" className="block text-sm font-medium text-gray-700 mb-2">
-                        Cliente
-                      </label>
-                      <select
-                        id="clienteId"
-                        name="clienteId"
-                        value={ventaPrincipalData.clienteId}
-                        onChange={handleVentaPrincipalChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      >
-                        <option value="">Seleccione un cliente</option>
-                        {clientes.map((cli) => (
-                          cli.id && (
-                            <option key={cli.id} value={cli.id}>
-                              {cli.nombre} {cli.apellido} ({cli.dni || cli.numeroDocumento || 'N/A'})
-                            </option>
-                          )
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Observaciones */}
-                    <div>
-                      <label htmlFor="observaciones" className="block text-sm font-medium text-gray-700 mb-2">
-                        Observaciones (Opcional)
-                      </label>
-                      <textarea
-                        id="observaciones"
-                        name="observaciones"
-                        rows="3"
-                        value={ventaPrincipalData.observaciones}
-                        onChange={handleVentaPrincipalChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        placeholder="Notas adicionales sobre esta venta..."
-                      />
-                    </div>
-
-                    {/* Configuración de Pago */}
-                    <div className="border-t border-gray-200 pt-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-md font-semibold text-gray-800">Pago</h3>
-                        <button
-                          type="button"
-                          onClick={openPaymentModal}
-                          className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
-                        >
-                          <CreditCardIcon className="h-4 w-4 mr-1" />
-                          Configurar
-                        </button>
-                      </div>
-
-                      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">Total:</span>
-                          <span className="text-lg font-bold text-gray-900">S/. {totalGeneralVenta}</span>
-                        </div>
-                        
-                        {paymentData.isMixedPayment ? (
-                          <div className="space-y-1">
-                            {paymentData.paymentMethods.map((pm, index) => (
-                              <div key={index} className="flex justify-between items-center text-sm">
-                                <span className="inline-flex items-center">
-                                  <span className="mr-1">{pm.icon}</span>
-                                  {pm.label}
-                                </span>
-                                <span>S/. {pm.amount.toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-center text-sm">
+                    
+                    {paymentData.isMixedPayment ? (
+                      <div className="space-y-1">
+                        {paymentData.paymentMethods.map((pm, index) => (
+                          <div key={index} className="flex justify-between items-center text-sm">
                             <span className="inline-flex items-center">
-                              <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
-                              {paymentData.paymentMethods[0]?.label}
+                              <span className="mr-1">{pm.icon}</span>
+                              {pm.label}
                             </span>
-                            <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                            <span>S/. {pm.amount.toFixed(2)}</span>
                           </div>
-                        )}
+                        ))}
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="inline-flex items-center">
+                          <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
+                          {paymentData.paymentMethods[0]?.label}
+                        </span>
+                        <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                    {/* Botón Submit */}
-                    <div className="pt-4">
-                      <button
-                        type="submit"
-                        disabled={saving || itemsVenta.length === 0 || !ventaPrincipalData.clienteId}
-                        className="w-full inline-flex items-center justify-center px-4 py-3 border border-transparent text-base font-semibold rounded-lg shadow-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {saving ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                            </svg>
-                            Registrando...
-                          </>
-                        ) : (
-                          <>
-                            <ShoppingCartIcon className="h-5 w-5 mr-2" />
-                            Registrar Venta
-                          </>
-                        )}
-                      </button>
+                {/* Botón Submit */}
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    disabled={saving || itemsVenta.length === 0 || !ventaPrincipalData.clienteId}
+                    className="w-full inline-flex items-center justify-center px-4 py-3 border border-transparent text-base font-semibold rounded-lg shadow-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                        Registrando...
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCartIcon className="h-5 w-5 mr-2" />
+                        Registrar Venta
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {/* Panel Derecho - Buscador y Items - EXPANDIDO */}
+          <div className="col-span-12 xl:col-span-9 lg:col-span-8 md:col-span-7">
+            {/* Buscador de Productos */}
+            <div className="bg-white border border-gray-400 rounded-lg mb-6 relative">
+              <div className="p-4">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
+                <div className="relative">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
+                    className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                  {isSearching && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
                     </div>
-                  </form>
+                  )}
+                </div>
+                
+                <div className="text-sm text-gray-600 mt-2">
+                  {searchTerm.trim() === '' ? (
+                    'Escribe para buscar productos...'
+                  ) : (
+                    `${filteredProductos.length} productos encontrados`
+                  )}
                 </div>
               </div>
 
-              {/* Panel Derecho - Buscador y Items */}
-              <div className="col-span-12 lg:col-span-9">
-                {/* Buscador de Productos */}
-                <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
-                  <div className="p-4">
-                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
-                    <div className="relative">
-                      <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
-                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      />
-                      {isSearching && (
-                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
+              {/* Dropdown de productos - CON COMPONENTE REUTILIZABLE */}
+              {searchTerm.trim() !== '' && (
+                <div className="absolute top-full left-0 right-0 bg-white border border-gray-400 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
+                  {isSearching ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                    </div>
+                  ) : filteredProductos.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500">
+                      <p>No se encontraron productos</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-96">
+                      {filteredProductos.slice(0, 20).map(producto => (
+                        <ProductSearchItem
+                          key={producto.id}
+                          producto={producto}
+                          onSelectProduct={handleSelectProduct}
+                          onClearSearch={() => setSearchTerm('')}
+                        />
+                      ))}
+                      {filteredProductos.length > 20 && (
+                        <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                          Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
                         </div>
                       )}
                     </div>
-                    
-                    <div className="text-sm text-gray-600 mt-2">
-                      {searchTerm.trim() === '' ? (
-                        'Escribe para buscar productos...'
-                      ) : (
-                        `${filteredProductos.length} productos encontrados`
-                      )}
-                    </div>
-                  </div>
+                  )}
+                </div>
+              )}
+            </div>
 
-                  {/* Dropdown de productos */}
-                  {searchTerm.trim() !== '' && (
-                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
-                    {isSearching ? (
-                      <div className="flex justify-center py-8">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                      </div>
-                    ) : filteredProductos.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500">
-                        <p>No se encontraron productos</p>
-                      </div>
-                    ) : (
-                      <div className="max-h-80">
-                        {filteredProductos.slice(0, 20).map(producto => (
-                          <div
-                            key={producto.id}
-                            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                            onClick={() => {
-                              handleSelectProduct(producto);
-                              setSearchTerm('');
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-6">
-                              {/* Información principal del producto */}
-                              <div className="flex items-center gap-6 flex-1 min-w-0">
-                                {/* Nombre y código */}
-                                <div className="min-w-0 flex-shrink-0">
-                                  <h4 className="font-medium text-gray-900 truncate text-sm">
-                                    {producto.nombre} ({producto.codigoTienda})
-                                  </h4>
+            {/* Items de la Venta */}
+            <div className="bg-white border border-gray-400 rounded-lg">
+              <div className="p-4 border-b border-gray-400">
+                <h3 className="text-xl font-semibold text-gray-800">
+                  Items de la Venta
+                </h3>
+              </div>
+
+              <div className="p-4">
+                {itemsVenta.length === 0 ? (
+                  <div className="text-center py-12">
+                    <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                    <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta venta</h4>
+                    <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse min-w-full">
+                        <thead className="bg-green-50">
+                          <tr className="border-b border-gray-400">
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. TIENDA</th>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide min-w-48">PRODUCTO</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. PROVEEDOR</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">LOTE</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MARCA</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MEDIDA</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">COLOR</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">CANT.</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. COMPRA</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA MIN</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">SUBTOTAL</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">ACCIONES</th>
+                          </tr>
+                        </thead>
+                        
+                        <tbody>
+                          {itemsVenta.map((item, index) => (
+                            <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-900 font-medium">
+                                  {item.codigoTienda || 'N/A'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 min-w-48">
+                                <div className="font-medium text-gray-900 text-sm">
+                                  {item.nombreProducto}
                                 </div>
-                                
-                                {/* Marca */}
-                                <div className="flex-shrink-0">
-                                  <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
-                                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="font-medium text-gray-900 text-sm">
+                                  {item.codigoProveedor}
                                 </div>
-                                
-                                {/* Color */}
-                                <div className="flex-shrink-0">
-                                  <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
-                                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
-                                </div>
-                                
-                                {/* Stock */}
-                                <div className="flex-shrink-0">
-                                  <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
-                                  <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                                </div>
-                                
-                                {/* Modelos compatibles */}
-                                {producto.modelosCompatiblesTexto && (
-                                  <div className="flex-shrink-0 max-w-xs">
-                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Modelos:</span>
-                                    <span className="ml-1 text-sm text-blue-700 font-medium truncate" title={producto.modelosCompatiblesTexto}>
-                                      {producto.modelosCompatiblesTexto}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
+                                  {item.numeroLote || 'N/A'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-700">
+                                  {item.marca || 'Sin marca'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-700">
+                                  {item.medida || 'N/A'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-700">
+                                  {item.color || 'N/A'}
+                                </span>
+                              </td>
                               
-                              {/* Precio */}
-                              <div className="text-right flex-shrink-0">
-                                <p className="font-bold text-green-600 text-base">
-                                  S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                                </p>
-                                <p className="text-xs text-gray-500 uppercase tracking-wide">
-                                  Precio Venta
-                                </p>
-                              </div>
-                            </div>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  {item.cantidad}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-semibold text-gray-900">
+                                  S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <div className="flex justify-center space-x-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditItem(item)}
+                                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                    title="Editar"
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItem(index)}
+                                    className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
+                                    title="Eliminar"
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Total final */}
+                    <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 border-t border-gray-400">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="text-lg font-semibold">Total de la Venta</h3>
+                          <p className="text-green-100 text-sm">{itemsVenta.length} producto{itemsVenta.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-3xl font-bold">
+                            S/. {totalGeneralVenta}
                           </div>
-                        ))}
-                        {filteredProductos.length > 20 && (
-                          <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-                            Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
-                          </div>
-                        )}
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
-                </div>
-
-                {/* Items de la Venta */}
-                <div className="bg-white border border-gray-200 rounded-lg">
-                  <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-xl font-semibold text-gray-800">
-                      Items de la Venta
-                    </h3>
-                  </div>
-
-                  <div className="p-4">
-                    {itemsVenta.length === 0 ? (
-                      <div className="text-center py-12">
-                        <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                        <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta venta</h4>
-                        <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
-                      </div>
-                    ) : (
-                      <div className="bg-white rounded-lg overflow-hidden">
-                        <div className="overflow-x-auto">
-                          <table className="w-full border-collapse">
-                            <thead className="bg-green-50">
-                              <tr className="border-b border-gray-300">
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
-                                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. PROVEEDOR</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. COMPRA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA MIN</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
-                              </tr>
-                            </thead>
-                            
-                            <tbody>
-                              {itemsVenta.map((item, index) => (
-                                <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-900 font-medium">
-                                      {item.codigoTienda || 'N/A'}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <div className="font-medium text-gray-900 text-sm">
-                                      {item.nombreProducto}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <div className="font-medium text-gray-900 text-sm">
-                                      {item.codigoProveedor}
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
-                                        {item.numeroLote || 'N/A'}
-                                      </span>
-                                    </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-700">
-                                      {item.marca || 'Sin marca'}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-700">
-                                      {item.medida || 'N/A'}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-700">
-                                      {item.color || 'N/A'}
-                                    </span>
-                                  </td>
-                                  
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm font-medium text-gray-900">
-                                      {item.cantidad}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm font-medium text-gray-900">
-                                      S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm font-medium text-gray-900">
-                                      S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm font-medium text-gray-900">
-                                      S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm font-semibold text-gray-900">
-                                      S/. {parseFloat(item.subtotal || 0).toFixed(2)}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <div className="flex justify-center space-x-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleEditItem(item)}
-                                        className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                                        title="Editar"
-                                      >
-                                        <PencilIcon className="h-4 w-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => removeItem(index)}
-                                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
-                                        title="Eliminar"
-                                      >
-                                        <TrashIcon className="h-4 w-4" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* Total final */}
-                        <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 border-t border-gray-300">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <h3 className="text-lg font-semibold">Total de la Venta</h3>
-                              <p className="text-green-100 text-sm">{itemsVenta.length} producto{itemsVenta.length !== 1 ? 's' : ''}</p>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-3xl font-bold">
-                                S/. {totalGeneralVenta}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
       {/* Modal de Cantidad */}
       {showQuantityModal && (
