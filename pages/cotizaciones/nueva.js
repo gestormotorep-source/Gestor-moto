@@ -5,6 +5,7 @@ import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import MixedPaymentModal from '../../components/modals/MixedPaymentModal';
+import ProductSearchItem from '../../components/ProductSearchItem';
 import { db } from '../../lib/firebase';
 import {
   collection,
@@ -1071,7 +1072,7 @@ const NuevaCotizacionPage = () => {
 
                   {/* Dropdown de productos */}
 {searchTerm.trim() !== '' && (
-  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
     {isSearching ? (
       <div className="flex justify-center py-8">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -1081,66 +1082,14 @@ const NuevaCotizacionPage = () => {
         <p>No se encontraron productos</p>
       </div>
     ) : (
-      <div className="max-h-80">
+      <div className="max-h-96">
         {filteredProductos.slice(0, 20).map(producto => (
-          <div
+          <ProductSearchItem
             key={producto.id}
-            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-            onClick={() => {
-              handleSelectProduct(producto);
-              setSearchTerm('');
-            }}
-          >
-            <div className="flex items-center justify-between gap-6">
-              {/* Información principal del producto */}
-              <div className="flex items-center gap-6 flex-1 min-w-0">
-                {/* Nombre y código */}
-                <div className="min-w-0 flex-shrink-0">
-                  <h4 className="font-medium text-gray-900 truncate text-sm">
-                    {producto.nombre} ({producto.codigoTienda})
-                  </h4>
-                </div>
-                
-                {/* Marca */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
-                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
-                </div>
-                
-                {/* Color */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
-                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
-                </div>
-                
-                {/* Stock */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
-                  <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                </div>
-                
-                {/* Modelos compatibles */}
-                {producto.modelosCompatiblesTexto && (
-                  <div className="flex-shrink-0 max-w-xs">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">Modelos:</span>
-                    <span className="ml-1 text-sm text-blue-700 font-medium truncate" title={producto.modelosCompatiblesTexto}>
-                      {producto.modelosCompatiblesTexto}
-                    </span>
-                  </div>
-                )}
-              </div>
-              
-              {/* Precio */}
-              <div className="text-right flex-shrink-0">
-                <p className="font-bold text-green-600 text-base">
-                  S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                </p>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
-                  Precio Venta
-                </p>
-              </div>
-            </div>
-          </div>
+            producto={producto}
+            onSelectProduct={handleSelectProduct}
+            onClearSearch={() => setSearchTerm('')}
+          />
         ))}
         {filteredProductos.length > 20 && (
           <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
