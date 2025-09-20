@@ -19,6 +19,17 @@
   body {
     font-family: 'Courier PS', 'Courier New', monospace;
   }
+  
+  /* Hacer toda la fuente más pesada */
+  * {
+    font-weight: 600 !important;
+  }
+
+  /* Aumentar el tamaño base del body */
+  body {
+    font-size: 1.125rem !important; /* 18px * 1.05 = ~19px */
+    font-weight: 600 !important;
+  }
 }
 
 /* Opcional: Si quieres optimizar la legibilidad de Courier en la interfaz */
@@ -36,5 +47,83 @@
   /* Mantiene proporciones en inputs y botones */
   input, button, select, textarea {
     font-family: inherit;
+  }
+}
+
+/* Elementos específicos más grandes y gruesos */
+@layer components {
+  /* Inputs, selects y textareas */
+  input[type="text"], 
+  input[type="number"], 
+  input[type="email"], 
+  input[type="password"],
+  select, 
+  textarea {
+    font-size: 1.125rem !important;
+    font-weight: 600 !important;
+  }
+
+  /* Tablas */
+  table th, 
+  table td {
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+  }
+
+  /* Botones */
+  button {
+    font-size: 1.125rem !important;
+    font-weight: 700 !important;
+  }
+
+  /* Labels y spans importantes */
+  label {
+    font-weight: 600 !important;
+  }
+
+  /* Encabezados más prominentes */
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700 !important;
+  }
+}
+
+/* Sobrescribir clases específicas de Tailwind */
+@layer utilities {
+  .text-xs { 
+    font-size: 0.875rem !important; /* 14px -> ~15px con tu 105% base */
+    font-weight: 600 !important;
+  }
+  .text-sm { 
+    font-size: 1rem !important; /* 16px -> ~17px */
+    font-weight: 600 !important;
+  }
+  .text-base { 
+    font-size: 1.25rem !important; /* 20px -> ~21px */
+    font-weight: 600 !important;
+  }
+  .text-lg { 
+    font-size: 1.375rem !important; /* 22px -> ~23px */
+    font-weight: 600 !important;
+  }
+  .text-xl { 
+    font-size: 1.5rem !important; /* 24px -> ~25px */
+    font-weight: 600 !important;
+  }
+  .text-2xl { 
+    font-size: 1.875rem !important; /* 30px -> ~31px */
+    font-weight: 700 !important;
+  }
+  .text-3xl { 
+    font-size: 2.25rem !important; /* 36px -> ~38px */
+    font-weight: 700 !important;
+  }
+
+  /* Hacer que elementos específicos sean más gruesos */
+  .font-medium, .font-semibold {
+    font-weight: 700 !important; /* Bold */
+  }
+
+  .font-bold {
+    font-weight: 800 !important; /* Extra Bold */
   }
 }
