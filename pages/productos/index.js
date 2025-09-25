@@ -817,9 +817,9 @@ const downloadExcelTemplate = () => {
           {/* Sección de Filtros y Botones */}
 <div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
   {/* Primera línea - Filtros de búsqueda */}
-  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 2xl:grid-cols-8 gap-3 mb-4">
-    {/* Nombre */}
-    <div className="col-span-1">
+  <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-9 gap-3 mb-4">
+    {/* Nombre - Más grande */}
+    <div className="col-span-1 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2 2xl:col-span-2">
       <label htmlFor="filterNombre" className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
       <input
         type="text"
@@ -897,8 +897,8 @@ const downloadExcelTemplate = () => {
     </div>
 
     {/* Modelos Compatibles */}
-    <div className="col-span-1 sm:col-span-2 md:col-span-1 lg:col-span-1 xl:col-span-1 2xl:col-span-1">
-      <label htmlFor="filterModelosCompatibles" className="block text-xs font-medium text-gray-700 mb-1">MODELOS COMPATIBLES</label>
+    <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1 xl:col-span-1 2xl:col-span-1">
+      <label htmlFor="filterModelosCompatibles" className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
       <input
         type="text"
         id="filterModelosCompatibles"
@@ -910,7 +910,7 @@ const downloadExcelTemplate = () => {
     </div>
 
     {/* Selector de productos por página */}
-    <div className="col-span-1 2xl:col-span-1">
+    <div className="col-span-1">
       <label htmlFor="products-per-page" className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR:</label>
       <select
         id="products-per-page"
