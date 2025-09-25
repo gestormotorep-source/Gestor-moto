@@ -213,49 +213,63 @@ const NuevoIngresoPage = () => {
   };
 
   // Abrir modal de edición
-  const handleEditItem = (item) => {
-    setEditingItem(item);
-    setEditQuantity(item.cantidad);
-    setEditPrecio(parseFloat(item.precioCompraUnitario || 0));
-    setEditNumeroLote(item.numeroLote);
-    setShowEditItemModal(true);
-  };
+const handleEditItem = (item) => {
+  setEditingItem(item);
+  setEditQuantity(Number(item.cantidad)); // Asegurar que sea número
+  setEditPrecio(Number(item.precioCompraUnitario)); // Asegurar que sea número
+  setEditNumeroLote(item.numeroLote);
+  setShowEditItemModal(true);
+};
+
 
   // Actualizar item con validación de lote
   const handleUpdateItem = async () => {
-    if (!editingItem) return;
+  if (!editingItem) return;
 
-    // Validar que el número de lote no esté duplicado (excepto el actual)
-    const loteExists = itemsIngreso.some(item => 
-      item.id !== editingItem.id && item.numeroLote === editNumeroLote.trim()
-    );
-    if (loteExists) {
-      alert('Ya existe un producto con este número de lote. Por favor, use un número diferente.');
-      return;
-    }
+  // Validar que el número de lote no esté duplicado (excepto el actual)
+  const loteExists = itemsIngreso.some(item => 
+    item.id !== editingItem.id && item.numeroLote === editNumeroLote.trim()
+  );
+  if (loteExists) {
+    alert('Ya existe un producto con este número de lote. Por favor, use un número diferente.');
+    return;
+  }
 
-    if (!editNumeroLote.trim()) {
-      alert('Debe ingresar un número de lote.');
-      return;
-    }
+  if (!editNumeroLote.trim()) {
+    alert('Debe ingresar un número de lote.');
+    return;
+  }
 
-    const newItems = [...itemsIngreso];
-    const index = newItems.findIndex(item => item.id === editingItem.id);
-    
-    if (index !== -1) {
-      newItems[index] = {
-        ...newItems[index],
+  // Validar cantidad y precio
+  if (editQuantity <= 0) {
+    alert('La cantidad debe ser mayor a 0.');
+    return;
+  }
+
+  if (editPrecio < 0) {
+    alert('El precio no puede ser negativo.');
+    return;
+  }
+
+  // Crear una nueva copia del array
+  const newItems = itemsIngreso.map(item => {
+    if (item.id === editingItem.id) {
+      return {
+        ...item,
         numeroLote: editNumeroLote.trim(),
-        cantidad: editQuantity,
-        precioCompraUnitario: editPrecio.toFixed(2),
-        stockRestanteLote: editQuantity, // Actualizar stock del lote
-        subtotal: (editQuantity * editPrecio).toFixed(2),
+        cantidad: Number(editQuantity),
+        precioCompraUnitario: Number(editPrecio).toFixed(2),
+        stockRestanteLote: Number(editQuantity), // Actualizar stock del lote
+        subtotal: (Number(editQuantity) * Number(editPrecio)).toFixed(2),
       };
-      setItemsIngreso(newItems);
     }
-    
-    setShowEditItemModal(false);
-  };
+    return item;
+  });
+  
+  setItemsIngreso(newItems);
+  setShowEditItemModal(false);
+  setError(null); // Limpiar cualquier error previo
+};
 
   const removeItem = (index) => {
     if (window.confirm('¿Está seguro de que desea eliminar este lote del ingreso?')) {
