@@ -470,18 +470,23 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
     setShowEditItemModal(true);
   };
 
-  // Actualizar item
   // Actualizar item de venta - VERSIÓN CON PRECIO FIFO REAL
   const handleUpdateItem = async () => {
     if (!editingItem) return;
 
     try {
+      // OBTENER DATOS ACTUALIZADOS DEL PRODUCTO
+      const productoActual = products.find(p => p.id === editingItem.productoId);
+      
       // OBTENER PRECIO DE COMPRA FIFO ACTUALIZADO
       const precioCompraFIFO = await obtenerPrecioCompraFIFO(editingItem.productoId);
       
       // CALCULAR NUEVA GANANCIA CON PRECIO FIFO REAL
       const nuevaGananciaUnitaria = editPrecio - precioCompraFIFO;
       const nuevaGananciaTotal = editQuantity * nuevaGananciaUnitaria;
+      
+      // OBTENER PRECIO VENTA MÍNIMO
+      const precioVentaMinimo = productoActual ? parseFloat(productoActual.precioVentaMinimo || 0) : 0;
 
       const newItems = [...itemsVenta];
       const index = newItems.findIndex(item => item.id === editingItem.id);
@@ -492,8 +497,8 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
           cantidad: editQuantity,
           precioVentaUnitario: editPrecio.toFixed(2),
           subtotal: (editQuantity * editPrecio).toFixed(2),
-           precioCompraDefault: precioCompraFIFO.toFixed(2), // PARA LA TABLA
-        precioVentaMinimo: parseFloat(productoOriginal?.precioVentaMinimo || 0).toFixed(2), // PARA LA TABLA
+          precioCompraDefault: precioCompraFIFO.toFixed(2), // PARA LA TABLA
+          precioVentaMinimo: precioVentaMinimo.toFixed(2), // PARA LA TABLA
           // ACTUALIZAR CON PRECIO FIFO REAL
           precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL ACTUALIZADO
           gananciaUnitaria: nuevaGananciaUnitaria, // GANANCIA REAL
@@ -503,6 +508,7 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
       }
       
       setShowEditItemModal(false);
+      setError(null);
     } catch (err) {
       console.error("Error al actualizar precio FIFO:", err);
       setError("Error al actualizar el precio de compra. Intente de nuevo.");
