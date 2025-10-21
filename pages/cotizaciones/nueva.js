@@ -405,22 +405,6 @@ const NuevaCotizacionPage = () => {
     }
   };
 
-  // Actualizar placa de moto
-  const handleUpdatePlaca = async (nuevaPlaca) => {
-    if (!cotizacionActiva?.id) return;
-
-    try {
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-      await updateDoc(cotizacionRef, {
-        placaMoto: nuevaPlaca || null,
-        updatedAt: serverTimestamp(),
-      });
-      setPlacaMoto(nuevaPlaca);
-    } catch (err) {
-      console.error("Error al actualizar placa:", err);
-      setError("Error al actualizar placa");
-    }
-  };
 
   // Actualizar método de pago
   const handleUpdateMetodoPago = async (nuevoMetodo) => {
@@ -439,22 +423,7 @@ const NuevaCotizacionPage = () => {
     }
   };
 
-  // Actualizar observaciones
-  const handleUpdateObservaciones = async (nuevasObservaciones) => {
-    if (!cotizacionActiva?.id) return;
 
-    try {
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-      await updateDoc(cotizacionRef, {
-        observaciones: nuevasObservaciones,
-        updatedAt: serverTimestamp(),
-      });
-      setObservaciones(nuevasObservaciones);
-    } catch (err) {
-      console.error("Error al actualizar observaciones:", err);
-      setError("Error al actualizar observaciones");
-    }
-  };
 
   // Abrir modal de cantidad
   const handleSelectProduct = (product) => {
@@ -797,9 +766,9 @@ const NuevaCotizacionPage = () => {
       await updateDoc(cotizacionRef, {
         estado: 'pendiente',
         metodoPago: paymentData.isMixedPayment ? 'mixto' : (paymentData.paymentMethods[0]?.method || metodoPago || 'efectivo'),
-        paymentData: paymentData, // AÑADIR ESTA LÍNEA
+        paymentData: paymentData,
         placaMoto: placaMoto || null,
-        observaciones: observaciones || '',
+        observaciones: observaciones || '', // ← SE GUARDA AQUÍ
         fechaGuardado: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -815,7 +784,6 @@ const NuevaCotizacionPage = () => {
       setMetodoPago('');
       setObservaciones('');
       
-      // Opcional: redirigir al índice de cotizaciones
       router.push('/cotizaciones');
       
     } catch (err) {
@@ -941,7 +909,7 @@ const NuevaCotizacionPage = () => {
                         <input
                           type="text"
                           value={placaMoto}
-                          onChange={(e) => handleUpdatePlaca(e.target.value)}
+                          onChange={(e) => setPlacaMoto(e.target.value)}
                           placeholder="Ej: ABC-123"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
@@ -998,7 +966,7 @@ const NuevaCotizacionPage = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
                         <textarea
                           value={observaciones}
-                          onChange={(e) => handleUpdateObservaciones(e.target.value)}
+                          onChange={(e) => setObservaciones(e.target.value)}
                           placeholder="Observaciones adicionales..."
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           rows="3"

@@ -377,21 +377,6 @@ const EditarVerCotizacionPage = () => {
     }
   };
 
-  const handleUpdatePlaca = async (nuevaPlaca) => {
-    if (!cotizacion?.id || isViewOnly) return;
-
-    try {
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacion.id);
-      await updateDoc(cotizacionRef, {
-        placaMoto: nuevaPlaca || null,
-        updatedAt: serverTimestamp(),
-      });
-      setPlacaMoto(nuevaPlaca);
-    } catch (err) {
-      console.error("Error al actualizar placa:", err);
-      setError("Error al actualizar placa");
-    }
-  };
 
   const handleUpdateMetodoPago = async (nuevoMetodo) => {
     if (!cotizacion?.id || isViewOnly) return;
@@ -406,22 +391,6 @@ const EditarVerCotizacionPage = () => {
     } catch (err) {
       console.error("Error al actualizar método de pago:", err);
       setError("Error al actualizar método de pago");
-    }
-  };
-
-  const handleUpdateObservaciones = async (nuevasObservaciones) => {
-    if (!cotizacion?.id || isViewOnly) return;
-
-    try {
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacion.id);
-      await updateDoc(cotizacionRef, {
-        observaciones: nuevasObservaciones,
-        updatedAt: serverTimestamp(),
-      });
-      setObservaciones(nuevasObservaciones);
-    } catch (err) {
-      console.error("Error al actualizar observaciones:", err);
-      setError("Error al actualizar observaciones");
     }
   };
 
@@ -705,42 +674,42 @@ const EditarVerCotizacionPage = () => {
     }
   };
 
-  const handleGuardarCotizacion = async () => {
-    if (!cotizacion?.id || isViewOnly) return;
+const handleGuardarCotizacion = async () => {
+  if (!cotizacion?.id || isViewOnly) return;
 
-    if (!selectedCliente) {
-      alert('Por favor selecciona un cliente');
-      return;
-    }
+  if (!selectedCliente) {
+    alert('Por favor selecciona un cliente');
+    return;
+  }
 
-    if (itemsCotizacion.length === 0) {
-      alert('La cotización debe tener al menos un producto');
-      return;
-    }
+  if (itemsCotizacion.length === 0) {
+    alert('La cotización debe tener al menos un producto');
+    return;
+  }
 
-    if (!window.confirm('¿Guardar los cambios en esta cotización?')) {
-      return;
-    }
+  if (!window.confirm('¿Guardar los cambios en esta cotización?')) {
+    return;
+  }
 
-    try {
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacion.id);
-      await updateDoc(cotizacionRef, {
-        estado: 'pendiente',
-        metodoPago: paymentData.isMixedPayment ? 'mixto' : (paymentData.paymentMethods[0]?.method || metodoPago || 'efectivo'),
-        paymentData: paymentData,
-        placaMoto: placaMoto || null,
-        observaciones: observaciones || '',
-        fechaGuardado: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+  try {
+    const cotizacionRef = doc(db, 'cotizaciones', cotizacion.id);
+    await updateDoc(cotizacionRef, {
+      estado: 'pendiente',
+      metodoPago: paymentData.isMixedPayment ? 'mixto' : (paymentData.paymentMethods[0]?.method || metodoPago || 'efectivo'),
+      paymentData: paymentData,
+      placaMoto: placaMoto || null, // ← SE GUARDA AQUÍ
+      observaciones: observaciones || '', // ← SE GUARDA AQUÍ
+      fechaGuardado: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
-      alert('Cotización actualizada exitosamente.');
-      
-    } catch (err) {
-      console.error("Error al guardar cotización:", err);
-      alert('Error al guardar cotización: ' + err.message);
-    }
-  };
+    alert('Cotización actualizada exitosamente.');
+    
+  } catch (err) {
+    console.error("Error al guardar cotización:", err);
+    alert('Error al guardar cotización: ' + err.message);
+  }
+};
 
   const handlePaymentConfirm = (newPaymentData) => {
     setPaymentData(newPaymentData);
@@ -1015,7 +984,7 @@ const EditarVerCotizacionPage = () => {
                       <input
                         type="text"
                         value={placaMoto}
-                        onChange={(e) => isViewOnly ? null : handleUpdatePlaca(e.target.value)}
+                        onChange={(e) => isViewOnly ? null : setPlacaMoto(e.target.value)}
                         placeholder="Ej: ABC-123"
                         readOnly={isViewOnly}
                         className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
@@ -1079,7 +1048,7 @@ const EditarVerCotizacionPage = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
                       <textarea
                         value={observaciones}
-                        onChange={(e) => isViewOnly ? null : handleUpdateObservaciones(e.target.value)}
+                        onChange={(e) => isViewOnly ? null : setObservaciones(e.target.value)}
                         placeholder="Observaciones adicionales..."
                         readOnly={isViewOnly}
                         className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
