@@ -911,7 +911,7 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
           )}
 
           {/* Sección de Filtros y Búsqueda (Responsive) */}
-<div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+<div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 relative z-20">
   {/* En desktop: Una sola línea horizontal | En móvil: Stack vertical */}
   <div className="flex flex-col lg:flex-row lg:items-center gap-4">
     
@@ -986,6 +986,18 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         endDate={endDate}
         placeholderText="Fecha de inicio"
         className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        popperProps={{
+          strategy: "fixed",
+          modifiers: [
+            {
+              name: "preventOverflow",
+              options: {
+                boundary: "viewport"
+              }
+            }
+          ]
+        }}
+        popperClassName="z-50"
       />
       <DatePicker
         selected={endDate}
@@ -999,7 +1011,20 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         minDate={startDate}
         placeholderText="Fecha de fin"
         className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        popperProps={{
+          strategy: "fixed",
+          modifiers: [
+            {
+              name: "preventOverflow",
+              options: {
+                boundary: "viewport"
+              }
+            }
+          ]
+        }}
+        popperClassName="z-50"
       />
+
     </div>
 
     {/* Selector de límite */}
@@ -1056,7 +1081,7 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
             </div>
           ) : (
             <div>
-              <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
+              <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh] relative z-10">
                 <table className="min-w-full border-collapse">
                   <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>

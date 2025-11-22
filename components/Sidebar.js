@@ -27,7 +27,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
   const router = useRouter();
   const [openSubmenu, setOpenSubmenu] = useState(null);
 
-  const isAdmin = user?.email === 'admin@gmail.com';
+  const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
 
   // Bloquear el scroll del body cuando el sidebar está abierto en mobile
   useEffect(() => {

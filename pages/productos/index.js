@@ -43,7 +43,7 @@ import AlertModal from '../../components/modals/AlertModal';
 const ProductosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin = user?.email === 'admin@gmail.com';
+  const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

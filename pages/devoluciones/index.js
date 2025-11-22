@@ -794,7 +794,7 @@ const handleAprobarDevolucion = async (devolucionId) => {
             )}
 
             {/* Panel de filtros reorganizado */}
-            <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 relative z-20">
               {/* Primera línea: Búsqueda y botón Nueva Devolución */}
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
                 <div className="relative flex-grow sm:mr-4">
@@ -877,6 +877,18 @@ const handleAprobarDevolucion = async (devolucionId) => {
                     endDate={endDate}
                     placeholderText="Fecha inicio"
                     className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
+                    popperProps={{
+                      strategy: "fixed",
+                      modifiers: [
+                        {
+                          name: "preventOverflow",
+                          options: {
+                            boundary: "viewport"
+                          }
+                        }
+                      ]
+                    }}
+                    popperClassName="z-50"
                   />
                   <DatePicker
                     selected={endDate}
@@ -890,6 +902,18 @@ const handleAprobarDevolucion = async (devolucionId) => {
                     minDate={startDate}
                     placeholderText="Fecha fin"
                     className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
+                    popperProps={{
+                      strategy: "fixed",
+                      modifiers: [
+                        {
+                          name: "preventOverflow",
+                          options: {
+                            boundary: "viewport"
+                          }
+                        }
+                      ]
+                    }}
+                    popperClassName="z-50"
                   />
 
                   {/* Selector de límite */}
@@ -953,7 +977,7 @@ const handleAprobarDevolucion = async (devolucionId) => {
               </div>
             ) : (
               <div>
-                <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
+                <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh] relative z-10">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>

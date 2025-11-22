@@ -515,79 +515,117 @@ const NuevaCotizacionPage = () => {
 
   // Agregar producto a cotización - ACTUALIZADO CON SEPARACIÓN POR LOTES
   const handleAddProductToCotizacion = async () => {
-    if (!cotizacionActiva?.id || !selectedProduct) return;
+  if (!cotizacionActiva?.id || !selectedProduct) return;
 
-    // Verificar si el producto ya existe en la cotización
-    const existsInCotizacion = itemsCotizacionActiva.some(item => item.productoId === selectedProduct.id);
-    if (existsInCotizacion) {
-      alert('Este producto ya ha sido añadido a la cotización. Edite la cantidad en la tabla.');
-      setShowQuantityModal(false);
-      return;
-    }
+  // NUEVA LÓGICA: Verificar si existe el MISMO producto con el MISMO precio
+  const existeConMismoPrecio = itemsCotizacionActiva.some(item => 
+    item.productoId === selectedProduct.id && 
+    parseFloat(item.precioVentaUnitario) === parseFloat(precioVenta)
+  );
 
-    if ((selectedProduct.stockActual || 0) < quantity) {
-      alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
-      return;
-    }
+  if (existeConMismoPrecio) {
+    alert(`Este producto ya existe en la cotización con el mismo precio (S/. ${precioVenta.toFixed(2)}). \n\nSi deseas agregar más cantidad, edita el item existente.\nSi deseas un precio diferente, cambia el precio de venta.`);
+    return;
+  }
 
-    try {
-      // OBTENER LOTES DISPONIBLES PARA SIMULAR LA DISTRIBUCIÓN
-      const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
-      
-      // CREAR ITEMS SEPARADOS POR LOTE
-      const itemsSeparados = await crearItemsSeparadosPorLote(
-        selectedProduct, 
-        quantity, 
-        precioVenta, 
-        lotesDisponibles
-      );
+  // Calcular stock ya comprometido en esta cotización para este producto
+  const stockComprometido = itemsCotizacionActiva
+    .filter(item => item.productoId === selectedProduct.id)
+    .reduce((total, item) => total + parseFloat(item.cantidad || 0), 0);
 
-      await runTransaction(db, async (transaction) => {
-        const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-        const cotizacionSnap = await transaction.get(cotizacionRef);
-        
-        if (!cotizacionSnap.exists()) {
-          throw new Error("Cotización no encontrada");
+  const stockDisponible = (selectedProduct.stockActual || 0) - stockComprometido;
+
+  if (stockDisponible < quantity) {
+    alert(`Stock insuficiente para ${selectedProduct.nombre}.\n\nStock total: ${selectedProduct.stockActual || 0}\nYa en cotización: ${stockComprometido}\nDisponible: ${stockDisponible}\nCantidad solicitada: ${quantity}`);
+    return;
+  }
+
+  try {
+    // OBTENER LOTES DISPONIBLES PARA SIMULAR LA DISTRIBUCIÓN
+    const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
+    
+    // Calcular cuánto stock ya se ha "reservado" de cada lote en la cotización actual
+    const stockReservadoPorLote = {};
+    itemsCotizacionActiva
+      .filter(item => item.productoId === selectedProduct.id)
+      .forEach(item => {
+        if (item.loteId) {
+          stockReservadoPorLote[item.loteId] = (stockReservadoPorLote[item.loteId] || 0) + parseFloat(item.cantidad || 0);
         }
-
-        let totalSubtotal = 0;
-        let totalGanancia = 0;
-
-        // AGREGAR CADA ITEM SEPARADO POR LOTE
-        for (const item of itemsSeparados) {
-          const itemRef = doc(collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion'));
-          
-          transaction.set(itemRef, {
-            ...item,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-
-          totalSubtotal += parseFloat(item.subtotal);
-          totalGanancia += parseFloat(item.gananciaTotal);
-        }
-
-        // ACTUALIZAR TOTALES EN LA COTIZACIÓN
-        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
-        const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
-        
-        const updatedTotal = currentTotal + totalSubtotal;
-        const updatedGananciaTotal = currentGananciaTotal + totalGanancia;
-
-        transaction.update(cotizacionRef, {
-          totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
-          gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // CAMPO OCULTO
-          updatedAt: serverTimestamp(),
-        });
       });
 
-      setShowQuantityModal(false);
-      alert(`Producto agregado exitosamente y separado automáticamente en ${itemsSeparados.length} lote(s) FIFO`);
-    } catch (err) {
-      console.error("Error al agregar producto:", err);
-      setError("Error al agregar producto a la cotización: " + err.message);
+    // Ajustar stock disponible en lotes
+    const lotesAjustados = lotesDisponibles.map(lote => ({
+      ...lote,
+      stockRestante: lote.stockRestante - (stockReservadoPorLote[lote.id] || 0)
+    })).filter(lote => lote.stockRestante > 0);
+
+    // CREAR ITEMS SEPARADOS POR LOTE CON EL NUEVO PRECIO
+    const itemsSeparados = await crearItemsSeparadosPorLote(
+      selectedProduct, 
+      quantity, 
+      precioVenta, 
+      lotesAjustados
+    );
+
+    await runTransaction(db, async (transaction) => {
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+      const cotizacionSnap = await transaction.get(cotizacionRef);
+      
+      if (!cotizacionSnap.exists()) {
+        throw new Error("Cotización no encontrada");
+      }
+
+      let totalSubtotal = 0;
+      let totalGanancia = 0;
+
+      // AGREGAR CADA ITEM SEPARADO POR LOTE
+      for (const item of itemsSeparados) {
+        const itemRef = doc(collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion'));
+        
+        // Agregar identificador único para diferenciar items del mismo producto
+        transaction.set(itemRef, {
+          ...item,
+          // Identificador para distinguir items del mismo producto con diferente precio
+          precioVentaKey: `${item.productoId}-${precioVenta.toFixed(2)}`,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        totalSubtotal += parseFloat(item.subtotal);
+        totalGanancia += parseFloat(item.gananciaTotal);
+      }
+
+      // ACTUALIZAR TOTALES EN LA COTIZACIÓN
+      const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+      const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
+      
+      const updatedTotal = currentTotal + totalSubtotal;
+      const updatedGananciaTotal = currentGananciaTotal + totalGanancia;
+
+      transaction.update(cotizacionRef, {
+        totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+        gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)),
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    setShowQuantityModal(false);
+    setSearchTerm(''); // Limpiar búsqueda después de agregar
+    
+    // Mensaje más informativo
+    const precioExistente = itemsCotizacionActiva.find(item => item.productoId === selectedProduct.id);
+    if (precioExistente) {
+      alert(`✅ Producto agregado con precio diferente:\n\n${selectedProduct.nombre}\n- Precio anterior en cotización: S/. ${parseFloat(precioExistente.precioVentaUnitario).toFixed(2)}\n- Nuevo precio agregado: S/. ${precioVenta.toFixed(2)}\n- Cantidad: ${quantity}\n- Lotes asignados: ${itemsSeparados.length}`);
+    } else {
+      alert(`✅ Producto agregado exitosamente\n\n${selectedProduct.nombre}\n- Precio: S/. ${precioVenta.toFixed(2)}\n- Cantidad: ${quantity}\n- Lotes asignados: ${itemsSeparados.length}`);
     }
-  };
+    
+  } catch (err) {
+    console.error("Error al agregar producto:", err);
+    setError("Error al agregar producto a la cotización: " + err.message);
+  }
+};
 
   // Función para obtener el precio de compra FIFO real
   const obtenerPrecioCompraFIFO = async (productoId) => {
