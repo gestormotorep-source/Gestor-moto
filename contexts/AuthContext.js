@@ -31,6 +31,21 @@ export const AuthProvider = ({ children }) => {
     return unsubscribe;
   }, []);
 
+  // NUEVO: Cerrar sesión al cerrar la pestaña/navegador
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (user) {
+        await signOut(auth);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [user]);
+
   const login = async (email, password) => {
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
