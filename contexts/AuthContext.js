@@ -33,18 +33,33 @@ export const AuthProvider = ({ children }) => {
 
   // NUEVO: Cerrar sesión al cerrar la pestaña/navegador
   useEffect(() => {
-    const handleBeforeUnload = async () => {
+  const handleBeforeUnload = () => {
+    // Marcar que la página se está cerrando
+    sessionStorage.setItem('isClosing', 'true');
+  };
+
+  const handleLoad = () => {
+    // Si existe la marca, significa que fue un cierre real, no una recarga
+    const wasClosing = sessionStorage.getItem('isClosing');
+    
+    if (wasClosing) {
+      // Limpiar la marca
+      sessionStorage.removeItem('isClosing');
+      // Cerrar sesión
       if (user) {
-        await signOut(auth);
+        signOut(auth);
       }
-    };
+    }
+  };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener('load', handleLoad);
 
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [user]);
+  return () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.removeEventListener('load', handleLoad);
+  };
+}, [user]);
 
   const login = async (email, password) => {
     try {
