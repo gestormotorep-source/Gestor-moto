@@ -3,8 +3,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
-import DatePicker from 'react-datepicker';
-import "react-datepicker/dist/react-datepicker.css";
+import CustomDatePicker from '../../components/CustomDatePicker';
 import { generarPDFVentaCompleta } from '../../components/utils/pdfGeneratorVentas';
 import { generarTicketVentaCompleta } from '../../components/utils/pdfGeneratorTicket';
 import {
@@ -830,40 +829,23 @@ const VentasIndexPage = () => {
                 </button>
 
                 {/* Selectores de fecha */}
-                <DatePicker
+                <CustomDatePicker
                   selected={dateRange.start}
                   onChange={(date) => {
                     setFilterPeriod('custom');
                     setDateRange(prev => ({ ...prev, start: date }));
                   }}
-                  selectsStart
-                  startDate={dateRange.start}
-                  endDate={dateRange.end}
-                  placeholderText="Fecha inicio"
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
-                  popperProps={{
-                    strategy: "fixed",
-                    modifiers: [{ name: "preventOverflow", options: { boundary: "viewport" } }]
-                  }}
-                  popperClassName="z-50"
+                  placeholder="Fecha inicio"
                 />
-                <DatePicker
+
+                <CustomDatePicker
                   selected={dateRange.end}
                   onChange={(date) => {
                     setFilterPeriod('custom');
                     setDateRange(prev => ({ ...prev, end: date }));
                   }}
-                  selectsEnd
-                  startDate={dateRange.start}
-                  endDate={dateRange.end}
+                  placeholder="Fecha fin"
                   minDate={dateRange.start}
-                  placeholderText="Fecha fin"
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
-                  popperProps={{
-                    strategy: "fixed",
-                    modifiers: [{ name: "preventOverflow", options: { boundary: "viewport" } }]
-                  }}
-                  popperClassName="z-50"
                 />
 
                 {/* Filtros específicos */}
