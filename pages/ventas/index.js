@@ -286,31 +286,66 @@ const VentasIndexPage = () => {
   };
 
   // Función para filtrar ventas
-  useEffect(() => {
-    let filtered = [...ventas];
+  // useEffect 2 de filtros - agrega búsqueda directa en Firestore cuando hay searchTerm
+useEffect(() => {
+  let filtered = [...ventas];
 
-    if (searchTerm) {
-      const lower = searchTerm.toLowerCase();
-      filtered = filtered.filter(venta =>
-        venta.numeroVenta?.toLowerCase().includes(lower) ||
-        venta.clienteNombre?.toLowerCase().includes(lower) ||
-        venta.observaciones?.toLowerCase().includes(lower) ||
-        venta.tipoVenta?.toLowerCase().includes(lower)
-      );
+  if (searchTerm) {
+    const lower = searchTerm.toLowerCase();
+    filtered = filtered.filter(venta =>
+      venta.numeroVenta?.toLowerCase().includes(lower) ||
+      venta.clienteNombre?.toLowerCase().includes(lower) ||
+      venta.observaciones?.toLowerCase().includes(lower) ||
+      venta.tipoVenta?.toLowerCase().includes(lower)
+    );
+
+    // Si el filtro local no encontró nada, buscar en Firestore
+    if (filtered.length === 0 && searchTerm.length >= 4) {
+      const buscarEnFirestore = async () => {
+        try {
+          const { getDocs } = await import('firebase/firestore');
+          const q = query(
+            collection(db, 'ventas'),
+            where('numeroVenta', '==', searchTerm.toUpperCase()),
+            limit(5)
+          );
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty) {
+            const resultados = snapshot.docs.map(docSnap => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                ...data,
+                fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
+                fechaVentaFormatted: data.fechaVenta?.toDate
+                  ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
+                  : 'N/A',
+              };
+            });
+            setFilteredVentas(resultados);
+            setCurrentPage(1);
+          }
+        } catch (err) {
+          console.error('Error en búsqueda directa:', err);
+        }
+      };
+      buscarEnFirestore();
+      return; // salir para no pisar el setFilteredVentas de abajo
     }
+  }
 
-    if (selectedMetodoPago !== 'all') {
-      filtered = filtered.filter(venta => ventaIncludesPaymentMethod(venta, selectedMetodoPago));
-    }
+  if (selectedMetodoPago !== 'all') {
+    filtered = filtered.filter(venta => ventaIncludesPaymentMethod(venta, selectedMetodoPago));
+  }
 
-    if (selectedTipoVenta !== 'all') {
-      filtered = filtered.filter(venta => venta.tipoVenta === selectedTipoVenta);
-    }
+  if (selectedTipoVenta !== 'all') {
+    filtered = filtered.filter(venta => venta.tipoVenta === selectedTipoVenta);
+  }
 
-    setFilteredVentas(filtered);
-    setCurrentPage(1);
+  setFilteredVentas(filtered);
+  setCurrentPage(1);
 
-  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta]);
+}, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta]);
 
   // Cálculos para paginación
   const totalPages = Math.ceil(filteredVentas.length / ventasPerPage);
