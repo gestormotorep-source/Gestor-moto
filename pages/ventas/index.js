@@ -830,22 +830,28 @@ const VentasIndexPage = () => {
 
                 {/* Selectores de fecha */}
                 <CustomDatePicker
-                  selected={dateRange.start}
-                  onChange={(date) => {
-                    setFilterPeriod('custom');
-                    setDateRange(prev => ({ ...prev, start: date }));
-                  }}
-                  placeholder="Fecha inicio"
-                />
-
-                <CustomDatePicker
                   selected={dateRange.end}
                   onChange={(date) => {
                     setFilterPeriod('custom');
-                    setDateRange(prev => ({ ...prev, end: date }));
+                    // Forzar hora al final del día
+                    const endOfDay = new Date(date);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    setDateRange(prev => ({ ...prev, end: endOfDay }));
                   }}
                   placeholder="Fecha fin"
                   minDate={dateRange.start}
+                />
+
+                <CustomDatePicker
+                  selected={dateRange.start}
+                  onChange={(date) => {
+                    setFilterPeriod('custom');
+                    // Forzar hora al inicio del día
+                    const startOfDay = new Date(date);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    setDateRange(prev => ({ ...prev, start: startOfDay }));
+                  }}
+                  placeholder="Fecha inicio"
                 />
 
                 {/* Filtros específicos */}
