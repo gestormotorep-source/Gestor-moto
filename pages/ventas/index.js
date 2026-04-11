@@ -66,6 +66,8 @@ const VentasIndexPage = () => {
   const [selectedTipoVenta, setSelectedTipoVenta] = useState('all');
   const [selectedEstado, setSelectedEstado] = useState('all');
 
+  // Estado para el conteo total
+  const [totalVentasPeriodo, setTotalVentasPeriodo] = useState(0);
   // Estados para paginación
   const [currentPage, setCurrentPage] = useState(1);
   const ventasPerPage = 20; // Ventas por página
@@ -287,105 +289,140 @@ const VentasIndexPage = () => {
 
   // Función para filtrar ventas
   // useEffect 2 de filtros - agrega búsqueda directa en Firestore cuando hay searchTerm
-useEffect(() => {
-  let filtered = [...ventas];
+  useEffect(() => {
+    let filtered = [...ventas];
 
-  if (searchTerm) {
-    const lower = searchTerm.toLowerCase();
-    filtered = filtered.filter(venta =>
-      venta.numeroVenta?.toLowerCase().includes(lower) ||
-      venta.clienteNombre?.toLowerCase().includes(lower) ||
-      venta.observaciones?.toLowerCase().includes(lower) ||
-      venta.tipoVenta?.toLowerCase().includes(lower)
-    );
+    if (searchTerm) {
+      const lower = searchTerm.toLowerCase();
+      filtered = filtered.filter(venta =>
+        venta.numeroVenta?.toLowerCase().includes(lower) ||
+        venta.clienteNombre?.toLowerCase().includes(lower) ||
+        venta.observaciones?.toLowerCase().includes(lower) ||
+        venta.tipoVenta?.toLowerCase().includes(lower)
+      );
 
-    // Si no encontró nada localmente, buscar en Firestore
-    if (filtered.length === 0 && searchTerm.length >= 3) {
-      const buscarEnFirestore = async () => {
-        try {
-          const { getDocs } = await import('firebase/firestore');
-          
-          const termUpper = searchTerm.toUpperCase();
-          const termLower = searchTerm.toLowerCase();
-          const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
+      // Si no encontró nada localmente, buscar en Firestore
+      if (filtered.length === 0 && searchTerm.length >= 3) {
+        const buscarEnFirestore = async () => {
+          try {
+            const { getDocs } = await import('firebase/firestore');
+            
+            const termUpper = searchTerm.toUpperCase();
+            const termLower = searchTerm.toLowerCase();
+            const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
 
-          // Buscar por número de venta exacto
-          const qNumero = query(
-            collection(db, 'ventas'),
-            where('numeroVenta', '==', termUpper),
-            limit(5)
-          );
+            // Buscar por número de venta exacto
+            const qNumero = query(
+              collection(db, 'ventas'),
+              where('numeroVenta', '==', termUpper),
+              limit(5)
+            );
 
-          // Buscar por nombre de cliente (3 variantes de capitalización)
-          const qClienteUpper = query(
-            collection(db, 'ventas'),
-            where('clienteNombre', '>=', termUpper),
-            where('clienteNombre', '<=', termUpper + '\uf8ff'),
-            orderBy('clienteNombre', 'asc'),
-            limit(20)
-          );
+            // Buscar por nombre de cliente (3 variantes de capitalización)
+            const qClienteUpper = query(
+              collection(db, 'ventas'),
+              where('clienteNombre', '>=', termUpper),
+              where('clienteNombre', '<=', termUpper + '\uf8ff'),
+              orderBy('clienteNombre', 'asc'),
+              limit(20)
+            );
 
-          const qClienteCapitalized = query(
-            collection(db, 'ventas'),
-            where('clienteNombre', '>=', termCapitalized),
-            where('clienteNombre', '<=', termCapitalized + '\uf8ff'),
-            orderBy('clienteNombre', 'asc'),
-            limit(20)
-          );
+            const qClienteCapitalized = query(
+              collection(db, 'ventas'),
+              where('clienteNombre', '>=', termCapitalized),
+              where('clienteNombre', '<=', termCapitalized + '\uf8ff'),
+              orderBy('clienteNombre', 'asc'),
+              limit(20)
+            );
 
-          // Ejecutar todas las queries en paralelo
-          const [snapNumero, snapUpper, snapCapitalized] = await Promise.all([
-            getDocs(qNumero),
-            getDocs(qClienteUpper),
-            getDocs(qClienteCapitalized),
-          ]);
+            // Ejecutar todas las queries en paralelo
+            const [snapNumero, snapUpper, snapCapitalized] = await Promise.all([
+              getDocs(qNumero),
+              getDocs(qClienteUpper),
+              getDocs(qClienteCapitalized),
+            ]);
 
-          // Combinar resultados sin duplicados
-          const idsVistos = new Set();
-          const resultados = [];
+            // Combinar resultados sin duplicados
+            const idsVistos = new Set();
+            const resultados = [];
 
-          [...snapNumero.docs, ...snapUpper.docs, ...snapCapitalized.docs].forEach(docSnap => {
-            if (!idsVistos.has(docSnap.id)) {
-              idsVistos.add(docSnap.id);
-              const data = docSnap.data();
-              resultados.push({
-                id: docSnap.id,
-                ...data,
-                fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
-                fechaVentaFormatted: data.fechaVenta?.toDate
-                  ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
-                  : 'N/A',
-              });
+            [...snapNumero.docs, ...snapUpper.docs, ...snapCapitalized.docs].forEach(docSnap => {
+              if (!idsVistos.has(docSnap.id)) {
+                idsVistos.add(docSnap.id);
+                const data = docSnap.data();
+                resultados.push({
+                  id: docSnap.id,
+                  ...data,
+                  fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
+                  fechaVentaFormatted: data.fechaVenta?.toDate
+                    ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
+                    : 'N/A',
+                });
+              }
+            });
+
+            if (resultados.length > 0) {
+              setFilteredVentas(resultados);
+              setCurrentPage(1);
             }
-          });
 
-          if (resultados.length > 0) {
-            setFilteredVentas(resultados);
-            setCurrentPage(1);
+          } catch (err) {
+            console.error('Error en búsqueda directa:', err);
           }
+        };
 
-        } catch (err) {
-          console.error('Error en búsqueda directa:', err);
-        }
-      };
-
-      buscarEnFirestore();
-      return;
+        buscarEnFirestore();
+        return;
+      }
     }
-  }
 
-  if (selectedMetodoPago !== 'all') {
-    filtered = filtered.filter(venta => ventaIncludesPaymentMethod(venta, selectedMetodoPago));
-  }
+    if (selectedMetodoPago !== 'all') {
+      filtered = filtered.filter(venta => ventaIncludesPaymentMethod(venta, selectedMetodoPago));
+    }
 
-  if (selectedTipoVenta !== 'all') {
-    filtered = filtered.filter(venta => venta.tipoVenta === selectedTipoVenta);
-  }
+    if (selectedTipoVenta !== 'all') {
+      filtered = filtered.filter(venta => venta.tipoVenta === selectedTipoVenta);
+    }
 
-  setFilteredVentas(filtered);
-  setCurrentPage(1);
+    setFilteredVentas(filtered);
+    setCurrentPage(1);
 
-}, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta]);
+  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta]);
+
+  // useEffect separado solo para contar - no descarga documentos
+  useEffect(() => {
+    if (!user) return;
+    if (filterPeriod === 'custom' && (!dateRange.start || !dateRange.end)) return;
+
+    const contarVentas = async () => {
+      try {
+        const { getCountFromServer } = await import('firebase/firestore');
+
+        let constraints = [];
+        const { start, end } = dateRange;
+
+        if (start && end) {
+          constraints = [
+            where('fechaVenta', '>=', Timestamp.fromDate(start)),
+            where('fechaVenta', '<=', Timestamp.fromDate(end)),
+          ];
+        }
+
+        if (selectedEstado !== 'all') {
+          constraints.push(where('estado', '==', selectedEstado));
+        }
+
+        const q = query(collection(db, 'ventas'), ...constraints);
+        const snapshot = await getCountFromServer(q);
+        setTotalVentasPeriodo(snapshot.data().count);
+      } catch (err) {
+        console.error('Error al contar ventas:', err);
+      }
+    };
+
+    contarVentas();
+
+  }, [user, dateRange, selectedEstado, filterPeriod]);
 
   // Cálculos para paginación
   const totalPages = Math.ceil(filteredVentas.length / ventasPerPage);
@@ -903,6 +940,19 @@ useEffect(() => {
             </div>
           ) : (
             <>
+            {/* Indicador de total de ventas en el período */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex items-center gap-2">
+                <span className="text-sm text-blue-600 font-medium">
+                  Total en período:
+                </span>
+                <span className="text-lg font-bold text-blue-800">
+                  {totalVentasPeriodo} ventas
+                </span>
+              </div>
+            </div>
+          </div>
               <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh] relative z-10">
 
                 <table className="min-w-full border-collapse">
