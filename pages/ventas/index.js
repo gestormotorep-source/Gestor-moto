@@ -299,38 +299,78 @@ useEffect(() => {
       venta.tipoVenta?.toLowerCase().includes(lower)
     );
 
-    // Si el filtro local no encontró nada, buscar en Firestore
-    if (filtered.length === 0 && searchTerm.length >= 4) {
+    // Si no encontró nada localmente, buscar en Firestore
+    if (filtered.length === 0 && searchTerm.length >= 3) {
       const buscarEnFirestore = async () => {
         try {
           const { getDocs } = await import('firebase/firestore');
-          const q = query(
+          
+          const termUpper = searchTerm.toUpperCase();
+          const termLower = searchTerm.toLowerCase();
+          const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
+
+          // Buscar por número de venta exacto
+          const qNumero = query(
             collection(db, 'ventas'),
-            where('numeroVenta', '==', searchTerm.toUpperCase()),
+            where('numeroVenta', '==', termUpper),
             limit(5)
           );
-          const snapshot = await getDocs(q);
-          if (!snapshot.empty) {
-            const resultados = snapshot.docs.map(docSnap => {
+
+          // Buscar por nombre de cliente (3 variantes de capitalización)
+          const qClienteUpper = query(
+            collection(db, 'ventas'),
+            where('clienteNombre', '>=', termUpper),
+            where('clienteNombre', '<=', termUpper + '\uf8ff'),
+            orderBy('clienteNombre', 'asc'),
+            limit(20)
+          );
+
+          const qClienteCapitalized = query(
+            collection(db, 'ventas'),
+            where('clienteNombre', '>=', termCapitalized),
+            where('clienteNombre', '<=', termCapitalized + '\uf8ff'),
+            orderBy('clienteNombre', 'asc'),
+            limit(20)
+          );
+
+          // Ejecutar todas las queries en paralelo
+          const [snapNumero, snapUpper, snapCapitalized] = await Promise.all([
+            getDocs(qNumero),
+            getDocs(qClienteUpper),
+            getDocs(qClienteCapitalized),
+          ]);
+
+          // Combinar resultados sin duplicados
+          const idsVistos = new Set();
+          const resultados = [];
+
+          [...snapNumero.docs, ...snapUpper.docs, ...snapCapitalized.docs].forEach(docSnap => {
+            if (!idsVistos.has(docSnap.id)) {
+              idsVistos.add(docSnap.id);
               const data = docSnap.data();
-              return {
+              resultados.push({
                 id: docSnap.id,
                 ...data,
                 fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
                 fechaVentaFormatted: data.fechaVenta?.toDate
                   ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
                   : 'N/A',
-              };
-            });
+              });
+            }
+          });
+
+          if (resultados.length > 0) {
             setFilteredVentas(resultados);
             setCurrentPage(1);
           }
+
         } catch (err) {
           console.error('Error en búsqueda directa:', err);
         }
       };
+
       buscarEnFirestore();
-      return; // salir para no pisar el setFilteredVentas de abajo
+      return;
     }
   }
 
