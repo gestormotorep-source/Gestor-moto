@@ -16,7 +16,10 @@ import {
   updateDoc,
   serverTimestamp,
   getDoc,
-  addDoc
+  addDoc,
+  where,
+  limit,
+  Timestamp
 } from 'firebase/firestore';
 import {
   ShoppingCartIcon,
@@ -50,15 +53,13 @@ const VentasIndexPage = () => {
   
   // Estados para filtros
   const [filterPeriod, setFilterPeriod] = useState('day');
-  const [startDate, setStartDate] = useState(() => {
+  const [dateRange, setDateRange] = useState(() => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-  });
-  const [endDate, setEndDate] = useState(() => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    return today;
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(today);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
   });
   const [limitPerPage, setLimitPerPage] = useState(20);
   const [selectedMetodoPago, setSelectedMetodoPago] = useState('all');
@@ -78,45 +79,75 @@ const VentasIndexPage = () => {
     setLoading(true);
     setError(null);
 
-    const q = query(collection(db, 'ventas'), orderBy('fechaVenta', 'desc'));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    let constraints = [];
+    const { start, end } = dateRange;
+
+    if (start && end) {
+      if (selectedEstado !== 'all') {
+        constraints = [
+          where('estado', '==', selectedEstado),
+          where('fechaVenta', '>=', Timestamp.fromDate(start)),
+          where('fechaVenta', '<=', Timestamp.fromDate(end)),
+          orderBy('fechaVenta', 'desc'),
+          limit(limitPerPage)
+        ];
+      } else {
+        constraints = [
+          where('fechaVenta', '>=', Timestamp.fromDate(start)),
+          where('fechaVenta', '<=', Timestamp.fromDate(end)),
+          orderBy('fechaVenta', 'desc'),
+          limit(limitPerPage)
+        ];
+      }
+    } else {
+      if (selectedEstado !== 'all') {
+        constraints = [
+          where('estado', '==', selectedEstado),
+          orderBy('fechaVenta', 'desc'),
+          limit(limitPerPage)
+        ];
+      } else {
+        constraints = [
+          orderBy('fechaVenta', 'desc'),
+          limit(limitPerPage)
+        ];
+      }
+    }
+
+    const q = query(collection(db, 'ventas'), ...constraints);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const ventasList = [];
       const ventasToUpdate = [];
 
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
         const ventaData = {
-          id: doc.id,
+          id: docSnap.id,
           ...data,
           fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
-          fechaVentaFormatted: data.fechaVenta?.toDate ? data.fechaVenta.toDate().toLocaleDateString('es-ES') : 'N/A',
+          fechaVentaFormatted: data.fechaVenta?.toDate
+            ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
+            : 'N/A',
         };
 
-        // Si no tiene número de venta o es N/A, marcarlo para actualización
         if (!data.numeroVenta || data.numeroVenta === 'N/A' || data.numeroVenta.trim() === '') {
-          ventasToUpdate.push({
-            id: doc.id,
-            data: ventaData
-          });
+          ventasToUpdate.push({ id: docSnap.id, data: ventaData });
         }
 
         ventasList.push(ventaData);
       });
 
-      // Actualizar ventas sin número automáticamente (sin bloquear la UI)
       if (ventasToUpdate.length > 0) {
-        // Ejecutar actualizaciones en segundo plano
         ventasToUpdate.forEach(async (venta, index) => {
-          const newNumeroVenta = generateSaleNumber() + `-${index}`; // Evitar duplicados
+          const newNumeroVenta = generateSaleNumber() + `-${index}`;
           try {
             await updateDoc(doc(db, 'ventas', venta.id), {
               numeroVenta: newNumeroVenta,
               updatedAt: serverTimestamp()
             });
-            
-            console.log(`Número de venta generado para ${venta.id}: ${newNumeroVenta}`);
           } catch (error) {
-            console.error(`Error updating sale number for ${venta.id}:`, error);
+            console.error(`Error actualizando número de venta ${venta.id}:`, error);
           }
         });
       }
@@ -130,7 +161,8 @@ const VentasIndexPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, router]);
+
+  }, [user, router, dateRange, selectedEstado, limitPerPage]);
 
   const getDisplaySaleNumber = (venta) => {
     if (venta.numeroVenta && venta.numeroVenta !== 'N/A' && venta.numeroVenta.trim() !== '') {
@@ -149,28 +181,36 @@ const VentasIndexPage = () => {
   const handleFilterChange = (period) => {
     setFilterPeriod(period);
     const today = new Date();
-    
+
     switch (period) {
-      case 'day':
-        setStartDate(new Date(today.setHours(0, 0, 0, 0)));
-        setEndDate(new Date(today.setHours(23, 59, 59, 999)));
+      case 'day': {
+        const start = new Date(today);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(today);
+        end.setHours(23, 59, 59, 999);
+        setDateRange({ start, end });
         break;
-      case 'week':
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - today.getDay());
-        startOfWeek.setHours(0, 0, 0, 0);
-        setStartDate(startOfWeek);
-        setEndDate(new Date());
+      }
+      case 'week': {
+        const start = new Date(today);
+        start.setDate(today.getDate() - today.getDay());
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(today);
+        end.setHours(23, 59, 59, 999);
+        setDateRange({ start, end });
         break;
-      case 'month':
-        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        setStartDate(startOfMonth);
-        setEndDate(new Date());
+      }
+      case 'month': {
+        const start = new Date(today.getFullYear(), today.getMonth(), 1);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(today);
+        end.setHours(23, 59, 59, 999);
+        setDateRange({ start, end });
         break;
+      }
       case 'all':
       default:
-        setStartDate(null);
-        setEndDate(null);
+        setDateRange({ start: null, end: null });
         break;
     }
   };
@@ -249,72 +289,28 @@ const VentasIndexPage = () => {
   useEffect(() => {
     let filtered = [...ventas];
 
-    // Filtro por término de búsqueda
     if (searchTerm) {
-      const lowerCaseSearchTerm = searchTerm.toLowerCase();
-      filtered = filtered.filter(venta => {
-        const numeroVentaMatch = venta.numeroVenta && typeof venta.numeroVenta === 'string'
-          ? venta.numeroVenta.toLowerCase().includes(lowerCaseSearchTerm)
-          : false;
-
-        const clienteMatch = venta.clienteNombre && typeof venta.clienteNombre === 'string'
-          ? venta.clienteNombre.toLowerCase().includes(lowerCaseSearchTerm)
-          : false;
-
-        const observacionesMatch = venta.observaciones && typeof venta.observaciones === 'string'
-          ? venta.observaciones.toLowerCase().includes(lowerCaseSearchTerm)
-          : false;
-
-        const estadoMatch = venta.estado && typeof venta.estado === 'string'
-          ? venta.estado.toLowerCase().includes(lowerCaseSearchTerm)
-          : false;
-
-        const tipoVentaMatch = venta.tipoVenta && typeof venta.tipoVenta === 'string'
-          ? venta.tipoVenta.toLowerCase().includes(lowerCaseSearchTerm)
-          : false;
-
-        return numeroVentaMatch || clienteMatch || observacionesMatch || estadoMatch || tipoVentaMatch;
-      });
+      const lower = searchTerm.toLowerCase();
+      filtered = filtered.filter(venta =>
+        venta.numeroVenta?.toLowerCase().includes(lower) ||
+        venta.clienteNombre?.toLowerCase().includes(lower) ||
+        venta.observaciones?.toLowerCase().includes(lower) ||
+        venta.tipoVenta?.toLowerCase().includes(lower)
+      );
     }
 
-    // Filtro por fecha
-    if (startDate && endDate) {
-      filtered = filtered.filter(venta => {
-        const fechaVenta = venta.fechaVenta;
-        if (!fechaVenta) return false;
-        
-        const ventaDate = new Date(fechaVenta);
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        
-        // Ajustar horas para comparación correcta
-        start.setHours(0, 0, 0, 0);
-        end.setHours(23, 59, 59, 999);
-        ventaDate.setHours(12, 0, 0, 0); // Mediodía para evitar problemas de zona horaria
-        
-        return ventaDate >= start && ventaDate <= end;
-      });
-    }
-
-    // FILTRO ACTUALIZADO: Filtro por método de pago (incluyendo mixtos)
     if (selectedMetodoPago !== 'all') {
       filtered = filtered.filter(venta => ventaIncludesPaymentMethod(venta, selectedMetodoPago));
     }
 
-    // Filtro por tipo de venta
     if (selectedTipoVenta !== 'all') {
       filtered = filtered.filter(venta => venta.tipoVenta === selectedTipoVenta);
     }
 
-    // Filtro por estado
-    if (selectedEstado !== 'all') {
-      filtered = filtered.filter(venta => venta.estado === selectedEstado);
-    }
-
     setFilteredVentas(filtered);
-    // Reset to first page when filters change
     setCurrentPage(1);
-  }, [searchTerm, ventas, startDate, endDate, selectedMetodoPago, selectedTipoVenta, selectedEstado]);
+
+  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta]);
 
   // Cálculos para paginación
   const totalPages = Math.ceil(filteredVentas.length / ventasPerPage);
@@ -399,14 +395,13 @@ const VentasIndexPage = () => {
 
   const clearFilters = () => {
     const today = new Date();
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    setFilterPeriod('day'); // Cambiado de 'all' a 'day'
-    setStartDate(startOfDay);
-    setEndDate(endOfDay);
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(today);
+    end.setHours(23, 59, 59, 999);
+
+    setFilterPeriod('day');
+    setDateRange({ start, end });
     setSelectedMetodoPago('all');
     setSelectedTipoVenta('all');
     setSelectedEstado('all');
@@ -724,51 +719,37 @@ const VentasIndexPage = () => {
 
                 {/* Selectores de fecha */}
                 <DatePicker
-                  selected={startDate}
+                  selected={dateRange.start}
                   onChange={(date) => {
-                    setStartDate(date);
                     setFilterPeriod('custom');
+                    setDateRange(prev => ({ ...prev, start: date }));
                   }}
                   selectsStart
-                  startDate={startDate}
-                  endDate={endDate}
+                  startDate={dateRange.start}
+                  endDate={dateRange.end}
                   placeholderText="Fecha inicio"
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
                   popperProps={{
                     strategy: "fixed",
-                    modifiers: [
-                      {
-                        name: "preventOverflow",
-                        options: {
-                          boundary: "viewport"
-                        }
-                      }
-                    ]
+                    modifiers: [{ name: "preventOverflow", options: { boundary: "viewport" } }]
                   }}
                   popperClassName="z-50"
                 />
                 <DatePicker
-                  selected={endDate}
+                  selected={dateRange.end}
                   onChange={(date) => {
-                    setEndDate(date);
                     setFilterPeriod('custom');
+                    setDateRange(prev => ({ ...prev, end: date }));
                   }}
                   selectsEnd
-                  startDate={startDate}
-                  endDate={endDate}
-                  minDate={startDate}
+                  startDate={dateRange.start}
+                  endDate={dateRange.end}
+                  minDate={dateRange.start}
                   placeholderText="Fecha fin"
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
                   popperProps={{
                     strategy: "fixed",
-                    modifiers: [
-                      {
-                        name: "preventOverflow",
-                        options: {
-                          boundary: "viewport"
-                        }
-                      }
-                    ]
+                    modifiers: [{ name: "preventOverflow", options: { boundary: "viewport" } }]
                   }}
                   popperClassName="z-50"
                 />

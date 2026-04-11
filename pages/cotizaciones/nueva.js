@@ -484,8 +484,8 @@ const NuevaCotizacionPage = () => {
         descripcion: producto.descripcion || '',
         // CAMPOS EXISTENTES
         cantidad: cantidadDelLote,
-        precioVentaUnitario: precioVenta.toFixed(2),
-        subtotal: (cantidadDelLote * precioVenta).toFixed(2),
+        precioVentaUnitario: parseFloat(precioVenta.toFixed(2)),
+        subtotal: parseFloat((cantidadDelLote * precioVenta).toFixed(2)),
         // DATOS DEL LOTE ESPECÍFICO PARA COTIZACIÓN
         loteId: lote.id,
         numeroLote: lote.numeroLote,
@@ -695,7 +695,7 @@ const NuevaCotizacionPage = () => {
         const oldGananciaTotal = parseFloat(editingItem.gananciaTotal || 0);
         
         // CÁLCULOS NUEVOS CON PRECIO FIFO REAL
-        const newSubtotal = editQuantity * editPrecio;
+        const newSubtotal = parseFloat((editQuantity * editPrecio).toFixed(2));
         const newGananciaTotal = editQuantity * nuevaGananciaUnitaria;
 
         // ACTUALIZAR EL ITEM CON PRECIO FIFO REAL
