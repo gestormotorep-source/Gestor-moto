@@ -3,9 +3,8 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
-import DatePicker from 'react-datepicker';
+import CustomDatePicker from '../../components/CustomDatePicker';
 import emailjs from '@emailjs/browser';
-import "react-datepicker/dist/react-datepicker.css";
 import {
   collection,
   query,
@@ -36,7 +35,8 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon,
   LockClosedIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ChevronLeftIcon, ChevronRightIcon
 } from '@heroicons/react/24/outline';
 
 const CajaPage = () => {
@@ -48,7 +48,8 @@ const CajaPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  
+  const [currentPageVentas, setCurrentPageVentas] = useState(1);
+  const ventasPerPageCaja = 20; // fijo
   // Estados para dinero inicial
   const [dineroInicial, setDineroInicial] = useState(0);
   const [showDineroInicialModal, setShowDineroInicialModal] = useState(false);
@@ -414,229 +415,150 @@ const debugCierreCaja = () => {
   }
 };
 
-  // Función para cargar items de ventas con campos ocultos
   const cargarItemsVentas = async (ventasList) => {
-    const ventasConItems = [];
-    
-    for (const venta of ventasList) {
-      try {
-        // Cargar items de cada venta para obtener información de ganancia
-        const itemsQuery = query(
-          collection(db, 'ventas', venta.id, 'itemsVenta'),
-          orderBy('createdAt', 'asc')
-        );
-        
-        const itemsSnapshot = await getDocs(itemsQuery);
-        const items = itemsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        ventasConItems.push({
-          ...venta,
-          items: items
-        });
-      } catch (error) {
-        console.error(`Error al cargar items de venta ${venta.id}:`, error);
-        // Si falla, incluir venta sin items
-        ventasConItems.push({
-          ...venta,
-          items: []
-        });
-      }
-    }
-    
+    // ✅ Paralelo en vez de secuencial
+    const ventasConItems = await Promise.all(
+      ventasList.map(async (venta) => {
+        try {
+          const itemsSnapshot = await getDocs(query(
+            collection(db, 'ventas', venta.id, 'itemsVenta'),
+            orderBy('createdAt', 'asc')
+          ));
+          return {
+            ...venta,
+            items: itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+          };
+        } catch (error) {
+          return { ...venta, items: [] };
+        }
+      })
+    );
     return ventasConItems;
   };
 
   // Función mejorada para calcular totales con lógica de devoluciones diferenciada
-const calcularTotalesConGananciaReal = async (ventasList, devolucionesList = []) => {
-  let efectivo = 0, yape = 0, plin = 0, tarjeta = 0, total = 0;
-  let gananciaBruta = 0, gananciaReal = 0;
 
-  // Calcular totales de ventas (código existente)
-  const ventasConItems = await cargarItemsVentas(ventasList);
+  const calcularTotalesConGananciaReal = async (ventasList, devolucionesList = []) => {
+    let efectivo = 0, yape = 0, plin = 0, tarjeta = 0, total = 0;
+    let gananciaBruta = 0, gananciaReal = 0;
 
-  // Crear mapa de ventas del día para identificar devoluciones del mismo día
-  const ventasDelDiaMap = new Map();
-  ventasConItems.forEach(venta => {
-    ventasDelDiaMap.set(venta.numeroVenta, venta);
-  });
+    // ✅ Ya no carga items - usa gananciaTotalVenta del documento principal
+    ventasList.forEach(venta => {
+      const totalVenta = parseFloat(venta.totalVenta || 0);
+      total += totalVenta;
+      gananciaBruta += totalVenta;
 
-  ventasConItems.forEach(venta => {
-    const totalVenta = parseFloat(venta.totalVenta || 0);
-    total += totalVenta;
-    gananciaBruta += totalVenta;
-
-    if (venta.tipoVenta !== 'abono') {
-      if (venta.gananciaTotalVenta && typeof venta.gananciaTotalVenta === 'number') {
-        gananciaReal += venta.gananciaTotalVenta;
-      } else if (venta.items && venta.items.length > 0) {
-        const gananciaVenta = venta.items.reduce((gananciaItem, item) => {
-          if (item.gananciaTotal && typeof item.gananciaTotal === 'number') {
-            return gananciaItem + item.gananciaTotal;
-          } else {
-            const precioVenta = parseFloat(item.precioVentaUnitario || 0);
-            const cantidad = parseInt(item.cantidad || 0);
-            const subtotal = precioVenta * cantidad;
-            const gananciaEstimada = subtotal * 0.4;
-            return gananciaItem + gananciaEstimada;
-          }
-        }, 0);
-        gananciaReal += gananciaVenta;
-      } else {
-        const gananciaEstimada = totalVenta * 0.4;
-        gananciaReal += gananciaEstimada;
+      if (venta.tipoVenta !== 'abono') {
+        // Usar campo directo del documento - SIN cargar subcolección
+        if (venta.gananciaTotalVenta && typeof venta.gananciaTotalVenta === 'number') {
+          gananciaReal += venta.gananciaTotalVenta;
+        } else {
+          // Estimación si no tiene el campo
+          gananciaReal += totalVenta * 0.4;
+        }
       }
-    }
 
-    // Clasificar por método de pago
-    if (venta.paymentData && venta.paymentData.paymentMethods) {
-      venta.paymentData.paymentMethods.forEach(pm => {
-        const amount = parseFloat(pm.amount || 0);
-        switch (pm.method?.toLowerCase()) {
-          case 'efectivo': efectivo += amount; break;
-          case 'yape': yape += amount; break;
-          case 'plin': plin += amount; break;
+      // Clasificar por método de pago
+      if (venta.paymentData && venta.paymentData.paymentMethods) {
+        venta.paymentData.paymentMethods.forEach(pm => {
+          const amount = parseFloat(pm.amount || 0);
+          switch (pm.method?.toLowerCase()) {
+            case 'efectivo': efectivo += amount; break;
+            case 'yape': yape += amount; break;
+            case 'plin': plin += amount; break;
+            case 'tarjeta':
+            case 'tarjeta_credito':
+            case 'tarjeta_debito': tarjeta += amount; break;
+          }
+        });
+      } else {
+        switch (venta.metodoPago?.toLowerCase()) {
+          case 'efectivo': efectivo += totalVenta; break;
+          case 'yape': yape += totalVenta; break;
+          case 'plin': plin += totalVenta; break;
           case 'tarjeta':
           case 'tarjeta_credito':
-          case 'tarjeta_debito': tarjeta += amount; break;
-          default: break;
+          case 'tarjeta_debito': tarjeta += totalVenta; break;
         }
-      });
-    } else {
-      switch (venta.metodoPago?.toLowerCase()) {
-        case 'efectivo': efectivo += totalVenta; break;
-        case 'yape': yape += totalVenta; break;
-        case 'plin': plin += totalVenta; break;
+      }
+    });
+
+    // Procesar devoluciones (igual que antes)
+    const ventasDelDiaMap = new Map();
+    ventasList.forEach(venta => ventasDelDiaMap.set(venta.numeroVenta, venta));
+
+    let devolucionesEfectivo = 0, devolucionesYape = 0, devolucionesPlin = 0, devolucionesTarjeta = 0;
+    let totalDevuelto = 0;
+    let gananciaRealDescontada = 0;
+    const devolucionesDelMismoDia = [];
+    const devolucionesDeDiasAnteriores = [];
+
+    devolucionesList.forEach(dev => {
+      if (dev.estado === 'aprobada') {
+        ventasDelDiaMap.has(dev.numeroVenta)
+          ? devolucionesDelMismoDia.push(dev)
+          : devolucionesDeDiasAnteriores.push(dev);
+      }
+    });
+
+    // Devoluciones del mismo día
+    devolucionesDelMismoDia.forEach(dev => {
+      const monto = parseFloat(dev.montoADevolver || 0);
+      totalDevuelto += monto;
+      gananciaBruta -= monto;
+
+      // Usar gananciaRealAfectada si existe, sino estimación
+      const gananciaDescontar = dev.gananciaRealAfectada || (monto * 0.4);
+      gananciaReal -= gananciaDescontar;
+      gananciaRealDescontada += gananciaDescontar;
+
+      switch (dev.metodoPagoOriginal?.toLowerCase()) {
+        case 'efectivo': devolucionesEfectivo += monto; efectivo -= monto; break;
+        case 'yape': devolucionesYape += monto; yape -= monto; break;
+        case 'plin': devolucionesPlin += monto; plin -= monto; break;
         case 'tarjeta':
         case 'tarjeta_credito':
-        case 'tarjeta_debito': tarjeta += totalVenta; break;
-        default: break;
+        case 'tarjeta_debito': devolucionesTarjeta += monto; tarjeta -= monto; break;
       }
-    }
-  });
+    });
 
-  // NUEVA LÓGICA: Procesar devoluciones con distinción por fecha
-  let devolucionesEfectivo = 0, devolucionesYape = 0, devolucionesPlin = 0, devolucionesTarjeta = 0;
-  let totalDevuelto = 0;
-  let gananciaRealDescontadaPorDevolucionesDelDia = 0;
+    // Devoluciones de días anteriores
+    devolucionesDeDiasAnteriores.forEach(dev => {
+      const monto = parseFloat(dev.montoADevolver || 0);
+      totalDevuelto += monto;
+      gananciaBruta -= monto;
 
-  const devolucionesDelMismoDia = [];
-  const devolucionesDeDiasAnteriores = [];
-
-  // Clasificar devoluciones por fecha
-  devolucionesList.forEach(devolucion => {
-    if (devolucion.estado === 'aprobada') {
-      const esDelMismoDia = ventasDelDiaMap.has(devolucion.numeroVenta);
-      
-      if (esDelMismoDia) {
-        devolucionesDelMismoDia.push(devolucion);
-      } else {
-        devolucionesDeDiasAnteriores.push(devolucion);
+      switch (dev.metodoPagoOriginal?.toLowerCase()) {
+        case 'efectivo': devolucionesEfectivo += monto; efectivo -= monto; break;
+        case 'yape': devolucionesYape += monto; yape -= monto; break;
+        case 'plin': devolucionesPlin += monto; plin -= monto; break;
+        case 'tarjeta':
+        case 'tarjeta_credito':
+        case 'tarjeta_debito': devolucionesTarjeta += monto; tarjeta -= monto; break;
       }
-    }
-  });
+    });
 
-  // Procesar devoluciones del mismo día
-for (const devolucion of devolucionesDelMismoDia) {
-  const montoDevuelto = parseFloat(devolucion.montoADevolver || 0);
-  totalDevuelto += montoDevuelto;
-  
-  // Restar de ganancia bruta
-  gananciaBruta -= montoDevuelto;
-  
-  // CRÍTICO: Restar ganancia real del producto devuelto - MÉTODO CORREGIDO
-  const ventaOriginal = ventasDelDiaMap.get(devolucion.numeroVenta);
-  if (ventaOriginal) {
-    const gananciaRealADescontar = await calcularGananciaRealADescontarPorDevolucion(devolucion, ventaOriginal);
-    gananciaReal -= gananciaRealADescontar;
-    gananciaRealDescontadaPorDevolucionesDelDia += gananciaRealADescontar;
-  }
-  
-  // Clasificar por método de pago original (sin cambios)
-  switch (devolucion.metodoPagoOriginal?.toLowerCase()) {
-    case 'efectivo': 
-      devolucionesEfectivo += montoDevuelto;
-      efectivo -= montoDevuelto;
-      break;
-    case 'yape': 
-      devolucionesYape += montoDevuelto;
-      yape -= montoDevuelto;
-      break;
-    case 'plin': 
-      devolucionesPlin += montoDevuelto;
-      plin -= montoDevuelto;
-      break;
-    case 'tarjeta':
-    case 'tarjeta_credito':
-    case 'tarjeta_debito': 
-      devolucionesTarjeta += montoDevuelto;
-      tarjeta -= montoDevuelto;
-      break;
-  }
-}
+    setTotalesDelDia({
+      efectivo: Math.max(0, efectivo),
+      yape: Math.max(0, yape),
+      plin: Math.max(0, plin),
+      tarjeta: Math.max(0, tarjeta),
+      total: total - totalDevuelto,
+      gananciaBruta: Math.max(0, gananciaBruta),
+      gananciaReal: Math.max(0, gananciaReal)
+    });
 
-
-  // Procesar devoluciones de días anteriores
-  for (const devolucion of devolucionesDeDiasAnteriores) {
-    const montoDevuelto = parseFloat(devolucion.montoADevolver || 0);
-    totalDevuelto += montoDevuelto;
-    
-    // SOLO restar de ganancia bruta (no de ganancia real)
-    gananciaBruta -= montoDevuelto;
-    
-    // Clasificar por método de pago original
-    switch (devolucion.metodoPagoOriginal?.toLowerCase()) {
-      case 'efectivo': 
-        devolucionesEfectivo += montoDevuelto;
-        efectivo -= montoDevuelto;
-        break;
-      case 'yape': 
-        devolucionesYape += montoDevuelto;
-        yape -= montoDevuelto;
-        break;
-      case 'plin': 
-        devolucionesPlin += montoDevuelto;
-        plin -= montoDevuelto;
-        break;
-      case 'tarjeta':
-      case 'tarjeta_credito':
-      case 'tarjeta_debito': 
-        devolucionesTarjeta += montoDevuelto;
-        tarjeta -= montoDevuelto;
-        break;
-    }
-  }
-
-  // Actualizar estados
-  setTotalesDelDia({
-    efectivo: Math.max(0, efectivo),
-    yape: Math.max(0, yape),
-    plin: Math.max(0, plin),
-    tarjeta: Math.max(0, tarjeta),
-    total: total - totalDevuelto,
-    gananciaBruta: Math.max(0, gananciaBruta),
-    gananciaReal: Math.max(0, gananciaReal)
-  });
-
-  setDevolucionesDelDia({
-    totalDevuelto,
-    efectivo: devolucionesEfectivo,
-    yape: devolucionesYape,
-    plin: devolucionesPlin,
-    tarjeta: devolucionesTarjeta,
-    // NUEVOS CAMPOS PARA TRACKING
-    delMismoDia: devolucionesDelMismoDia.length,
-    deDiasAnteriores: devolucionesDeDiasAnteriores.length,
-    gananciaRealDescontada: gananciaRealDescontadaPorDevolucionesDelDia
-  });
-
-  console.log('=== ANÁLISIS DE DEVOLUCIONES ===');
-  console.log('Devoluciones del mismo día:', devolucionesDelMismoDia.length);
-  console.log('Devoluciones de días anteriores:', devolucionesDeDiasAnteriores.length);
-  console.log('Ganancia real descontada por devoluciones del día:', gananciaRealDescontadaPorDevolucionesDelDia);
-};
+    setDevolucionesDelDia({
+      totalDevuelto,
+      efectivo: devolucionesEfectivo,
+      yape: devolucionesYape,
+      plin: devolucionesPlin,
+      tarjeta: devolucionesTarjeta,
+      delMismoDia: devolucionesDelMismoDia.length,
+      deDiasAnteriores: devolucionesDeDiasAnteriores.length,
+      gananciaRealDescontada
+    });
+  };
 
 // Función para marcar venta como parcial o totalmente devuelta
 const actualizarEstadoVentaPorDevolucion = async (numeroVenta, montoDevuelto, montoTotalVenta) => {
@@ -1767,22 +1689,22 @@ const calcularRetiros = (retirosList) => {
 
 const mostrarDetalleGanancia = async (venta) => {
   try {
-    setLoading(true); // Opcional: mostrar loading mientras se carga
+    setLoading(true);
+    // Aquí sí carga items, pero solo para UNA venta y solo cuando se pide
     const detalle = await obtenerDetalleGanancia(venta.id);
-    setDetalleGananciaData({
-      venta: venta,
-      detalle: detalle
-    });
+    setDetalleGananciaData({ venta, detalle });
     setShowDetalleGanancia(true);
   } catch (error) {
-    console.error('Error al mostrar detalle de ganancia:', error);
-    alert('Error al cargar los detalles de la venta: ' + error.message);
+    alert('Error: ' + error.message);
   } finally {
     setLoading(false);
   }
 };
 
-
+  const totalPagesVentas = Math.ceil(ventas.length / ventasPerPageCaja);
+  const indexOfLastVenta = currentPageVentas * ventasPerPageCaja;
+  const indexOfFirstVenta = indexOfLastVenta - ventasPerPageCaja;
+  const currentVentasCaja = ventas.slice(indexOfFirstVenta, indexOfLastVenta);
   
 
   if (loading) {
@@ -1819,13 +1741,10 @@ const mostrarDetalleGanancia = async (venta) => {
       {/* Selector de fecha */}
       <div className="flex items-center justify-center space-x-2">
         <CalendarIcon className="h-4 w-4 lg:h-5 lg:w-5 text-gray-500" />
-        <DatePicker
+        <CustomDatePicker
           selected={selectedDate}
           onChange={(date) => setSelectedDate(date)}
-          dateFormat="dd/MM/yyyy"
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm lg:text-base w-full sm:w-auto"
-          maxDate={new Date()}
-          disabled={false}
+          placeholder="DD / MM / AAAA"
         />
       </div>
       
@@ -2084,7 +2003,7 @@ const mostrarDetalleGanancia = async (venta) => {
           </tr>
         </thead>
         <tbody>
-          {ventas.map((venta, index) => {
+          {currentVentasCaja.map((venta, index) => {
             const indicadorEstado = obtenerIndicadorEstadoVenta(venta, devoluciones);
             const tieneDevolucion = indicadorEstado !== null;
             
@@ -2150,6 +2069,34 @@ const mostrarDetalleGanancia = async (venta) => {
           })}
         </tbody>
       </table>
+      {ventas.length > ventasPerPageCaja && (
+      <div className="flex justify-between items-center mt-4">
+        <p className="text-sm text-gray-700">
+          Mostrando <span className="font-medium">{indexOfFirstVenta + 1}</span> a{' '}
+          <span className="font-medium">{Math.min(indexOfLastVenta, ventas.length)}</span> de{' '}
+          <span className="font-medium">{ventas.length}</span> ventas
+        </p>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setCurrentPageVentas(p => Math.max(p - 1, 1))}
+            disabled={currentPageVentas === 1}
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronLeftIcon className="h-5 w-5" />
+          </button>
+          <span className="px-3 py-1 text-sm text-gray-700">
+            Página {currentPageVentas} de {totalPagesVentas}
+          </span>
+          <button
+            onClick={() => setCurrentPageVentas(p => Math.min(p + 1, totalPagesVentas))}
+            disabled={currentPageVentas === totalPagesVentas}
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronRightIcon className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    )}
     </div>
   )}
 </div>

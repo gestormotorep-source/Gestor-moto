@@ -14,7 +14,10 @@ import {
   updateDoc,
   where,
   addDoc,
-  serverTimestamp
+  serverTimestamp,
+  limit,
+  startAfter,
+  getCountFromServer
 } from 'firebase/firestore';
 import {
   PencilIcon,
@@ -40,11 +43,16 @@ import ProductModelsModal from '../../components/modals/ProductModelsModal';
 import ConfirmModal from '../../components/modals/ConfirmModal';
 import AlertModal from '../../components/modals/AlertModal';
 
+
 const ProductosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
   const [productos, setProductos] = useState([]);
+  const [lastDoc, setLastDoc] = useState(null);
+  const [totalProductos, setTotalProductos] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [allLoaded, setAllLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updatingPrices, setUpdatingPrices] = useState(false);
@@ -191,38 +199,33 @@ const ProductosPage = () => {
 
   // Función para actualizar precios de todos los productos
   const actualizarTodosLosPrecios = async () => {
-    if (!window.confirm('¿Está seguro de que desea recalcular los precios de compra de todos los productos basado en sus lotes disponibles? Esta operación puede tomar unos momentos.')) {
-      return;
-    }
-    
-    setUpdatingPrices(true);
-    let actualizados = 0;
-    let errores = 0;
-    
-    try {
-      for (const producto of productos) {
+  if (!window.confirm('¿Recalcular precios de todos los productos?')) return;
+  
+  setUpdatingPrices(true);
+  let actualizados = 0;
+  let errores = 0;
+
+  // Procesar en lotes de 10 en paralelo
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < productos.length; i += BATCH_SIZE) {
+    const batch = productos.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (producto) => {
         try {
           await recalcularPrecioCompraFIFO(producto.id);
           actualizados++;
-        } catch (error) {
-          console.error(`Error al actualizar producto ${producto.id}:`, error);
+        } catch {
           errores++;
         }
-      }
-      
-      // Recargar la lista de productos
-      await fetchProductos();
-      
-      setAlertMessage(`Actualización completa: ${actualizados} productos actualizados${errores > 0 ? `, ${errores} errores` : ''}.`);
-      setIsAlertModalOpen(true);
-      
-    } catch (error) {
-      console.error('Error general al actualizar precios:', error);
-      setError('Error al actualizar los precios. Intente de nuevo.');
-    } finally {
-      setUpdatingPrices(false);
-    }
-  };
+      })
+    );
+  }
+
+  await fetchProductos();
+  setAlertMessage(`Actualización completa: ${actualizados} actualizados${errores > 0 ? `, ${errores} errores` : ''}.`);
+  setIsAlertModalOpen(true);
+  setUpdatingPrices(false);
+};
 
   // Función para recalcular precio de un producto específico
   const recalcularProductoEspecifico = async (productoId) => {
@@ -264,62 +267,217 @@ const ProductosPage = () => {
   };
 
   // Función para cargar todos los productos
-  const fetchProductos = async () => {
-    if (!user) {
-      router.push('/auth');
-      return;
+// Reemplaza fetchProductos
+  const fetchProductos = async (loadMore = false) => {
+    if (!user) { router.push('/auth'); return; }
+    
+    if (!loadMore) {
+      setLoading(true);
+      setLastDoc(null);
+      setAllLoaded(false);
+    } else {
+      setLoadingMore(true);
     }
-    setLoading(true);
+    
     setError(null);
+
     try {
-      const qProductos = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
-      const productosSnapshot = await getDocs(qProductos);
-      const productosList = productosSnapshot.docs.map(doc => ({
+      // Contar total
+      if (!loadMore) {
+        const countSnap = await getCountFromServer(
+          query(collection(db, 'productos'))
+        );
+        setTotalProductos(countSnap.data().count);
+      }
+
+      let q;
+      if (loadMore && lastDoc) {
+        q = query(
+          collection(db, 'productos'),
+          orderBy('nombre', 'asc'),
+          startAfter(lastDoc),
+          limit(100)
+        );
+      } else {
+        q = query(
+          collection(db, 'productos'),
+          orderBy('nombre', 'asc'),
+          limit(100)
+        );
+      }
+
+      const snapshot = await getDocs(q);
+      
+      const productosList = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setProductos(productosList);
-      setFilteredProductos(productosList);
+
+      if (snapshot.docs.length < 100) setAllLoaded(true);
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+
+      if (loadMore) {
+        setProductos(prev => {
+          const updated = [...prev, ...productosList];
+          setFilteredProductos(updated);
+          return updated;
+        });
+      } else {
+        setProductos(productosList);
+        setFilteredProductos(productosList);
+      }
+
     } catch (err) {
       console.error("Error al cargar productos:", err);
-      setError("Error al cargar la información de productos. Intente de nuevo.");
+      setError("Error al cargar productos.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchProductos();
-  }, [user, router]);
+      fetchProductos();
+    }, [user, router]);
+
+    // Reemplaza el useEffect de filtros o agrégalo
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      applyFilters();
+    }, 300); // debounce 300ms
+
+    return () => clearTimeout(timeoutId);
+  }, [filterNombre, filterCodigoTienda, filterCodigoProveedor, 
+      filterMarca, filterMedida, filterUbicacion, filterModelosCompatibles, productos]);
 
   // Lógica de filtrado combinada
-  const applyFilters = () => {
+const applyFilters = async () => {
   const lowerFilterNombre = filterNombre.toLowerCase();
   const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
-  const lowerFilterMarca = filterMarca.toLowerCase(); // Cambiado de filterColor
+  const lowerFilterMarca = filterMarca.toLowerCase();
   const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
   const lowerFilterUbicacion = filterUbicacion.toLowerCase();
   const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
   const lowerFilterMedida = filterMedida.toLowerCase();
 
+  // Filtrar localmente primero
   const filtered = productos.filter(producto => {
     const matchesNombre = producto.nombre.toLowerCase().includes(lowerFilterNombre);
-    const matchesCodigoProveedor = (producto.codigoProveedor && producto.codigoProveedor.toLowerCase().includes(lowerFilterCodigoProveedor)) || lowerFilterCodigoProveedor === '';
-    const matchesMarca = (producto.marca && producto.marca.toLowerCase().includes(lowerFilterMarca)) || lowerFilterMarca === ''; // Cambiado de matchesColor
+    const matchesCodigoProveedor = (producto.codigoProveedor?.toLowerCase().includes(lowerFilterCodigoProveedor)) || lowerFilterCodigoProveedor === '';
+    const matchesMarca = (producto.marca?.toLowerCase().includes(lowerFilterMarca)) || lowerFilterMarca === '';
     const matchesCodigoTienda = producto.codigoTienda.toLowerCase().includes(lowerFilterCodigoTienda);
-    const matchesUbicacion = (producto.ubicacion && producto.ubicacion.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
-    const matchesModelosCompatibles = (producto.modelosCompatiblesTexto && producto.modelosCompatiblesTexto.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
-    const matchesMedida = (producto.medida && producto.medida.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
+    const matchesUbicacion = (producto.ubicacion?.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
+    const matchesModelosCompatibles = (producto.modelosCompatiblesTexto?.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
+    const matchesMedida = (producto.medida?.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
 
-    return matchesNombre && matchesCodigoTienda && matchesCodigoProveedor && matchesUbicacion && matchesModelosCompatibles && matchesMarca && matchesMedida; // Cambiado matchesColor por matchesMarca
+    return matchesNombre && matchesCodigoTienda && matchesCodigoProveedor && 
+           matchesUbicacion && matchesModelosCompatibles && matchesMarca && matchesMedida;
   });
-  
-  setFilteredProductos(filtered);
-  setCurrentPage(1); // Resetear a la primera página al aplicar filtros
-  
-  // Limpiar el ordenamiento al aplicar filtros
-  setSortColumn(null);
-  setSortDirection('asc');
+
+  // Si encontró resultados localmente, usarlos
+  if (filtered.length > 0) {
+    setFilteredProductos(filtered);
+    setCurrentPage(1);
+    setSortColumn(null);
+    setSortDirection('asc');
+    return;
+  }
+
+  // Si no encontró nada y hay algún filtro activo, buscar en Firestore
+  const hayFiltros = filterNombre || filterCodigoTienda || filterCodigoProveedor || 
+                     filterMarca || filterMedida || filterUbicacion || filterModelosCompatibles;
+
+  if (!hayFiltros) {
+    setFilteredProductos(productos);
+    setCurrentPage(1);
+    return;
+  }
+
+  // Buscar en Firestore
+  try {
+    setLoading(true);
+    const { getDocs: getDocsFS } = await import('firebase/firestore');
+    const resultados = new Map();
+
+    // Buscar por nombre con prefijo
+    if (filterNombre) {
+      const termUpper = filterNombre.toUpperCase();
+      const termCap = filterNombre.charAt(0).toUpperCase() + filterNombre.slice(1).toLowerCase();
+
+      const queries = [
+        query(collection(db, 'productos'),
+          where('nombre', '>=', termUpper),
+          where('nombre', '<=', termUpper + '\uf8ff'),
+          limit(50)
+        ),
+        query(collection(db, 'productos'),
+          where('nombre', '>=', termCap),
+          where('nombre', '<=', termCap + '\uf8ff'),
+          limit(50)
+        ),
+      ];
+
+      const snaps = await Promise.all(queries.map(q => getDocsFS(q)));
+      snaps.forEach(snap => {
+        snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
+      });
+    }
+
+    // Buscar por código de tienda exacto
+    if (filterCodigoTienda) {
+      const snap = await getDocsFS(query(
+        collection(db, 'productos'),
+        where('codigoTienda', '==', filterCodigoTienda.toUpperCase()),
+        limit(20)
+      ));
+      snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
+    }
+
+    // Buscar por código proveedor exacto
+    if (filterCodigoProveedor) {
+      const snap = await getDocsFS(query(
+        collection(db, 'productos'),
+        where('codigoProveedor', '==', filterCodigoProveedor.toUpperCase()),
+        limit(20)
+      ));
+      snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
+    }
+
+    // Buscar por marca con prefijo
+    if (filterMarca) {
+      const termUpper = filterMarca.toUpperCase();
+      const snap = await getDocsFS(query(
+        collection(db, 'productos'),
+        where('marca', '>=', termUpper),
+        where('marca', '<=', termUpper + '\uf8ff'),
+        limit(50)
+      ));
+      snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
+    }
+
+    if (resultados.size > 0) {
+      // Aplicar filtros restantes localmente sobre los resultados de Firestore
+      const finalResults = Array.from(resultados.values()).filter(producto => {
+        const matchesMedida = !filterMedida || producto.medida?.toLowerCase().includes(filterMedida.toLowerCase());
+        const matchesUbicacion = !filterUbicacion || producto.ubicacion?.toLowerCase().includes(filterUbicacion.toLowerCase());
+        const matchesModelos = !filterModelosCompatibles || producto.modelosCompatiblesTexto?.toLowerCase().includes(filterModelosCompatibles.toLowerCase());
+        return matchesMedida && matchesUbicacion && matchesModelos;
+      });
+
+      setFilteredProductos(finalResults);
+    } else {
+      setFilteredProductos([]);
+    }
+
+    setCurrentPage(1);
+    setSortColumn(null);
+    setSortDirection('asc');
+  } catch (err) {
+    console.error('Error en búsqueda Firestore:', err);
+    setError('Error al buscar productos');
+  } finally {
+    setLoading(false);
+  }
 };
 
   const handleSearchClick = () => {
@@ -1005,7 +1163,7 @@ const downloadExcelTemplate = () => {
           ) : filteredProductos.length === 0 ? (
             <p className="p-4 text-center text-gray-500">No se encontraron productos que coincidan con los filtros aplicados.</p>
           ) : (
-            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
+            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto max-h-[65vh]">
               <table className="min-w-full border-collapse">
                 <thead className="sticky top-0 z-10 bg-gray-100">
                   <tr>
@@ -1146,6 +1304,31 @@ const downloadExcelTemplate = () => {
             </div>
           )}
 
+          {/* Botón cargar más - antes de la paginación */}
+          {!allLoaded && !loading && (
+            <div className="flex justify-center items-center mt-3 gap-3">
+              <span className="text-sm text-gray-500">
+                Mostrando {productos.length} de {totalProductos} productos
+              </span>
+              <button
+                onClick={() => fetchProductos(true)}
+                disabled={loadingMore}
+                className="inline-flex items-center px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                    </svg>
+                    Cargando...
+                  </>
+                ) : (
+                  `Cargar más (${totalProductos - productos.length} restantes)`
+                )}
+              </button>
+            </div>
+          )}
           {/* Controles de paginación */}
           {filteredProductos.length > productsPerPage && (
             <div className="flex justify-between items-center mt-4">
