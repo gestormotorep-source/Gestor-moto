@@ -40,7 +40,6 @@ const NuevaVentaPage = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [products, setProducts] = useState([]);
   const [clientes, setClientes] = useState([]);
 
   const [ventaPrincipalData, setVentaPrincipalData] = useState({
@@ -88,92 +87,77 @@ const NuevaVentaPage = () => {
   const [editPrecio, setEditPrecio] = useState(0);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!user) {
-        router.push('/auth');
-        return;
-      }
+    // Reemplaza el fetchData completo
+  const fetchData = async () => {
+    if (!user) { router.push('/auth'); return; }
 
-      setLoadingData(true);
-      setError(null);
+    setLoadingData(true);
+    setError(null);
 
-      try {
-        // 1. Cargar Productos
-        const qProducts = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
-        const productSnapshot = await getDocs(qProducts);
-        const productsList = productSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setProducts(productsList);
+    try {
+      // ✅ Solo carga clientes - son pocos y se necesitan al inicio
+      const qClientes = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
+      const clienteSnapshot = await getDocs(qClientes);
+      const clientesList = clienteSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setClientes(clientesList);
 
-        // 2. Cargar Clientes
-        const qClientes = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
-        const clienteSnapshot = await getDocs(qClientes);
-        const clientesList = clienteSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setClientes(clientesList);
+      // Cargar venta en borrador si existe
+      if (activeSale && activeSale.saleId) {
+        const saleDocRef = doc(db, 'ventas', activeSale.saleId);
+        const saleSnap = await getDoc(saleDocRef);
 
-        // 3. Cargar venta en borrador si existe en el contexto
-        if (activeSale && activeSale.saleId) {
-          const saleDocRef = doc(db, 'ventas', activeSale.saleId);
-          const saleSnap = await getDoc(saleDocRef);
+        if (saleSnap.exists() && saleSnap.data().estado === 'borrador') {
+          const saleData = saleSnap.data();
+          setVentaPrincipalData({
+            id: saleSnap.id,
+            numeroVenta: saleData.numeroVenta,
+            clienteId: saleData.clienteId,
+            observaciones: saleData.observaciones || '',
+            estado: saleData.estado,
+            tipoVenta: saleData.tipoVenta
+          });
 
-          if (saleSnap.exists() && saleSnap.data().estado === 'borrador') {
-            const saleData = saleSnap.data();
-            setVentaPrincipalData({
-              id: saleSnap.id,
-              numeroVenta: saleData.numeroVenta,
-              clienteId: saleData.clienteId,
-              observaciones: saleData.observaciones || '',
-              estado: saleData.estado,
-              tipoVenta: saleData.tipoVenta
-            });
+          if (saleData.paymentData) setPaymentData(saleData.paymentData);
 
-            if (saleData.paymentData) {
-              setPaymentData(saleData.paymentData);
-            }
-
-            // CARGAR ITEMS CON CAMPOS OCULTOS
-            const qItems = query(collection(saleDocRef, 'itemsVenta'), orderBy('createdAt', 'asc'));
-            const itemsSnapshot = await getDocs(qItems);
-            const itemsList = itemsSnapshot.docs.map(itemDoc => {
-                const data = itemDoc.data();
-                return {
-                id: itemDoc.id,
-                ...data,
-                subtotal: parseFloat(data.subtotal).toFixed(2),
-                // MANTENER CAMPOS OCULTOS PARA CÁLCULOS POSTERIORES
-                precioCompraUnitario: data.precioCompraUnitario || 0, // OCULTO
-                gananciaUnitaria: data.gananciaUnitaria || 0, // OCULTO
-                gananciaTotal: data.gananciaTotal || 0, // OCULTO
-                };
-            });
-            setItemsVenta(itemsList);
-            alert(`Venta borrador ${saleData.numeroVenta} cargada.`);
-          } else {
-            clearActiveSale();
-            setVentaPrincipalData(prev => ({
-              ...prev,
-              clienteId: clientesList.find(c => c.id === 'cliente-no-registrado')?.id || '',
-            }));
-          }
+          const qItems = query(collection(saleDocRef, 'itemsVenta'), orderBy('createdAt', 'asc'));
+          const itemsSnapshot = await getDocs(qItems);
+          const itemsList = itemsSnapshot.docs.map(itemDoc => {
+            const data = itemDoc.data();
+            return {
+              id: itemDoc.id,
+              ...data,
+              subtotal: parseFloat(data.subtotal).toFixed(2),
+              precioCompraUnitario: data.precioCompraUnitario || 0,
+              gananciaUnitaria: data.gananciaUnitaria || 0,
+              gananciaTotal: data.gananciaTotal || 0,
+            };
+          });
+          setItemsVenta(itemsList);
+          alert(`Venta borrador ${saleData.numeroVenta} cargada.`);
         } else {
+          clearActiveSale();
           setVentaPrincipalData(prev => ({
             ...prev,
             clienteId: clientesList.find(c => c.id === 'cliente-no-registrado')?.id || '',
           }));
         }
-
-      } catch (err) {
-        console.error("Error al cargar datos:", err);
-        setError("Error al cargar los datos: " + err.message);
-      } finally {
-        setLoadingData(false);
+      } else {
+        setVentaPrincipalData(prev => ({
+          ...prev,
+          clienteId: clientesList.find(c => c.id === 'cliente-no-registrado')?.id || '',
+        }));
       }
-    };
+
+    } catch (err) {
+      console.error("Error al cargar datos:", err);
+      setError("Error al cargar los datos: " + err.message);
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
     if (router.isReady) {
       fetchData();
@@ -181,32 +165,69 @@ const NuevaVentaPage = () => {
   }, [user, router.isReady, activeSale]);
 
   // Búsqueda de productos mejorada (estilo cotizaciones)
-  const searchProducts = async (searchTerm) => {
-    if (!searchTerm.trim()) {
+  const searchProducts = async (term) => {
+    if (!term.trim()) {
       setFilteredProductos([]);
       return;
     }
 
     setIsSearching(true);
     try {
-      const searchTermLower = searchTerm.toLowerCase();
-      
-      const filtered = products.filter(producto => {
-        const nombre = (producto.nombre || '').toLowerCase();
-        const marca = (producto.marca || '').toLowerCase();
-        const codigoTienda = (producto.codigoTienda || '').toLowerCase();
-        const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
-        const descripcion = (producto.descripcion || '').toLowerCase();
-        const modelosCompatiblesIds = (producto.modelosCompatiblesIds || []).join(' ').toLowerCase();
-        const modelosCompatiblesTexto = (producto.modelosCompatiblesTexto || '').toLowerCase();
+      const termLower = term.toLowerCase();
+      const termUpper = term.toUpperCase();
+      const termCap = term.charAt(0).toUpperCase() + term.slice(1).toLowerCase();
 
-        return nombre.includes(searchTermLower) ||
-              marca.includes(searchTermLower) ||
-              codigoTienda.includes(searchTermLower) ||
-              codigoProveedor.includes(searchTermLower) ||
-              descripcion.includes(searchTermLower) ||
-              modelosCompatiblesIds.includes(searchTermLower) ||
-              modelosCompatiblesTexto.includes(searchTermLower);
+      const { getDocs: getDocsFS } = await import('firebase/firestore');
+
+      // Buscar por nombre, código tienda y código proveedor en paralelo
+      const [snapNombreUpper, snapNombreCap, snapCodigo, snapCodigoP] = await Promise.all([
+        getDocsFS(query(
+          collection(db, 'productos'),
+          where('nombre', '>=', termUpper),
+          where('nombre', '<=', termUpper + '\uf8ff'),
+          limit(20)
+        )),
+        getDocsFS(query(
+          collection(db, 'productos'),
+          where('nombre', '>=', termCap),
+          where('nombre', '<=', termCap + '\uf8ff'),
+          limit(20)
+        )),
+        getDocsFS(query(
+          collection(db, 'productos'),
+          where('codigoTienda', '==', termUpper),
+          limit(5)
+        )),
+        getDocsFS(query(
+          collection(db, 'productos'),
+          where('codigoProveedor', '==', termUpper),
+          limit(5)
+        )),
+      ]);
+
+      const idsVistos = new Set();
+      const resultados = [];
+
+      [...snapNombreUpper.docs, ...snapNombreCap.docs, ...snapCodigo.docs, ...snapCodigoP.docs].forEach(d => {
+        if (!idsVistos.has(d.id)) {
+          idsVistos.add(d.id);
+          resultados.push({ id: d.id, ...d.data() });
+        }
+      });
+
+      // Filtro local adicional para marcas y modelos compatibles
+      const filtered = resultados.filter(p => {
+        const nombre = (p.nombre || '').toLowerCase();
+        const marca = (p.marca || '').toLowerCase();
+        const codigoTienda = (p.codigoTienda || '').toLowerCase();
+        const codigoProveedor = (p.codigoProveedor || '').toLowerCase();
+        const modelosTexto = (p.modelosCompatiblesTexto || '').toLowerCase();
+
+        return nombre.includes(termLower) ||
+              marca.includes(termLower) ||
+              codigoTienda.includes(termLower) ||
+              codigoProveedor.includes(termLower) ||
+              modelosTexto.includes(termLower);
       });
 
       setFilteredProductos(filtered);
@@ -476,7 +497,8 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
 
     try {
       // OBTENER DATOS ACTUALIZADOS DEL PRODUCTO
-      const productoActual = products.find(p => p.id === editingItem.productoId);
+      const productSnap = await getDoc(doc(db, 'productos', editingItem.productoId));
+      const productoActual = productSnap.exists() ? productSnap.data() : null;
       
       // OBTENER PRECIO DE COMPRA FIFO ACTUALIZADO
       const precioCompraFIFO = await obtenerPrecioCompraFIFO(editingItem.productoId);
