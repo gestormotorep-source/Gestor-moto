@@ -128,7 +128,13 @@ const VentasIndexPage = () => {
           ...data,
           fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
           fechaVentaFormatted: data.fechaVenta?.toDate
-            ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
+            ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
+                year: 'numeric',
+                month: '2-digit', 
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
             : 'N/A',
         };
 
@@ -354,12 +360,29 @@ const VentasIndexPage = () => {
                   ...data,
                   fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
                   fechaVentaFormatted: data.fechaVenta?.toDate
-                    ? data.fechaVenta.toDate().toLocaleDateString('es-ES')
-                    : 'N/A',
+                  ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                  : 'N/A',
                 });
               }
             });
 
+            if (resultados.length > 0) {
+              // ✅ Ordenar por fecha descendente
+              resultados.sort((a, b) => {
+                const fechaA = a.fechaVenta instanceof Date ? a.fechaVenta : new Date(a.fechaVenta);
+                const fechaB = b.fechaVenta instanceof Date ? b.fechaVenta : new Date(b.fechaVenta);
+                return fechaB - fechaA;
+              });
+
+              setFilteredVentas(resultados);
+              setCurrentPage(1);
+            } 
             if (resultados.length > 0) {
               setFilteredVentas(resultados);
               setCurrentPage(1);
