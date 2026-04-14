@@ -225,12 +225,27 @@ const AddEditProductoPage = () => {
         }
       }
 
+      const palabrasClave = [...new Set(
+        [
+          formData.nombre || '',
+          formData.marca || '',
+          formData.codigoTienda || '',
+          formData.codigoProveedor || '',
+          formData.modelosCompatiblesTexto || '',
+        ]
+        .join(' ')
+        .toUpperCase()
+        .split(/[\s\-\/,]+/)
+        .filter(p => p.length >= 2)
+      )];
+
       const productDataToSave = {
         ...formData,
         imageUrls: finalImageUrls,
         precioVentaMinimo: formData.precioVentaMinimo, // NUEVO: Guardar precio mínimo
         // Mantener compatibilidad con el campo anterior
         imageUrl: finalImageUrls.length > 0 ? finalImageUrls[0] : '',
+        palabrasClave,
         modelosCompatiblesIds: [],
         modelosCompatiblesTexto: formData.modelosCompatiblesTexto,
         descripcionPuntos: formData.descripcionPuntos,

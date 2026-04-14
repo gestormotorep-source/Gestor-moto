@@ -173,61 +173,51 @@ const NuevaVentaPage = () => {
 
     setIsSearching(true);
     try {
-      const termLower = term.toLowerCase();
-      const termUpper = term.toUpperCase();
-      const termCap = term.charAt(0).toUpperCase() + term.slice(1).toLowerCase();
+      const palabras = term
+        .trim()
+        .toUpperCase()
+        .split(/[\s\-\/]+/)
+        .filter(p => p.length >= 2);
 
-      const { getDocs: getDocsFS } = await import('firebase/firestore');
+      if (palabras.length === 0) {
+        setFilteredProductos([]);
+        return;
+      }
 
-      // Buscar por nombre, código tienda y código proveedor en paralelo
-      const [snapNombreUpper, snapNombreCap, snapCodigo, snapCodigoP] = await Promise.all([
-        getDocsFS(query(
-          collection(db, 'productos'),
-          where('nombre', '>=', termUpper),
-          where('nombre', '<=', termUpper + '\uf8ff'),
-          limit(20)
-        )),
-        getDocsFS(query(
-          collection(db, 'productos'),
-          where('nombre', '>=', termCap),
-          where('nombre', '<=', termCap + '\uf8ff'),
-          limit(20)
-        )),
-        getDocsFS(query(
-          collection(db, 'productos'),
-          where('codigoTienda', '==', termUpper),
-          limit(5)
-        )),
-        getDocsFS(query(
-          collection(db, 'productos'),
-          where('codigoProveedor', '==', termUpper),
-          limit(5)
-        )),
-      ]);
+      // Buscar por la PRIMERA palabra con array-contains
+      // (Firestore no permite array-contains-any + múltiples filtros)
+      const q = query(
+        collection(db, 'productos'),
+        where('palabrasClave', 'array-contains', palabras[0]),
+        limit(100)
+      );
 
-      const idsVistos = new Set();
-      const resultados = [];
+      const snapshot = await getDocs(q);
+      const candidatos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      [...snapNombreUpper.docs, ...snapNombreCap.docs, ...snapCodigo.docs, ...snapCodigoP.docs].forEach(d => {
-        if (!idsVistos.has(d.id)) {
-          idsVistos.add(d.id);
-          resultados.push({ id: d.id, ...d.data() });
-        }
+      // Filtrar localmente por el resto de palabras
+      const filtered = candidatos.filter(p => {
+        const claves = p.palabrasClave || [];
+        // Todas las palabras buscadas deben estar en las claves del producto
+        return palabras.every(palabra => 
+          claves.some(clave => clave.includes(palabra))
+        );
       });
 
-      // Filtro local adicional para marcas y modelos compatibles
-      const filtered = resultados.filter(p => {
-        const nombre = (p.nombre || '').toLowerCase();
-        const marca = (p.marca || '').toLowerCase();
-        const codigoTienda = (p.codigoTienda || '').toLowerCase();
-        const codigoProveedor = (p.codigoProveedor || '').toLowerCase();
-        const modelosTexto = (p.modelosCompatiblesTexto || '').toLowerCase();
+      // También buscar por código exacto
+      const porCodigo = await Promise.all([
+        getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', term.trim().toUpperCase()), limit(5))),
+        getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', term.trim().toUpperCase()), limit(5)))
+      ]);
 
-        return nombre.includes(termLower) ||
-              marca.includes(termLower) ||
-              codigoTienda.includes(termLower) ||
-              codigoProveedor.includes(termLower) ||
-              modelosTexto.includes(termLower);
+      const idsVistos = new Set(filtered.map(p => p.id));
+      porCodigo.forEach(snap => {
+        snap.docs.forEach(d => {
+          if (!idsVistos.has(d.id)) {
+            idsVistos.add(d.id);
+            filtered.push({ id: d.id, ...d.data() });
+          }
+        });
       });
 
       setFilteredProductos(filtered);
@@ -240,94 +230,94 @@ const NuevaVentaPage = () => {
   };
 
   // Función corregida para obtener el precio de compra FIFO real
-const obtenerPrecioCompraFIFO = async (productoId) => {
-  try {
-    // Buscar el primer lote disponible en la colección principal 'lotes'
-    const lotesQuery = query(
-      collection(db, 'lotes'), // Colección principal, no subcolección
-      where('productoId', '==', productoId),
-      where('stockRestante', '>', 0),
-      where('estado', '==', 'activo'),
-      orderBy('fechaIngreso', 'asc'),
-      limit(1)
-    );
-    
-    const lotesSnapshot = await getDocs(lotesQuery);
-    
-    if (!lotesSnapshot.empty) {
-      const primerLote = lotesSnapshot.docs[0].data();
-      return parseFloat(primerLote.precioCompraUnitario || 0);
-    } else {
-      // Si no hay lotes disponibles, usar precio por defecto del producto
-      const productRef = doc(db, 'productos', productoId);
-      const productSnap = await getDoc(productRef);
+  const obtenerPrecioCompraFIFO = async (productoId) => {
+    try {
+      // Buscar el primer lote disponible en la colección principal 'lotes'
+      const lotesQuery = query(
+        collection(db, 'lotes'), // Colección principal, no subcolección
+        where('productoId', '==', productoId),
+        where('stockRestante', '>', 0),
+        where('estado', '==', 'activo'),
+        orderBy('fechaIngreso', 'asc'),
+        limit(1)
+      );
       
-      if (productSnap.exists()) {
-        return parseFloat(productSnap.data().precioCompraDefault || 0);
+      const lotesSnapshot = await getDocs(lotesQuery);
+      
+      if (!lotesSnapshot.empty) {
+        const primerLote = lotesSnapshot.docs[0].data();
+        return parseFloat(primerLote.precioCompraUnitario || 0);
+      } else {
+        // Si no hay lotes disponibles, usar precio por defecto del producto
+        const productRef = doc(db, 'productos', productoId);
+        const productSnap = await getDoc(productRef);
+        
+        if (productSnap.exists()) {
+          return parseFloat(productSnap.data().precioCompraDefault || 0);
+        }
+        
+        return 0;
       }
-      
+    } catch (error) {
+      console.error(`Error al obtener precio FIFO para producto ${productoId}:`, error);
       return 0;
     }
-  } catch (error) {
-    console.error(`Error al obtener precio FIFO para producto ${productoId}:`, error);
-    return 0;
-  }
-};
+  };
 
   // Función corregida para consumir stock de lotes según FIFO
-const consumirStockFIFO = async (productoId, cantidadVendida, transaction) => {
-  try {
-    // Obtener todos los lotes disponibles de la colección principal
-    const lotesQuery = query(
-      collection(db, 'lotes'),
-      where('productoId', '==', productoId),
-      where('stockRestante', '>', 0),
-      where('estado', '==', 'activo'),
-      orderBy('fechaIngreso', 'asc')
-    );
-    
-    const lotesSnapshot = await getDocs(lotesQuery);
-    let cantidadPendiente = cantidadVendida;
-    const movimientos = [];
-    
-    // Consumir de los lotes más antiguos primero
-    for (const loteDoc of lotesSnapshot.docs) {
-      if (cantidadPendiente <= 0) break;
+  const consumirStockFIFO = async (productoId, cantidadVendida, transaction) => {
+    try {
+      // Obtener todos los lotes disponibles de la colección principal
+      const lotesQuery = query(
+        collection(db, 'lotes'),
+        where('productoId', '==', productoId),
+        where('stockRestante', '>', 0),
+        where('estado', '==', 'activo'),
+        orderBy('fechaIngreso', 'asc')
+      );
       
-      const lote = loteDoc.data();
-      const consumir = Math.min(cantidadPendiente, lote.stockRestante);
-      const nuevoStock = lote.stockRestante - consumir;
+      const lotesSnapshot = await getDocs(lotesQuery);
+      let cantidadPendiente = cantidadVendida;
+      const movimientos = [];
       
-      // Actualizar el lote en la colección principal
-      const loteRef = doc(db, 'lotes', loteDoc.id);
-      transaction.update(loteRef, {
-        stockRestante: nuevoStock,
-        estado: nuevoStock <= 0 ? 'agotado' : 'activo',
-        updatedAt: serverTimestamp()
-      });
+      // Consumir de los lotes más antiguos primero
+      for (const loteDoc of lotesSnapshot.docs) {
+        if (cantidadPendiente <= 0) break;
+        
+        const lote = loteDoc.data();
+        const consumir = Math.min(cantidadPendiente, lote.stockRestante);
+        const nuevoStock = lote.stockRestante - consumir;
+        
+        // Actualizar el lote en la colección principal
+        const loteRef = doc(db, 'lotes', loteDoc.id);
+        transaction.update(loteRef, {
+          stockRestante: nuevoStock,
+          estado: nuevoStock <= 0 ? 'agotado' : 'activo',
+          updatedAt: serverTimestamp()
+        });
+        
+        // Registrar el movimiento para auditoría
+        movimientos.push({
+          loteId: loteDoc.id,
+          numeroLote: lote.numeroLote,
+          cantidadConsumida: consumir,
+          precioCompraUnitario: lote.precioCompraUnitario,
+          stockRestante: nuevoStock
+        });
+        
+        cantidadPendiente -= consumir;
+      }
       
-      // Registrar el movimiento para auditoría
-      movimientos.push({
-        loteId: loteDoc.id,
-        numeroLote: lote.numeroLote,
-        cantidadConsumida: consumir,
-        precioCompraUnitario: lote.precioCompraUnitario,
-        stockRestante: nuevoStock
-      });
+      if (cantidadPendiente > 0) {
+        throw new Error(`Stock insuficiente. Faltan ${cantidadPendiente} unidades del producto.`);
+      }
       
-      cantidadPendiente -= consumir;
+      return movimientos;
+    } catch (error) {
+      console.error(`Error al consumir stock FIFO para producto ${productoId}:`, error);
+      throw error;
     }
-    
-    if (cantidadPendiente > 0) {
-      throw new Error(`Stock insuficiente. Faltan ${cantidadPendiente} unidades del producto.`);
-    }
-    
-    return movimientos;
-  } catch (error) {
-    console.error(`Error al consumir stock FIFO para producto ${productoId}:`, error);
-    throw error;
-  }
-};
+  };
 
   // Efecto para buscar productos con debounce
   useEffect(() => {
