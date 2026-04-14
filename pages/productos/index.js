@@ -49,10 +49,9 @@ const ProductosPage = () => {
   const { user } = useAuth();
   const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
   const [productos, setProductos] = useState([]);
-  const [lastDoc, setLastDoc] = useState(null);
+
   const [totalProductos, setTotalProductos] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [allLoaded, setAllLoaded] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updatingPrices, setUpdatingPrices] = useState(false);
@@ -268,77 +267,64 @@ const ProductosPage = () => {
 
   // Función para cargar todos los productos
 // Reemplaza fetchProductos
-  const fetchProductos = async (loadMore = false) => {
-    if (!user) { router.push('/auth'); return; }
-    
-    if (!loadMore) {
-      setLoading(true);
-      setLastDoc(null);
-      setAllLoaded(false);
-    } else {
-      setLoadingMore(true);
-    }
-    
-    setError(null);
+const fetchProductos = async () => {
+  if (!user) { router.push('/auth'); return; }
+  
+  setLoading(true);
+  setError(null);
 
-    try {
-      // Contar total
-      if (!loadMore) {
-        const countSnap = await getCountFromServer(
-          query(collection(db, 'productos'))
-        );
-        setTotalProductos(countSnap.data().count);
-      }
+  try {
+    // Primera carga rápida: solo 50 productos para mostrar inmediato
+    const qFirst = query(
+      collection(db, 'productos'),
+      orderBy('nombre', 'asc'),
+      limit(50)
+    );
 
-      let q;
-      if (loadMore && lastDoc) {
-        q = query(
-          collection(db, 'productos'),
-          orderBy('nombre', 'asc'),
-          startAfter(lastDoc),
-          limit(100)
-        );
-      } else {
-        q = query(
-          collection(db, 'productos'),
-          orderBy('nombre', 'asc'),
-          limit(100)
-        );
-      }
+    const firstSnapshot = await getDocs(qFirst);
+    const firstBatch = firstSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
 
-      const snapshot = await getDocs(q);
-      
-      const productosList = snapshot.docs.map(doc => ({
+    // Mostrar los primeros 50 inmediatamente
+    setProductos(firstBatch);
+    setFilteredProductos(firstBatch);
+    setLoading(false); // ← UI ya disponible aquí
+
+    // Cargar el resto en background sin bloquear
+    if (firstSnapshot.docs.length === 50) {
+      const qRest = query(
+        collection(db, 'productos'),
+        orderBy('nombre', 'asc'),
+        startAfter(firstSnapshot.docs[firstSnapshot.docs.length - 1])
+      );
+
+      const restSnapshot = await getDocs(qRest);
+      const restBatch = restSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      if (snapshot.docs.length < 100) setAllLoaded(true);
-      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
-
-      if (loadMore) {
-        setProductos(prev => {
-          const updated = [...prev, ...productosList];
-          setFilteredProductos(updated);
-          return updated;
-        });
-      } else {
-        setProductos(productosList);
-        setFilteredProductos(productosList);
-      }
-
-    } catch (err) {
-      console.error("Error al cargar productos:", err);
-      setError("Error al cargar productos.");
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      const allProducts = [...firstBatch, ...restBatch];
+      setProductos(allProducts);
+      setFilteredProductos(allProducts);
+      setTotalProductos(allProducts.length);
+    } else {
+      setTotalProductos(firstBatch.length);
     }
-  };
+
+  } catch (err) {
+    console.error("Error al cargar productos:", err);
+    setError("Error al cargar productos.");
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
-      fetchProductos();
-    }, [user, router]);
+    fetchProductos();
+  }, [user, router]);
+
 
     // Reemplaza el useEffect de filtros o agrégalo
   useEffect(() => {
@@ -351,134 +337,156 @@ const ProductosPage = () => {
       filterMarca, filterMedida, filterUbicacion, filterModelosCompatibles, productos]);
 
   // Lógica de filtrado combinada
-const applyFilters = async () => {
-  const lowerFilterNombre = filterNombre.toLowerCase();
-  const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
-  const lowerFilterMarca = filterMarca.toLowerCase();
-  const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
-  const lowerFilterUbicacion = filterUbicacion.toLowerCase();
-  const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
-  const lowerFilterMedida = filterMedida.toLowerCase();
+  const applyFilters = async () => {
+    const hayFiltros = filterNombre || filterCodigoTienda || filterCodigoProveedor || 
+                      filterMarca || filterMedida || filterUbicacion || filterModelosCompatibles;
 
-  // Filtrar localmente primero
-  const filtered = productos.filter(producto => {
-    const matchesNombre = producto.nombre.toLowerCase().includes(lowerFilterNombre);
-    const matchesCodigoProveedor = (producto.codigoProveedor?.toLowerCase().includes(lowerFilterCodigoProveedor)) || lowerFilterCodigoProveedor === '';
-    const matchesMarca = (producto.marca?.toLowerCase().includes(lowerFilterMarca)) || lowerFilterMarca === '';
-    const matchesCodigoTienda = producto.codigoTienda.toLowerCase().includes(lowerFilterCodigoTienda);
-    const matchesUbicacion = (producto.ubicacion?.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
-    const matchesModelosCompatibles = (producto.modelosCompatiblesTexto?.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
-    const matchesMedida = (producto.medida?.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
+    if (!hayFiltros) {
+      setFilteredProductos(productos);
+      setCurrentPage(1);
+      setSortColumn(null);
+      setSortDirection('asc');
+      return;
+    }
 
-    return matchesNombre && matchesCodigoTienda && matchesCodigoProveedor && 
-           matchesUbicacion && matchesModelosCompatibles && matchesMarca && matchesMedida;
-  });
+    // Parsear palabras del nombre para búsqueda tipo palabrasClave
+    const palabrasNombre = filterNombre.trim()
+      ? filterNombre.trim().toUpperCase().split(/[\s\-\/]+/).filter(p => p.length >= 2)
+      : [];
 
-  // Si encontró resultados localmente, usarlos
-  if (filtered.length > 0) {
-    setFilteredProductos(filtered);
-    setCurrentPage(1);
-    setSortColumn(null);
-    setSortDirection('asc');
-    return;
-  }
+    const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
+    const lowerFilterMarca = filterMarca.toLowerCase();
+    const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
+    const lowerFilterUbicacion = filterUbicacion.toLowerCase();
+    const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
+    const lowerFilterMedida = filterMedida.toLowerCase();
 
-  // Si no encontró nada y hay algún filtro activo, buscar en Firestore
-  const hayFiltros = filterNombre || filterCodigoTienda || filterCodigoProveedor || 
-                     filterMarca || filterMedida || filterUbicacion || filterModelosCompatibles;
+    // Función helper para verificar filtros secundarios (todos excepto nombre)
+    const matchesSecondaryFilters = (producto) => {
+      if (lowerFilterCodigoTienda && !producto.codigoTienda?.toLowerCase().includes(lowerFilterCodigoTienda)) return false;
+      if (lowerFilterCodigoProveedor && !producto.codigoProveedor?.toLowerCase().includes(lowerFilterCodigoProveedor)) return false;
+      if (lowerFilterMarca && !producto.marca?.toLowerCase().includes(lowerFilterMarca)) return false;
+      if (lowerFilterMedida && !producto.medida?.toLowerCase().includes(lowerFilterMedida)) return false;
+      if (lowerFilterUbicacion && !producto.ubicacion?.toLowerCase().includes(lowerFilterUbicacion)) return false;
+      if (lowerFilterModelosCompatibles && !producto.modelosCompatiblesTexto?.toLowerCase().includes(lowerFilterModelosCompatibles)) return false;
+      return true;
+    };
 
-  if (!hayFiltros) {
-    setFilteredProductos(productos);
-    setCurrentPage(1);
-    return;
-  }
+    // Función helper para verificar nombre con palabrasClave
+    const matchesNombrePalabrasClave = (producto) => {
+      if (palabrasNombre.length === 0) return true;
+      const claves = producto.palabrasClave || [];
+      return palabrasNombre.every(palabra =>
+        claves.some(clave => clave.includes(palabra))
+      );
+    };
 
-  // Buscar en Firestore
-  try {
-    setLoading(true);
-    const { getDocs: getDocsFS } = await import('firebase/firestore');
-    const resultados = new Map();
+    // ── PASO 1: Filtrar localmente sobre los productos ya cargados ──
+    const localFiltered = productos.filter(producto =>
+      matchesNombrePalabrasClave(producto) && matchesSecondaryFilters(producto)
+    );
 
-    // Buscar por nombre con prefijo
-    if (filterNombre) {
-      const termUpper = filterNombre.toUpperCase();
-      const termCap = filterNombre.charAt(0).toUpperCase() + filterNombre.slice(1).toLowerCase();
+    if (localFiltered.length > 0) {
+      setFilteredProductos(localFiltered);
+      setCurrentPage(1);
+      setSortColumn(null);
+      setSortDirection('asc');
+      return;
+    }
 
-      const queries = [
-        query(collection(db, 'productos'),
-          where('nombre', '>=', termUpper),
-          where('nombre', '<=', termUpper + '\uf8ff'),
+    // ── PASO 2: No encontró nada localmente → buscar en Firestore ──
+    try {
+      setLoading(true);
+      const resultados = new Map();
+
+      // Buscar por nombre usando palabrasClave (array-contains con la primera palabra)
+      if (palabrasNombre.length > 0) {
+        const q = query(
+          collection(db, 'productos'),
+          where('palabrasClave', 'array-contains', palabrasNombre[0]),
+          limit(100)
+        );
+        const snapshot = await getDocs(q);
+        let candidatos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Filtrar localmente por el resto de palabras
+        candidatos = candidatos.filter(p => {
+          const claves = p.palabrasClave || [];
+          return palabrasNombre.every(palabra =>
+            claves.some(clave => clave.includes(palabra))
+          );
+        });
+
+        candidatos.forEach(p => resultados.set(p.id, p));
+
+        // Además buscar por código exacto si el término podría ser un código
+        const termOriginal = filterNombre.trim().toUpperCase();
+        const porCodigo = await Promise.all([
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termOriginal), limit(5))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termOriginal), limit(5)))
+        ]);
+        porCodigo.forEach(snap => {
+          snap.docs.forEach(d => {
+            if (!resultados.has(d.id)) resultados.set(d.id, { id: d.id, ...d.data() });
+          });
+        });
+      }
+
+      // Buscar por código de tienda exacto (filtro propio, no nombre)
+      if (filterCodigoTienda) {
+        const snap = await getDocs(query(
+          collection(db, 'productos'),
+          where('codigoTienda', '==', filterCodigoTienda.toUpperCase()),
+          limit(20)
+        ));
+        snap.docs.forEach(d => {
+          if (!resultados.has(d.id)) resultados.set(d.id, { id: d.id, ...d.data() });
+        });
+      }
+
+      // Buscar por código proveedor exacto
+      if (filterCodigoProveedor) {
+        const snap = await getDocs(query(
+          collection(db, 'productos'),
+          where('codigoProveedor', '==', filterCodigoProveedor.toUpperCase()),
+          limit(20)
+        ));
+        snap.docs.forEach(d => {
+          if (!resultados.has(d.id)) resultados.set(d.id, { id: d.id, ...d.data() });
+        });
+      }
+
+      // Buscar por marca con prefijo
+      if (filterMarca) {
+        const termUpper = filterMarca.toUpperCase();
+        const snap = await getDocs(query(
+          collection(db, 'productos'),
+          where('marca', '>=', termUpper),
+          where('marca', '<=', termUpper + '\uf8ff'),
           limit(50)
-        ),
-        query(collection(db, 'productos'),
-          where('nombre', '>=', termCap),
-          where('nombre', '<=', termCap + '\uf8ff'),
-          limit(50)
-        ),
-      ];
+        ));
+        snap.docs.forEach(d => {
+          if (!resultados.has(d.id)) resultados.set(d.id, { id: d.id, ...d.data() });
+        });
+      }
 
-      const snaps = await Promise.all(queries.map(q => getDocsFS(q)));
-      snaps.forEach(snap => {
-        snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
-      });
-    }
-
-    // Buscar por código de tienda exacto
-    if (filterCodigoTienda) {
-      const snap = await getDocsFS(query(
-        collection(db, 'productos'),
-        where('codigoTienda', '==', filterCodigoTienda.toUpperCase()),
-        limit(20)
-      ));
-      snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
-    }
-
-    // Buscar por código proveedor exacto
-    if (filterCodigoProveedor) {
-      const snap = await getDocsFS(query(
-        collection(db, 'productos'),
-        where('codigoProveedor', '==', filterCodigoProveedor.toUpperCase()),
-        limit(20)
-      ));
-      snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
-    }
-
-    // Buscar por marca con prefijo
-    if (filterMarca) {
-      const termUpper = filterMarca.toUpperCase();
-      const snap = await getDocsFS(query(
-        collection(db, 'productos'),
-        where('marca', '>=', termUpper),
-        where('marca', '<=', termUpper + '\uf8ff'),
-        limit(50)
-      ));
-      snap.docs.forEach(d => resultados.set(d.id, { id: d.id, ...d.data() }));
-    }
-
-    if (resultados.size > 0) {
-      // Aplicar filtros restantes localmente sobre los resultados de Firestore
-      const finalResults = Array.from(resultados.values()).filter(producto => {
-        const matchesMedida = !filterMedida || producto.medida?.toLowerCase().includes(filterMedida.toLowerCase());
-        const matchesUbicacion = !filterUbicacion || producto.ubicacion?.toLowerCase().includes(filterUbicacion.toLowerCase());
-        const matchesModelos = !filterModelosCompatibles || producto.modelosCompatiblesTexto?.toLowerCase().includes(filterModelosCompatibles.toLowerCase());
-        return matchesMedida && matchesUbicacion && matchesModelos;
-      });
+      // Aplicar todos los filtros restantes sobre los resultados de Firestore
+      const finalResults = Array.from(resultados.values()).filter(producto =>
+        matchesNombrePalabrasClave(producto) && matchesSecondaryFilters(producto)
+      );
 
       setFilteredProductos(finalResults);
-    } else {
-      setFilteredProductos([]);
-    }
+      setCurrentPage(1);
+      setSortColumn(null);
+      setSortDirection('asc');
 
-    setCurrentPage(1);
-    setSortColumn(null);
-    setSortDirection('asc');
-  } catch (err) {
-    console.error('Error en búsqueda Firestore:', err);
-    setError('Error al buscar productos');
-  } finally {
-    setLoading(false);
-  }
-};
+    } catch (err) {
+      console.error('Error en búsqueda Firestore:', err);
+      setError('Error al buscar productos');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearchClick = () => {
     applyFilters();
@@ -1304,31 +1312,7 @@ const downloadExcelTemplate = () => {
             </div>
           )}
 
-          {/* Botón cargar más - antes de la paginación */}
-          {!allLoaded && !loading && (
-            <div className="flex justify-center items-center mt-3 gap-3">
-              <span className="text-sm text-gray-500">
-                Mostrando {productos.length} de {totalProductos} productos
-              </span>
-              <button
-                onClick={() => fetchProductos(true)}
-                disabled={loadingMore}
-                className="inline-flex items-center px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
-              >
-                {loadingMore ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                    </svg>
-                    Cargando...
-                  </>
-                ) : (
-                  `Cargar más (${totalProductos - productos.length} restantes)`
-                )}
-              </button>
-            </div>
-          )}
+
           {/* Controles de paginación */}
           {filteredProductos.length > productsPerPage && (
             <div className="flex justify-between items-center mt-4">

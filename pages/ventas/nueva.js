@@ -165,69 +165,88 @@ const NuevaVentaPage = () => {
   }, [user, router.isReady, activeSale]);
 
   // Búsqueda de productos mejorada (estilo cotizaciones)
-  const searchProducts = async (term) => {
-    if (!term.trim()) {
+const searchProducts = async (term) => {
+  if (!term.trim()) {
+    setFilteredProductos([]);
+    return;
+  }
+
+  setIsSearching(true);
+  try {
+    const palabras = term
+      .trim()
+      .toUpperCase()
+      .split(/[\s\-\/]+/)
+      .filter(p => p.length >= 2);
+
+    if (palabras.length === 0) {
       setFilteredProductos([]);
       return;
     }
 
-    setIsSearching(true);
-    try {
-      const palabras = term
-        .trim()
-        .toUpperCase()
-        .split(/[\s\-\/]+/)
-        .filter(p => p.length >= 2);
-
-      if (palabras.length === 0) {
-        setFilteredProductos([]);
-        return;
-      }
-
-      // Buscar por la PRIMERA palabra con array-contains
-      // (Firestore no permite array-contains-any + múltiples filtros)
-      const q = query(
+    // Firestore: buscar por primera palabra exacta en palabrasClave
+    // Y también por prefijo en nombre (para búsqueda parcial tipo "CIL" → "CILINDRO...")
+    const [snapExacto, snapPrefijo] = await Promise.all([
+      getDocs(query(
         collection(db, 'productos'),
         where('palabrasClave', 'array-contains', palabras[0]),
-        limit(100)
-      );
+        limit(200)
+      )),
+      getDocs(query(
+        collection(db, 'productos'),
+        where('nombre', '>=', palabras[0]),
+        where('nombre', '<=', palabras[0] + '\uf8ff'),
+        limit(200)
+      ))
+    ]);
 
-      const snapshot = await getDocs(q);
-      const candidatos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Unir ambos resultados sin duplicados
+    const idsVistos = new Set();
+    let candidatos = [];
 
-      // Filtrar localmente por el resto de palabras
-      const filtered = candidatos.filter(p => {
+    [snapExacto, snapPrefijo].forEach(snap => {
+      snap.docs.forEach(d => {
+        if (!idsVistos.has(d.id)) {
+          idsVistos.add(d.id);
+          candidatos.push({ id: d.id, ...d.data() });
+        }
+      });
+    });
+
+    // Filtro local para palabras adicionales (prefijo)
+    if (palabras.length > 1) {
+      const palabrasRestantes = palabras.slice(1);
+      candidatos = candidatos.filter(p => {
         const claves = p.palabrasClave || [];
-        // Todas las palabras buscadas deben estar en las claves del producto
-        return palabras.every(palabra => 
-          claves.some(clave => clave.includes(palabra))
+        return palabrasRestantes.every(palabra =>
+          claves.some(clave => clave.startsWith(palabra))
         );
       });
-
-      // También buscar por código exacto
-      const porCodigo = await Promise.all([
-        getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', term.trim().toUpperCase()), limit(5))),
-        getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', term.trim().toUpperCase()), limit(5)))
-      ]);
-
-      const idsVistos = new Set(filtered.map(p => p.id));
-      porCodigo.forEach(snap => {
-        snap.docs.forEach(d => {
-          if (!idsVistos.has(d.id)) {
-            idsVistos.add(d.id);
-            filtered.push({ id: d.id, ...d.data() });
-          }
-        });
-      });
-
-      setFilteredProductos(filtered);
-    } catch (err) {
-      console.error("Error al buscar productos:", err);
-      setError("Error al buscar productos");
-    } finally {
-      setIsSearching(false);
     }
-  };
+
+    // Búsqueda por código exacto
+    const [porCodigoTienda, porCodigoProveedor] = await Promise.all([
+      getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', term.trim().toUpperCase()), limit(5))),
+      getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', term.trim().toUpperCase()), limit(5)))
+    ]);
+
+    [porCodigoTienda, porCodigoProveedor].forEach(snap => {
+      snap.docs.forEach(d => {
+        if (!idsVistos.has(d.id)) {
+          idsVistos.add(d.id);
+          candidatos.push({ id: d.id, ...d.data() });
+        }
+      });
+    });
+
+    setFilteredProductos(candidatos);
+  } catch (err) {
+    console.error("Error al buscar productos:", err);
+    setError("Error al buscar productos");
+  } finally {
+    setIsSearching(false);
+  }
+};
 
   // Función corregida para obtener el precio de compra FIFO real
   const obtenerPrecioCompraFIFO = async (productoId) => {
