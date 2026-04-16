@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSale } from '../../contexts/SaleContext'; 
 import ProductSearchItem from '../../components/ProductSearchItem';
+import ProductDetailsModal from '../../components/modals/ProductDetailsModal';
+import ProductModelsModal from '../../components/modals/ProductModelsModal';
 import Layout from '../../components/Layout';
 import MixedPaymentModal from '../../components/modals/MixedPaymentModal';
 import { db } from '../../lib/firebase';
@@ -67,8 +69,23 @@ const NuevaVentaPage = () => {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
+  const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
+  const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
+  const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
+  const [selectedProductForModels, setSelectedProductForModels] = useState(null);
+  const openProductDetailsModal = (product) => {
+    setSelectedProductForDetails(product);
+    setIsProductDetailsModalOpen(true);
+  };
+
+  const openProductModelsModal = (product) => {
+    setSelectedProductForModels(product);
+    setIsProductModelsModalOpen(true);
+  };
+
   // Estados para búsqueda mejorada (estilo cotizaciones)
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchModelos, setSearchModelos] = useState('');
   const [filteredProductos, setFilteredProductos] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -455,6 +472,7 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
       id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${contadorItem}`,
       productoId: producto.id,
       nombreProducto: producto.nombre,
+      stockActual: producto.stockActual || 0,
       marca: producto.marca || '',
       medida: producto.medida || '',
       codigoTienda: producto.codigoTienda || '',
@@ -1167,6 +1185,8 @@ return (
                           producto={producto}
                           onSelectProduct={handleSelectProduct}
                           onClearSearch={() => setSearchTerm('')}
+                          onOpenDetails={openProductDetailsModal}
+                          onOpenModels={openProductModelsModal} 
                         />
                       ))}
                       {filteredProductos.length > 20 && (
@@ -1210,8 +1230,9 @@ return (
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">COLOR</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">CANT.</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. COMPRA</th>
+                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA MIN</th> 
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA</th>
-                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA MIN</th>
+
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">SUBTOTAL</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">ACCIONES</th>
                           </tr>
@@ -1259,6 +1280,7 @@ return (
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className="text-sm font-medium text-gray-900">
                                   {item.cantidad}
+                                  <span className="text-gray-400 font-normal"> / {item.stockActual ?? 0}</span>
                                 </span>
                               </td>
                               <td className="px-3 py-3 text-center whitespace-nowrap">
@@ -1268,14 +1290,15 @@ return (
                               </td>
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className="text-sm font-medium text-gray-900">
-                                  S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
+                                  S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
                                 </span>
                               </td>
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className="text-sm font-medium text-gray-900">
-                                  S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
+                                  S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
                                 </span>
                               </td>
+
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className="text-sm font-semibold text-gray-900">
                                   S/. {parseFloat(item.subtotal || 0).toFixed(2)}
@@ -1577,7 +1600,20 @@ return (
         onPaymentConfirm={handlePaymentConfirm}
         initialPaymentMethod={paymentData.paymentMethods[0]?.method || 'efectivo'}
       />
+
+      <ProductDetailsModal 
+        isOpen={isProductDetailsModalOpen} 
+        onClose={() => { setIsProductDetailsModalOpen(false); setSelectedProductForDetails(null); }} 
+        product={selectedProductForDetails} 
+      />
+      <ProductModelsModal 
+        isOpen={isProductModelsModalOpen} 
+        onClose={() => { setIsProductModelsModalOpen(false); setSelectedProductForModels(null); }} 
+        product={selectedProductForModels} 
+      />
     </Layout>
+
+    
   );
 };
 
