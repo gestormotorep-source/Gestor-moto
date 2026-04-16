@@ -182,79 +182,68 @@ const NuevaVentaPage = () => {
   }, [user, router.isReady, activeSale]);
 
   // Búsqueda de productos mejorada (estilo cotizaciones)
-const searchProducts = async (term) => {
-  if (!term.trim()) {
+const searchProducts = async (term, modelos) => {
+  const hayTerm = term.trim().length > 0;
+  const hayModelos = modelos.trim().length > 0;
+
+  if (!hayTerm && !hayModelos) {
     setFilteredProductos([]);
     return;
   }
 
   setIsSearching(true);
   try {
-    const palabras = term
-      .trim()
-      .toUpperCase()
-      .split(/[\s\-\/]+/)
-      .filter(p => p.length >= 2);
-
-    if (palabras.length === 0) {
-      setFilteredProductos([]);
-      return;
-    }
-
-    // Firestore: buscar por primera palabra exacta en palabrasClave
-    // Y también por prefijo en nombre (para búsqueda parcial tipo "CIL" → "CILINDRO...")
-    const [snapExacto, snapPrefijo] = await Promise.all([
-      getDocs(query(
-        collection(db, 'productos'),
-        where('palabrasClave', 'array-contains', palabras[0]),
-        limit(200)
-      )),
-      getDocs(query(
-        collection(db, 'productos'),
-        where('nombre', '>=', palabras[0]),
-        where('nombre', '<=', palabras[0] + '\uf8ff'),
-        limit(200)
-      ))
-    ]);
-
-    // Unir ambos resultados sin duplicados
     const idsVistos = new Set();
     let candidatos = [];
 
-    [snapExacto, snapPrefijo].forEach(snap => {
-      snap.docs.forEach(d => {
-        if (!idsVistos.has(d.id)) {
-          idsVistos.add(d.id);
-          candidatos.push({ id: d.id, ...d.data() });
-        }
-      });
-    });
+    if (hayTerm) {
+      const palabras = term.trim().toUpperCase().split(/[\s\-\/]+/).filter(p => p.length >= 2);
 
-    // Filtro local para palabras adicionales (prefijo)
-    if (palabras.length > 1) {
-      const palabrasRestantes = palabras.slice(1);
-      candidatos = candidatos.filter(p => {
-        const claves = p.palabrasClave || [];
-        return palabrasRestantes.every(palabra =>
-          claves.some(clave => clave.startsWith(palabra))
-        );
+      if (palabras.length > 0) {
+        const [snapExacto, snapPrefijo] = await Promise.all([
+          getDocs(query(collection(db, 'productos'), where('palabrasClave', 'array-contains', palabras[0]), limit(200))),
+          getDocs(query(collection(db, 'productos'), where('nombre', '>=', palabras[0]), where('nombre', '<=', palabras[0] + '\uf8ff'), limit(200)))
+        ]);
+
+        [snapExacto, snapPrefijo].forEach(snap => {
+          snap.docs.forEach(d => {
+            if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
+          });
+        });
+
+        if (palabras.length > 1) {
+          const palabrasRestantes = palabras.slice(1);
+          candidatos = candidatos.filter(p => {
+            const claves = p.palabrasClave || [];
+            return palabrasRestantes.every(palabra => claves.some(clave => clave.startsWith(palabra)));
+          });
+        }
+
+        const [porCodigoTienda, porCodigoProveedor] = await Promise.all([
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', term.trim().toUpperCase()), limit(5))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', term.trim().toUpperCase()), limit(5)))
+        ]);
+        [porCodigoTienda, porCodigoProveedor].forEach(snap => {
+          snap.docs.forEach(d => {
+            if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
+          });
+        });
+      }
+    } else {
+      // Solo modelos: traer todos y filtrar local (o un subset grande)
+      const snap = await getDocs(query(collection(db, 'productos'), limit(500)));
+      snap.docs.forEach(d => {
+        if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
       });
     }
 
-    // Búsqueda por código exacto
-    const [porCodigoTienda, porCodigoProveedor] = await Promise.all([
-      getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', term.trim().toUpperCase()), limit(5))),
-      getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', term.trim().toUpperCase()), limit(5)))
-    ]);
-
-    [porCodigoTienda, porCodigoProveedor].forEach(snap => {
-      snap.docs.forEach(d => {
-        if (!idsVistos.has(d.id)) {
-          idsVistos.add(d.id);
-          candidatos.push({ id: d.id, ...d.data() });
-        }
-      });
-    });
+    // Filtrar por modelos compatibles localmente
+    if (hayModelos) {
+      const modeloLower = modelos.trim().toLowerCase();
+      candidatos = candidatos.filter(p =>
+        p.modelosCompatiblesTexto?.toLowerCase().includes(modeloLower)
+      );
+    }
 
     setFilteredProductos(candidatos);
   } catch (err) {
@@ -264,7 +253,6 @@ const searchProducts = async (term) => {
     setIsSearching(false);
   }
 };
-
   // Función corregida para obtener el precio de compra FIFO real
   const obtenerPrecioCompraFIFO = async (productoId) => {
     try {
@@ -358,15 +346,15 @@ const searchProducts = async (term) => {
   // Efecto para buscar productos con debounce
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (searchTerm.trim()) {
-        searchProducts(searchTerm);
+      if (searchTerm.trim() || searchModelos.trim()) {
+        searchProducts(searchTerm, searchModelos);
       } else {
         setFilteredProductos([]);
       }
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm]);
+  }, [searchTerm, searchModelos]);
 
   // Actualizar el total cuando cambian los items
   useEffect(() => {
@@ -1138,36 +1126,60 @@ return (
           {/* Panel Derecho - Buscador y Items - EXPANDIDO */}
           <div className="col-span-12 xl:col-span-9 lg:col-span-8 md:col-span-7">
             {/* Buscador de Productos */}
+            {/* Buscador de Productos */}
             <div className="bg-white border border-gray-400 rounded-lg mb-6 relative">
               <div className="p-4">
                 <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
-                <div className="relative">
-                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
-                    className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                  {isSearching && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
-                    </div>
+                
+                <div className="flex gap-3">
+                  {/* Buscador principal */}
+                  <div className="relative flex-1">
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Nombre, marca, código..."
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Filtro modelos compatibles */}
+                  <div className="relative flex-1">
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchModelos}
+                      onChange={(e) => setSearchModelos(e.target.value)}
+                      placeholder="Modelo compatible (ej: RTR200, YBR125...)"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Botón limpiar - solo si hay algo escrito */}
+                  {(searchTerm || searchModelos) && (
+                    <button
+                      onClick={() => { setSearchTerm(''); setSearchModelos(''); setFilteredProductos([]); }}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 text-sm whitespace-nowrap"
+                    >
+                      Limpiar
+                    </button>
                   )}
                 </div>
-                
+
                 <div className="text-sm text-gray-600 mt-2">
-                  {searchTerm.trim() === '' ? (
+                  {!searchTerm.trim() && !searchModelos.trim() ? (
                     'Escribe para buscar productos...'
+                  ) : isSearching ? (
+                    'Buscando...'
                   ) : (
                     `${filteredProductos.length} productos encontrados`
                   )}
                 </div>
               </div>
 
-              {/* Dropdown de productos - CON COMPONENTE REUTILIZABLE */}
-              {searchTerm.trim() !== '' && (
+              {/* Dropdown - igual que antes */}
+              {(searchTerm.trim() !== '' || searchModelos.trim() !== '') && (
                 <div className="absolute top-full left-0 right-0 bg-white border border-gray-400 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
                   {isSearching ? (
                     <div className="flex justify-center py-8">
@@ -1184,14 +1196,14 @@ return (
                           key={producto.id}
                           producto={producto}
                           onSelectProduct={handleSelectProduct}
-                          onClearSearch={() => setSearchTerm('')}
+                          onClearSearch={() => { setSearchTerm(''); setSearchModelos(''); }}
                           onOpenDetails={openProductDetailsModal}
-                          onOpenModels={openProductModelsModal} 
+                          onOpenModels={openProductModelsModal}
                         />
                       ))}
                       {filteredProductos.length > 20 && (
                         <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-                          Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                          Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda.
                         </div>
                       )}
                     </div>
