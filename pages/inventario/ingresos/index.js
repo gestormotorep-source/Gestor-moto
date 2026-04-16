@@ -212,6 +212,7 @@ const IngresosPage = () => {
                 let totalStock = 0;
                 lotesSnap.docs.forEach(l => { totalStock += parseFloat(l.data().cantidad || 0); });
 
+                // En buscarEnFirestore, reemplaza la parte que carga lotes por:
                 resultados.push({
                   id: docSnap.id,
                   ...data,
@@ -221,8 +222,8 @@ const IngresosPage = () => {
                     hour: '2-digit', minute: '2-digit'
                   }) || 'N/A',
                   costoTotalIngreso: data.costoTotalIngreso || 0,
-                  cantidadLotes: lotesSnap.size,
-                  totalStockIngresado: totalStock,
+                  cantidadLotes: data.cantidadLotes || 0,        // ✅ Usar campo migrado
+                  totalStockIngresado: data.totalStockIngresado || 0, // ✅ Usar campo migrado
                   estado: data.estado || 'pendiente',
                 });
               }
