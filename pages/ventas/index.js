@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import CustomDatePicker from '../../components/CustomDatePicker';
+import { useAppCache } from '../../contexts/AppCacheContext';
 import { generarPDFVentaCompleta } from '../../components/utils/pdfGeneratorVentas';
 import { generarTicketVentaCompleta } from '../../components/utils/pdfGeneratorTicket';
 import {
@@ -43,37 +44,46 @@ import {
 const VentasIndexPage = () => {
   const { user } = useAuth();
   const router = useRouter();
+  const { getCache, setCache, invalidateCache } = useAppCache();
+  const cached = getCache('ventas');
 
-  const [ventas, setVentas] = useState([]);
-  const [filteredVentas, setFilteredVentas] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [ventas, setVentas] = useState(cached?.data || []);
+  const [filteredVentas, setFilteredVentas] = useState(cached?.data || []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(cached?.filtros?.searchTerm || '');
   
   // Estados para filtros
-  const [filterPeriod, setFilterPeriod] = useState('day');
+  const [filterPeriod, setFilterPeriod] = useState(cached?.filtros?.filterPeriod || 'day');
   const [dateRange, setDateRange] = useState(() => {
+    if (cached?.filtros?.dateRange) {
+      // Rehidratar fechas porque el cache las guarda como Date objects
+      const { start, end } = cached.filtros.dateRange;
+      return {
+        start: start ? new Date(start) : null,
+        end: end ? new Date(end) : null,
+      };
+    }
     const today = new Date();
-    const start = new Date(today);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setHours(23, 59, 59, 999);
+    const start = new Date(today); start.setHours(0, 0, 0, 0);
+    const end = new Date(today); end.setHours(23, 59, 59, 999);
     return { start, end };
   });
-  const [limitPerPage, setLimitPerPage] = useState(20);
-  const [selectedMetodoPago, setSelectedMetodoPago] = useState('all');
-  const [selectedTipoVenta, setSelectedTipoVenta] = useState('all');
-  const [selectedEstado, setSelectedEstado] = useState('all');
 
-  // Estado para el conteo total
-  const [totalVentasPeriodo, setTotalVentasPeriodo] = useState(0);
-  // Estados para paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const ventasPerPage = 20; // Ventas por página
+  const [limitPerPage, setLimitPerPage] = useState(cached?.filtros?.limitPerPage || 20);
+  const [selectedMetodoPago, setSelectedMetodoPago] = useState(cached?.filtros?.selectedMetodoPago || 'all');
+  const [selectedTipoVenta, setSelectedTipoVenta] = useState(cached?.filtros?.selectedTipoVenta || 'all');
+  const [selectedEstado, setSelectedEstado] = useState(cached?.filtros?.selectedEstado || 'all');
+  const [totalVentasPeriodo, setTotalVentasPeriodo] = useState(cached?.filtros?.totalVentasPeriodo || 0);
+  const [currentPage, setCurrentPage] = useState(cached?.filtros?.currentPage || 1);
+  const ventasPerPage = 20;
 
   useEffect(() => {
-    if (!user) {
-      router.push('/auth');
+    if (!user) { router.push('/auth'); return; }
+
+    // Si hay cache válido, no hacer fetch
+    if (getCache('ventas')) {
+      setLoading(false);
       return;
     }
 
@@ -101,18 +111,9 @@ const VentasIndexPage = () => {
         ];
       }
     } else {
-      if (selectedEstado !== 'all') {
-        constraints = [
-          where('estado', '==', selectedEstado),
-          orderBy('fechaVenta', 'desc'),
-          limit(limitPerPage)
-        ];
-      } else {
-        constraints = [
-          orderBy('fechaVenta', 'desc'),
-          limit(limitPerPage)
-        ];
-      }
+      constraints = selectedEstado !== 'all'
+        ? [where('estado', '==', selectedEstado), orderBy('fechaVenta', 'desc'), limit(limitPerPage)]
+        : [orderBy('fechaVenta', 'desc'), limit(limitPerPage)];
     }
 
     const q = query(collection(db, 'ventas'), ...constraints);
@@ -129,46 +130,36 @@ const VentasIndexPage = () => {
           fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
           fechaVentaFormatted: data.fechaVenta?.toDate
             ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
-                year: 'numeric',
-                month: '2-digit', 
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit'
               })
             : 'N/A',
         };
-
         if (!data.numeroVenta || data.numeroVenta === 'N/A' || data.numeroVenta.trim() === '') {
-          ventasToUpdate.push({ id: docSnap.id, data: ventaData });
+          ventasToUpdate.push({ id: docSnap.id });
         }
-
         ventasList.push(ventaData);
       });
 
       if (ventasToUpdate.length > 0) {
         ventasToUpdate.forEach(async (venta, index) => {
-          const newNumeroVenta = generateSaleNumber() + `-${index}`;
           try {
             await updateDoc(doc(db, 'ventas', venta.id), {
-              numeroVenta: newNumeroVenta,
+              numeroVenta: generateSaleNumber() + `-${index}`,
               updatedAt: serverTimestamp()
             });
-          } catch (error) {
-            console.error(`Error actualizando número de venta ${venta.id}:`, error);
-          }
+          } catch (e) { console.error(e); }
         });
       }
 
       setVentas(ventasList);
       setLoading(false);
     }, (err) => {
-      console.error("Error fetching ventas:", err);
       setError("Error al cargar las ventas: " + err.message);
       setLoading(false);
     });
 
     return () => unsubscribe();
-
   }, [user, router, dateRange, selectedEstado, limitPerPage]);
 
   const getDisplaySaleNumber = (venta) => {
@@ -186,6 +177,7 @@ const VentasIndexPage = () => {
 
   // Función para manejar cambios en filtros de período
   const handleFilterChange = (period) => {
+    invalidateCache('ventas');
     setFilterPeriod(period);
     const today = new Date();
 
@@ -454,6 +446,23 @@ const VentasIndexPage = () => {
 
   }, [user, dateRange, selectedEstado, filterPeriod]);
 
+  useEffect(() => {
+    if (ventas.length > 0) {
+      setCache('ventas', ventas, {
+        searchTerm,
+        filterPeriod,
+        dateRange,
+        limitPerPage,
+        selectedMetodoPago,
+        selectedTipoVenta,
+        selectedEstado,
+        currentPage,
+        totalVentasPeriodo,
+      });
+    }
+  }, [ventas, searchTerm, filterPeriod, dateRange, limitPerPage, selectedMetodoPago, 
+      selectedTipoVenta, selectedEstado, currentPage, totalVentasPeriodo]);
+
   // Cálculos para paginación
   const totalPages = Math.ceil(filteredVentas.length / ventasPerPage);
   const indexOfLastVenta = currentPage * ventasPerPage;
@@ -536,6 +545,7 @@ const VentasIndexPage = () => {
   };
 
   const clearFilters = () => {
+    invalidateCache('ventas');
     const today = new Date();
     const start = new Date(today);
     start.setHours(0, 0, 0, 0);
@@ -912,7 +922,7 @@ const VentasIndexPage = () => {
 
                 <select
                   value={selectedEstado}
-                  onChange={(e) => setSelectedEstado(e.target.value)}
+                  onChange={(e) => { invalidateCache('ventas'); setSelectedEstado(e.target.value); }}
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
                   <option value="all">Estado</option>
@@ -927,9 +937,7 @@ const VentasIndexPage = () => {
                     id="limit-per-page"
                     className=" px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                     value={limitPerPage}
-                    onChange={(e) => {
-                      setLimitPerPage(Number(e.target.value));
-                    }}
+                    onChange={(e) => { invalidateCache('ventas'); setLimitPerPage(Number(e.target.value)); }}
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>

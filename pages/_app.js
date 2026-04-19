@@ -1,7 +1,7 @@
-// pages/_app.js
 import { AuthProvider } from '../contexts/AuthContext';
 import { SaleProvider } from '../contexts/SaleContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { AppCacheProvider } from '../contexts/AppCacheContext';
 import '../styles/globals.css';
 
 function MyApp({ Component, pageProps }) {
@@ -9,7 +9,9 @@ function MyApp({ Component, pageProps }) {
     <AuthProvider>
       <SaleProvider>
         <NotificationProvider>
-          <Component {...pageProps} />
+          <AppCacheProvider>
+            <Component {...pageProps} />
+          </AppCacheProvider>
         </NotificationProvider>
       </SaleProvider>
     </AuthProvider>
