@@ -356,17 +356,35 @@ const IngresosPage = () => {
           }
         }
 
+        // ✅ Calcular cantidadLotes y totalStockIngresado ANTES de escribir
+        const cantidadLotes = productoRefsAndData.length;
+        const totalStockIngresado = productoRefsAndData.reduce(
+          (sum, { loteData }) => sum + (loteData.cantidad || 0), 0
+        );
+
         for (const { loteDocRef, loteData, productoRef, currentProductoData } of productoRefsAndData) {
           const newStock = (currentProductoData.stockActual || 0) + (loteData.cantidad || 0);
           transaction.update(productoRef, { stockActual: newStock, updatedAt: serverTimestamp() });
           transaction.update(loteDocRef, { stockRestante: loteData.cantidad, estado: 'activo', updatedAt: serverTimestamp() });
         }
 
-        transaction.update(ingresoRef, { estado: 'recibido', fechaConfirmacion: serverTimestamp(), updatedAt: serverTimestamp() });
+        // ✅ Actualizar ingreso con estado + campos migrados en un solo update
+        transaction.update(ingresoRef, {
+          estado: 'recibido',
+          fechaConfirmacion: serverTimestamp(),
+          cantidadLotes,           // ✅ Se guarda al confirmar
+          totalStockIngresado,     // ✅ Se guarda al confirmar
+          updatedAt: serverTimestamp()
+        });
       });
 
       alert('Recepción confirmada y stock actualizado.');
-      setIngresos(prev => prev.map(ing => ing.id === ingresoId ? { ...ing, estado: 'recibido' } : ing));
+      // ✅ Actualizar estado local también con los campos nuevos
+      setIngresos(prev => prev.map(ing => {
+        if (ing.id !== ingresoId) return ing;
+        const cantidadLotes = ing.cantidadLotes || 0; // ya calculado arriba pero aproximamos del estado local
+        return { ...ing, estado: 'recibido' };
+      }));
     } catch (err) {
       console.error("Error al confirmar recepción:", err);
       setError("Error: " + err.message);

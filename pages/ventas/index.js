@@ -307,7 +307,7 @@ const VentasIndexPage = () => {
       );
 
       // Si no encontró nada localmente, buscar en Firestore
-      if (filtered.length === 0 && searchTerm.length >= 3) {
+      if (searchTerm.length >= 1) {
         const buscarEnFirestore = async () => {
           try {
             const { getDocs } = await import('firebase/firestore');
@@ -328,6 +328,10 @@ const VentasIndexPage = () => {
               collection(db, 'ventas'),
               where('clienteNombre', '>=', termUpper),
               where('clienteNombre', '<=', termUpper + '\uf8ff'),
+              ...(dateRange.start && dateRange.end ? [
+                where('fechaVenta', '>=', Timestamp.fromDate(dateRange.start)),
+                where('fechaVenta', '<=', Timestamp.fromDate(dateRange.end)),
+              ] : []),
               orderBy('clienteNombre', 'asc'),
               limit(20)
             );
@@ -336,6 +340,10 @@ const VentasIndexPage = () => {
               collection(db, 'ventas'),
               where('clienteNombre', '>=', termCapitalized),
               where('clienteNombre', '<=', termCapitalized + '\uf8ff'),
+              ...(dateRange.start && dateRange.end ? [
+                where('fechaVenta', '>=', Timestamp.fromDate(dateRange.start)),
+                where('fechaVenta', '<=', Timestamp.fromDate(dateRange.end)),
+              ] : []),
               orderBy('clienteNombre', 'asc'),
               limit(20)
             );
@@ -409,7 +417,7 @@ const VentasIndexPage = () => {
     setFilteredVentas(filtered);
     setCurrentPage(1);
 
-  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta]);
+  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta, dateRange]);
 
   // useEffect separado solo para contar - no descarga documentos
   useEffect(() => {

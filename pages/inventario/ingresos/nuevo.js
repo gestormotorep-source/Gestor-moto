@@ -343,6 +343,7 @@ const handleSubmit = async (e) => {
       observaciones: ingresoPrincipalData.observaciones.trim() || null,
       costoTotalIngreso: parseFloat(costoTotalIngreso.toFixed(2)),
       cantidadLotes: itemsIngreso.length,
+      totalStockIngresado: itemsIngreso.reduce((sum, item) => sum + parseFloat(item.cantidad || 0), 0),
       fechaIngreso: serverTimestamp(),
       empleadoId: user.email || user.uid,
       estado: 'pendiente',
