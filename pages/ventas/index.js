@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
@@ -46,9 +46,10 @@ const VentasIndexPage = () => {
   const router = useRouter();
   const { getCache, setCache, invalidateCache } = useAppCache();
   const cached = getCache('ventas');
+  const isFirstRender = useRef(true);
 
   const [ventas, setVentas] = useState(cached?.data || []);
-  const [filteredVentas, setFilteredVentas] = useState(cached?.data || []);
+  const [filteredVentas, setFilteredVentas] = useState(cached?.filtros?.filteredVentas || cached?.data || []);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState(cached?.filtros?.searchTerm || '');
@@ -284,9 +285,14 @@ const VentasIndexPage = () => {
     return getMetodoPagoIcon(venta.metodoPago);
   };
 
-  // Función para filtrar ventas
-  // useEffect 2 de filtros - agrega búsqueda directa en Firestore cuando hay searchTerm
+  // useEffect 2 de filtros 
   useEffect(() => {
+    // Si es el primer render y hay cache, saltar
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      if (getCache('ventas')) return;
+    }
+
     let filtered = [...ventas];
 
     if (searchTerm) {
@@ -298,24 +304,20 @@ const VentasIndexPage = () => {
         venta.tipoVenta?.toLowerCase().includes(lower)
       );
 
-      // Si no encontró nada localmente, buscar en Firestore
       if (searchTerm.length >= 1) {
         const buscarEnFirestore = async () => {
           try {
             const { getDocs } = await import('firebase/firestore');
             
             const termUpper = searchTerm.toUpperCase();
-            const termLower = searchTerm.toLowerCase();
             const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
 
-            // Buscar por número de venta exacto
             const qNumero = query(
               collection(db, 'ventas'),
               where('numeroVenta', '==', termUpper),
               limit(5)
             );
 
-            // Buscar por nombre de cliente (3 variantes de capitalización)
             const qClienteUpper = query(
               collection(db, 'ventas'),
               where('clienteNombre', '>=', termUpper),
@@ -340,14 +342,12 @@ const VentasIndexPage = () => {
               limit(20)
             );
 
-            // Ejecutar todas las queries en paralelo
             const [snapNumero, snapUpper, snapCapitalized] = await Promise.all([
               getDocs(qNumero),
               getDocs(qClienteUpper),
               getDocs(qClienteCapitalized),
             ]);
 
-            // Combinar resultados sin duplicados
             const idsVistos = new Set();
             const resultados = [];
 
@@ -360,30 +360,21 @@ const VentasIndexPage = () => {
                   ...data,
                   fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
                   fechaVentaFormatted: data.fechaVenta?.toDate
-                  ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })
-                  : 'N/A',
+                    ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit'
+                      })
+                    : 'N/A',
                 });
               }
             });
 
             if (resultados.length > 0) {
-              // ✅ Ordenar por fecha descendente
               resultados.sort((a, b) => {
                 const fechaA = a.fechaVenta instanceof Date ? a.fechaVenta : new Date(a.fechaVenta);
                 const fechaB = b.fechaVenta instanceof Date ? b.fechaVenta : new Date(b.fechaVenta);
                 return fechaB - fechaA;
               });
-
-              setFilteredVentas(resultados);
-              setCurrentPage(1);
-            } 
-            if (resultados.length > 0) {
               setFilteredVentas(resultados);
               setCurrentPage(1);
             }
@@ -450,6 +441,7 @@ const VentasIndexPage = () => {
     if (ventas.length > 0) {
       setCache('ventas', ventas, {
         searchTerm,
+        filteredVentas,
         filterPeriod,
         dateRange,
         limitPerPage,
@@ -460,8 +452,8 @@ const VentasIndexPage = () => {
         totalVentasPeriodo,
       });
     }
-  }, [ventas, searchTerm, filterPeriod, dateRange, limitPerPage, selectedMetodoPago, 
-      selectedTipoVenta, selectedEstado, currentPage, totalVentasPeriodo]);
+  }, [ventas, filteredVentas, searchTerm, filterPeriod, dateRange, limitPerPage,
+    selectedMetodoPago, selectedTipoVenta, selectedEstado, currentPage, totalVentasPeriodo]);
 
   // Cálculos para paginación
   const totalPages = Math.ceil(filteredVentas.length / ventasPerPage);
