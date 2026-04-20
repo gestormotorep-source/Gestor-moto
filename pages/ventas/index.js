@@ -89,10 +89,7 @@ const VentasIndexPage = () => {
 
     if (getCache('ventas') && !filtersChanged.current) {
       if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
-        // no hacer return, continúa al fetch
-      } else {
-        setLoading(false);
-        return;
+        // no hacer return, continúa al fetch para cargar devoluciones
       }
     }
 
