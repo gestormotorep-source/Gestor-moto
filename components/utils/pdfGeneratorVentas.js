@@ -508,9 +508,9 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
         const fechaSufijo = new Date().toISOString().split('T')[0];
         const clienteSufijo = clienteNombre.replace(/\s+/g, '-').toLowerCase();
         const fileName = `venta-${numeroVenta.replace(/[^a-zA-Z0-9]/g, '-')}-${clienteSufijo}-${fechaSufijo}.pdf`;
-        pdf.save(fileName);
-        
-        return true;
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        return { url: pdfUrl, fileName };
         
     } catch (error) {
         console.error('Error al generar PDF de venta:', error);
@@ -519,43 +519,43 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
 };
 
 // Función principal exportada
-export const generarPDFVentaCompleta = async (ventaId, ventaData = null, clienteData = null) => {
-    try {
-        // Si no se proporciona ventaData, obtenerla desde Firestore
-        let venta = ventaData;
-        if (!venta && ventaId) {
-            const ventaDoc = await getDoc(doc(db, 'ventas', ventaId));
-            if (ventaDoc.exists()) {
-                venta = { id: ventaDoc.id, ...ventaDoc.data() };
-            } else {
-                throw new Error('Venta no encontrada');
-            }
-        }
-        
-        if (!venta) {
-            throw new Error('No se pudo obtener la informacion de la venta');
-        }
-        
-        // Si no se proporciona clienteData y hay un clienteId, obtenerlo
-        let cliente = clienteData;
-        if (!cliente && venta.clienteId && venta.clienteId !== 'general') {
-            try {
-                const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
-                if (clienteDoc.exists()) {
-                    cliente = clienteDoc.data();
+    export const generarPDFVentaCompleta = async (ventaId, ventaData = null, clienteData = null) => {
+        try {
+            // Si no se proporciona ventaData, obtenerla desde Firestore
+            let venta = ventaData;
+            if (!venta && ventaId) {
+                const ventaDoc = await getDoc(doc(db, 'ventas', ventaId));
+                if (ventaDoc.exists()) {
+                    venta = { id: ventaDoc.id, ...ventaDoc.data() };
+                } else {
+                    throw new Error('Venta no encontrada');
                 }
-            } catch (error) {
-                console.warn('No se pudo obtener informacion del cliente:', error);
             }
+            
+            if (!venta) {
+                throw new Error('No se pudo obtener la informacion de la venta');
+            }
+            
+            // Si no se proporciona clienteData y hay un clienteId, obtenerlo
+            let cliente = clienteData;
+            if (!cliente && venta.clienteId && venta.clienteId !== 'general') {
+                try {
+                    const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
+                    if (clienteDoc.exists()) {
+                        cliente = clienteDoc.data();
+                    }
+                } catch (error) {
+                    console.warn('No se pudo obtener informacion del cliente:', error);
+                }
+            }
+            
+            const result = await generarPDFVenta(venta, cliente);
+            return result; // { url, fileName }
+            
+        } catch (error) {
+            console.error('Error al generar PDF de venta:', error);
+            throw new Error('Error al generar el comprobante de venta. Por favor, intentalo de nuevo.');
         }
-        
-        await generarPDFVenta(venta, cliente);
-        return `Comprobante de venta generado exitosamente para ${venta.clienteNombre || 'Cliente General'}`;
-        
-    } catch (error) {
-        console.error('Error al generar PDF de venta:', error);
-        throw new Error('Error al generar el comprobante de venta. Por favor, intentalo de nuevo.');
-    }
-};
+    };
 
 export default { generarPDFVentaCompleta };

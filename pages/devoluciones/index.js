@@ -403,6 +403,28 @@ const DevolucionesIndexPage = () => {
           updatedAt: serverTimestamp()
         });
 
+        const ventaRef = doc(db, 'ventas', devolucionData.ventaId);
+        const ventaSnap = await transaction.get(ventaRef);
+
+        if (ventaSnap.exists()) {
+          const ventaData = ventaSnap.data();
+          const montoVenta = parseFloat(ventaData.totalVenta || 0);
+          const montoDevolucionActual = parseFloat(devolucionData.montoADevolver || 0);
+          
+          // Sumar devoluciones previas si ya tenía
+          const montoDevueltoAnterior = parseFloat(ventaData.montoDevuelto || 0);
+          const totalDevuelto = montoDevueltoAnterior + montoDevolucionActual;
+          
+          const porcentaje = montoVenta > 0 ? (totalDevuelto / montoVenta) * 100 : 0;
+          const estadoDevolucion = porcentaje >= 99 ? 'devuelta' : 'parcial';
+
+          transaction.update(ventaRef, {
+            estadoDevolucion,
+            montoDevuelto: totalDevuelto,
+            updatedAt: serverTimestamp()
+          });
+        }
+
         for (const mov of todosLosMovimientos) {
           transaction.set(doc(collection(db, 'movimientosLotes')), {
             devolucionId,
@@ -437,6 +459,11 @@ const DevolucionesIndexPage = () => {
       alert('Error: ' + err.message);
     }
   };
+
+
+
+
+
 
   const handleRechazarDevolucion = async (id) => {
     const motivo = window.prompt('Motivo del rechazo (opcional):');

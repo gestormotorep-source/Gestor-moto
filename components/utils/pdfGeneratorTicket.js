@@ -544,9 +544,9 @@ const generarTicketVenta = async (ventaData, clienteData = null) => {
         const clienteSufijo = clienteNombre.replace(/\s+/g, '-').toLowerCase().substring(0, 8);
         const fileName = `ticket-${numeroVenta}-${clienteSufijo}-${fechaSufijo}.pdf`;
         
-        pdf.save(fileName);
-        
-        return true;
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        return { url: pdfUrl, fileName };
         
     } catch (error) {
         console.error('Error al generar ticket:', error);
@@ -589,8 +589,8 @@ export const generarTicketVentaCompleta = async (ventaId, ventaData = null, clie
             }
         }
         
-        await generarTicketVenta(venta, cliente);
-        return `Ticket generado exitosamente con tipografía Courier PS para ${venta.clienteNombre || 'Cliente General'}`;
+        const result = await generarTicketVenta(venta, cliente);
+        return result; // { url, fileName }
         
     } catch (error) {
         console.error('Error al generar ticket:', error);

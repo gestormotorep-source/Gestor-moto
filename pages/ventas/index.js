@@ -38,7 +38,8 @@ import {
   XMarkIcon,
   FunnelIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline';
 
 const VentasIndexPage = () => {
@@ -47,6 +48,10 @@ const VentasIndexPage = () => {
   const { getCache, setCache, invalidateCache } = useAppCache();
   const cached = getCache('ventas');
   const isFirstRender = useRef(true);
+  const filtersChanged = useRef(false);
+  //inclusion de devoluciones
+  const [devolucionesMap, setDevolucionesMap] = useState({}); 
+  const [modalPDF, setModalPDF] = useState(null); 
 
   const [ventas, setVentas] = useState(cached?.data || []);
   const [filteredVentas, setFilteredVentas] = useState(cached?.filtros?.filteredVentas || cached?.data || []);
@@ -82,11 +87,17 @@ const VentasIndexPage = () => {
   useEffect(() => {
     if (!user) { router.push('/auth'); return; }
 
-    // Si hay cache válido, no hacer fetch
-    if (getCache('ventas')) {
-      setLoading(false);
-      return;
+    if (getCache('ventas') && !filtersChanged.current) {
+      if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
+        // no hacer return, continúa al fetch
+      } else {
+        setLoading(false);
+        return;
+      }
     }
+
+    // Resetear la bandera
+    filtersChanged.current = false;
 
     setLoading(true);
     setError(null);
@@ -94,7 +105,17 @@ const VentasIndexPage = () => {
     let constraints = [];
     const { start, end } = dateRange;
 
-    if (start && end) {
+    if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
+      constraints = [
+        where('estadoDevolucion', '==', selectedEstado),
+        ...(start && end ? [
+          where('fechaVenta', '>=', Timestamp.fromDate(start)),
+          where('fechaVenta', '<=', Timestamp.fromDate(end)),
+        ] : []),
+        orderBy('fechaVenta', 'desc'),
+        limit(limitPerPage)
+      ];
+    } else if (start && end) {
       if (selectedEstado !== 'all') {
         constraints = [
           where('estado', '==', selectedEstado),
@@ -179,6 +200,7 @@ const VentasIndexPage = () => {
   // Función para manejar cambios en filtros de período
   const handleFilterChange = (period) => {
     invalidateCache('ventas');
+    filtersChanged.current = true;
     setFilterPeriod(period);
     const today = new Date();
 
@@ -414,15 +436,24 @@ const VentasIndexPage = () => {
         let constraints = [];
         const { start, end } = dateRange;
 
-        if (start && end) {
-          constraints = [
-            where('fechaVenta', '>=', Timestamp.fromDate(start)),
-            where('fechaVenta', '<=', Timestamp.fromDate(end)),
-          ];
-        }
-
-        if (selectedEstado !== 'all') {
-          constraints.push(where('estado', '==', selectedEstado));
+        if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
+          constraints = [where('estadoDevolucion', '==', selectedEstado)];
+          if (start && end) {
+            constraints.push(
+              where('fechaVenta', '>=', Timestamp.fromDate(start)),
+              where('fechaVenta', '<=', Timestamp.fromDate(end)),
+            );
+          }
+        } else {
+          if (start && end) {
+            constraints = [
+              where('fechaVenta', '>=', Timestamp.fromDate(start)),
+              where('fechaVenta', '<=', Timestamp.fromDate(end)),
+            ];
+          }
+          if (selectedEstado !== 'all') {
+            constraints.push(where('estado', '==', selectedEstado));
+          }
         }
 
         const q = query(collection(db, 'ventas'), ...constraints);
@@ -538,6 +569,7 @@ const VentasIndexPage = () => {
 
   const clearFilters = () => {
     invalidateCache('ventas');
+    filtersChanged.current = true;
     const today = new Date();
     const start = new Date(today);
     start.setHours(0, 0, 0, 0);
@@ -564,174 +596,114 @@ const VentasIndexPage = () => {
     return `V-${day}${month}${year}-${timestamp.toString().slice(-4)}`;
   };
 
+  //useEffect para cargar devoluciones aprobadas y mapearlas por número de venta
+  useEffect(() => {
+    if (!user) return;
+
+    const cargarDevoluciones = async () => {
+      try {
+        const { getDocs } = await import('firebase/firestore');
+        const { start, end } = dateRange;
+
+        let constraints = [
+          where('estado', '==', 'aprobada'),
+        ];
+
+        // Filtrar por fecha según el período activo
+        if (start && end) {
+          constraints.push(
+            where('fechaSolicitud', '>=', Timestamp.fromDate(start)),
+            where('fechaSolicitud', '<=', Timestamp.fromDate(end)),
+          );
+        }
+
+        constraints.push(limit(limitPerPage)); // usa el mismo limit de ventas
+
+        const q = query(collection(db, 'devoluciones'), ...constraints);
+        const snap = await getDocs(q);
+
+        const mapa = {};
+        snap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const numeroVenta = data.numeroVenta;
+          if (!numeroVenta) return;
+          if (!mapa[numeroVenta]) {
+            mapa[numeroVenta] = { totalDevuelto: 0, montoVenta: data.montoVentaOriginal || 0 };
+          }
+          mapa[numeroVenta].totalDevuelto += parseFloat(data.montoADevolver || 0);
+        });
+
+        console.log('Total devoluciones encontradas:', snap.docs.length);
+        console.log('devolucionesMap:', mapa);
+        setDevolucionesMap(mapa);
+      } catch (err) {
+        console.error('Error cargando devoluciones:', err);
+      }
+    };
+
+    cargarDevoluciones();
+  }, [user, dateRange, limitPerPage]); 
+
+  // 1. Función para determinar el estado de devolución de una venta
+  const getEstadoDevolucion = (venta) => {
+    const numeroVenta = venta.numeroVenta || getDisplaySaleNumber(venta);
+    const dev = devolucionesMap[numeroVenta];
+    if (!dev) return null;
+
+    const totalVenta = parseFloat(venta.totalVenta || 0);
+    const porcentaje = totalVenta > 0 ? (dev.totalDevuelto / totalVenta) * 100 : 0;
+
+    if (porcentaje >= 99) return 'total';
+    if (porcentaje > 0) return 'parcial';
+    return null;
+  };
+
   // 2. Añade esta función después de las funciones existentes, antes del return del componente
   const handleImprimirVenta = async (venta) => {
     try {
-      // Mostrar indicador de carga
       const loadingToast = document.createElement('div');
-      loadingToast.innerHTML = `
-        <div class="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          <div class="flex items-center">
-            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-            Generando PDF...
-          </div>
-        </div>
-      `;
+      loadingToast.innerHTML = `<div class="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50"><div class="flex items-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Generando vista previa...</div></div>`;
       document.body.appendChild(loadingToast);
 
-      // Obtener información del cliente si existe
       let clienteData = null;
       if (venta.clienteId && venta.clienteId !== 'general') {
         try {
           const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
-          if (clienteDoc.exists()) {
-            clienteData = clienteDoc.data();
-          }
-        } catch (error) {
-          console.warn('No se pudo obtener información del cliente:', error);
-        }
+          if (clienteDoc.exists()) clienteData = clienteDoc.data();
+        } catch (e) {}
       }
 
-      // Generar PDF
-      await generarPDFVentaCompleta(venta.id, venta, clienteData);
-      
-      // Mostrar mensaje de éxito
+      const result = await generarPDFVentaCompleta(venta.id, venta, clienteData);
       document.body.removeChild(loadingToast);
       
-      const successToast = document.createElement('div');
-      successToast.innerHTML = `
-        <div class="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          <div class="flex items-center">
-            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-            PDF generado exitosamente
-          </div>
-        </div>
-      `;
-      document.body.appendChild(successToast);
-      
-      setTimeout(() => {
-        if (document.body.contains(successToast)) {
-          document.body.removeChild(successToast);
-        }
-      }, 3000);
+      setModalPDF({ url: result.url, fileName: result.fileName, tipo: 'pdf' });
 
     } catch (error) {
-      // Remover indicador de carga si existe
-      const loadingElements = document.querySelectorAll('div[class*="fixed top-4 right-4 bg-blue-500"]');
-      loadingElements.forEach(el => {
-        if (document.body.contains(el.parentElement)) {
-          document.body.removeChild(el.parentElement);
-        }
-      });
-
-      console.error('Error al generar PDF:', error);
-      
-      // Mostrar mensaje de error
-      const errorToast = document.createElement('div');
-      errorToast.innerHTML = `
-        <div class="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          <div class="flex items-center">
-            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-            Error al generar PDF
-          </div>
-        </div>
-      `;
-      document.body.appendChild(errorToast);
-      
-      setTimeout(() => {
-        if (document.body.contains(errorToast)) {
-          document.body.removeChild(errorToast);
-        }
-      }, 3000);
+      console.error('Error:', error);
     }
   };
   
   const handleImprimirTicket = async (venta) => {
     try {
-      // Mostrar indicador de carga específico para ticket
       const loadingToast = document.createElement('div');
-      loadingToast.innerHTML = `
-        <div class="fixed top-4 right-4 bg-purple-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          <div class="flex items-center">
-            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-            Generando Ticket...
-          </div>
-        </div>
-      `;
+      loadingToast.innerHTML = `<div class="fixed top-4 right-4 bg-purple-500 text-white px-4 py-2 rounded-lg shadow-lg z-50"><div class="flex items-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Generando vista previa...</div></div>`;
       document.body.appendChild(loadingToast);
 
-      // Obtener información del cliente si existe
       let clienteData = null;
       if (venta.clienteId && venta.clienteId !== 'general') {
         try {
           const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
-          if (clienteDoc.exists()) {
-            clienteData = clienteDoc.data();
-          }
-        } catch (error) {
-          console.warn('No se pudo obtener información del cliente:', error);
-        }
+          if (clienteDoc.exists()) clienteData = clienteDoc.data();
+        } catch (e) {}
       }
 
-      // Generar Ticket PDF
-      await generarTicketVentaCompleta(venta.id, venta, clienteData);
-      
-      // Mostrar mensaje de éxito
+      const result = await generarTicketVentaCompleta(venta.id, venta, clienteData);
       document.body.removeChild(loadingToast);
-      
-      const successToast = document.createElement('div');
-      successToast.innerHTML = `
-        <div class="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          <div class="flex items-center">
-            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-            Ticket generado exitosamente
-          </div>
-        </div>
-      `;
-      document.body.appendChild(successToast);
-      
-      setTimeout(() => {
-        if (document.body.contains(successToast)) {
-          document.body.removeChild(successToast);
-        }
-      }, 3000);
+
+      setModalPDF({ url: result.url, fileName: result.fileName, tipo: 'ticket' });
 
     } catch (error) {
-      // Remover indicador de carga si existe
-      const loadingElements = document.querySelectorAll('div[class*="fixed top-4 right-4 bg-purple-500"]');
-      loadingElements.forEach(el => {
-        if (document.body.contains(el.parentElement)) {
-          document.body.removeChild(el.parentElement);
-        }
-      });
-
-      console.error('Error al generar Ticket:', error);
-      
-      // Mostrar mensaje de error
-      const errorToast = document.createElement('div');
-      errorToast.innerHTML = `
-        <div class="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          <div class="flex items-center">
-            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-            Error al generar Ticket
-          </div>
-        </div>
-      `;
-      document.body.appendChild(errorToast);
-      
-      setTimeout(() => {
-        if (document.body.contains(errorToast)) {
-          document.body.removeChild(errorToast);
-        }
-      }, 3000);
+      console.error('Error:', error);
     }
   };
 
@@ -863,28 +835,30 @@ const VentasIndexPage = () => {
 
                 {/* Selectores de fecha */}
                 <CustomDatePicker
+                  selected={dateRange.start}
+                  onChange={(date) => {
+                    invalidateCache('ventas');
+                    filtersChanged.current = true;
+                    setFilterPeriod('custom');
+                    const startOfDay = new Date(date);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    setDateRange(prev => ({ ...prev, start: startOfDay }));
+                  }}
+                  placeholder="Fecha inicio"
+                />
+
+                <CustomDatePicker
                   selected={dateRange.end}
                   onChange={(date) => {
+                    invalidateCache('ventas');
+                    filtersChanged.current = true;
                     setFilterPeriod('custom');
-                    // Forzar hora al final del día
                     const endOfDay = new Date(date);
                     endOfDay.setHours(23, 59, 59, 999);
                     setDateRange(prev => ({ ...prev, end: endOfDay }));
                   }}
                   placeholder="Fecha fin"
                   minDate={dateRange.start}
-                />
-
-                <CustomDatePicker
-                  selected={dateRange.start}
-                  onChange={(date) => {
-                    setFilterPeriod('custom');
-                    // Forzar hora al inicio del día
-                    const startOfDay = new Date(date);
-                    startOfDay.setHours(0, 0, 0, 0);
-                    setDateRange(prev => ({ ...prev, start: startOfDay }));
-                  }}
-                  placeholder="Fecha inicio"
                 />
 
                 {/* Filtros específicos */}
@@ -907,20 +881,22 @@ const VentasIndexPage = () => {
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
                   <option value="all">Tipo de Venta</option>
-                  <option value="directa">Directa</option>
+                  <option value="ventaDirecta">Venta Directa</option>
                   <option value="cotizacionAprobada">Cotización Aprobada</option>
                   <option value="abono">Abono</option>
                 </select>
 
                 <select
                   value={selectedEstado}
-                  onChange={(e) => { invalidateCache('ventas'); setSelectedEstado(e.target.value); }}
+                  onChange={(e) => { invalidateCache('ventas'); filtersChanged.current = true; setSelectedEstado(e.target.value); }}
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
                   <option value="all">Estado</option>
                   <option value="completada">Completada</option>
                   <option value="anulada">Anulada</option>
                   <option value="pendiente">Pendiente</option>
+                  <option value="devuelta">Devuelta</option>
+                  <option value="parcial">Parcial</option>
                 </select>
               </div>
               {/* Selector de límite */}
@@ -929,7 +905,7 @@ const VentasIndexPage = () => {
                     id="limit-per-page"
                     className=" px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                     value={limitPerPage}
-                    onChange={(e) => { invalidateCache('ventas'); setLimitPerPage(Number(e.target.value)); }}
+                    onChange={(e) => { invalidateCache('ventas'); filtersChanged.current = true; setLimitPerPage(Number(e.target.value)); }}
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>
@@ -1037,7 +1013,7 @@ const VentasIndexPage = () => {
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               <CreditCardIcon className="h-4 w-4 mr-1" /> Abono
                             </span>
-                          ) : venta.tipoVenta === 'directa' ? (
+                          ) : venta.tipoVenta === 'ventaDirecta' ? (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                               <ShoppingCartIcon className="h-4 w-4 mr-1" /> Directa
                             </span>
@@ -1048,18 +1024,21 @@ const VentasIndexPage = () => {
                           )}
                         </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
-                          {venta.estado === 'completada' ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              <CheckCircleIcon className="h-4 w-4 mr-1" /> Completada
-                            </span>
-                          ) : venta.estado === 'anulada' ? (
+                          {venta.estado === 'anulada' ? (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                               <XCircleIcon className="h-4 w-4 mr-1" /> Anulada
                             </span>
+                          ) : venta.estadoDevolucion === 'devuelta' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                              <ArrowTrendingDownIcon className="h-4 w-4 mr-1" /> Devuelta
+                            </span>
+                          ) : venta.estadoDevolucion === 'parcial' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              <ArrowTrendingDownIcon className="h-4 w-4 mr-1" /> Parcial
+                            </span>
                           ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              <span className="mr-1">{getDisplayMethodIcon(venta)}</span>
-                              {venta.estado}
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <CheckCircleIcon className="h-4 w-4 mr-1" /> Completada
                             </span>
                           )}
                         </td>
@@ -1145,10 +1124,60 @@ const VentasIndexPage = () => {
                   </div>
                 </div>
               )}
+              
             </>
           )}
+          
         </div>
+        
       </div>
+      {modalPDF && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-0">
+        <div className="bg-white rounded-xl shadow-2xl flex flex-col w-[90vw] h-[95vh]">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 shrink-0">
+              <h2 className="text-lg font-semibold text-gray-800">
+                {modalPDF.tipo === 'pdf' ? '📄 Vista Previa - Comprobante' : '🎫 Vista Previa - Ticket'}
+              </h2>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = modalPDF.url;
+                    link.download = modalPDF.fileName;
+                    link.click();
+                  }}
+                  className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition"
+                >
+                  <PrinterIcon className="h-4 w-4 mr-2" />
+                  Descargar
+                </button>
+                <button
+                  onClick={() => {
+                    URL.revokeObjectURL(modalPDF.url);
+                    setModalPDF(null);
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* iframe */}
+            <div className="flex-1 p-2 min-h-0">
+              <iframe
+                src={modalPDF.url}
+                className="w-full h-full rounded-lg border border-gray-200"
+                title="Vista previa del PDF"
+              />
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </Layout>
   );
 };
