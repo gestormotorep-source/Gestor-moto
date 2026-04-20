@@ -302,100 +302,146 @@ const DevolucionesIndexPage = () => {
 
     try {
       await runTransaction(db, async (transaction) => {
+        
+        // ============================================================
+        // FASE 1: TODOS LOS READS PRIMERO
+        // ============================================================
+        
         const devolucionRef = doc(db, 'devoluciones', devolucionId);
         const devolucionSnap = await transaction.get(devolucionRef);
         if (!devolucionSnap.exists()) throw new Error('Devolución no encontrada');
         const devolucionData = devolucionSnap.data();
         if (devolucionData.estado !== 'solicitada') throw new Error('Solo se pueden aprobar devoluciones en estado "solicitada"');
 
+        // Read items de devolución
         const itemsSnapshot = await getDocs(query(
           collection(db, 'devoluciones', devolucionId, 'itemsDevolucion'),
           orderBy('createdAt', 'asc')
         ));
         if (itemsSnapshot.empty) throw new Error('No se encontraron items en esta devolución');
-
         const itemsData = itemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        const ventaId = devolucionData.ventaId;
 
+        // Read items de venta original
+        const ventaId = devolucionData.ventaId;
         const itemsVentaSnapshot = await getDocs(query(
           collection(db, 'ventas', ventaId, 'itemsVenta'),
           orderBy('createdAt', 'asc')
         ));
         const itemsVentaData = itemsVentaSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        const itemsConLoteOriginal = [];
+        // Read venta
+        const ventaRef = doc(db, 'ventas', ventaId);
+        const ventaSnap = await transaction.get(ventaRef);
+
+        // Read todos los lotes que necesitamos
+        const lotesSnaps = {};
         for (const itemDevolucion of itemsData) {
-          const itemVentaCorrespondiente = itemsVentaData.find(iv =>
+          const itemVenta = itemsVentaData.find(iv =>
             iv.productoId === itemDevolucion.productoId &&
             iv.nombreProducto === itemDevolucion.nombreProducto
           );
-          if (!itemVentaCorrespondiente) throw new Error(`No se encontró item original para: ${itemDevolucion.nombreProducto}`);
-          if (!itemVentaCorrespondiente.loteId) throw new Error(`El item ${itemDevolucion.nombreProducto} no tiene lote original`);
+          if (!itemVenta) throw new Error(`No se encontró item original para: ${itemDevolucion.nombreProducto}`);
+          if (!itemVenta.loteId) throw new Error(`El item ${itemDevolucion.nombreProducto} no tiene lote original`);
 
-          const loteOriginalRef = doc(db, 'lotes', itemVentaCorrespondiente.loteId);
-          const loteOriginalSnap = await transaction.get(loteOriginalRef);
-          if (!loteOriginalSnap.exists()) throw new Error(`Lote original ${itemVentaCorrespondiente.loteId} no encontrado`);
+          if (!lotesSnaps[itemVenta.loteId]) {
+            const loteRef = doc(db, 'lotes', itemVenta.loteId);
+            lotesSnaps[itemVenta.loteId] = {
+              ref: loteRef,
+              snap: await transaction.get(loteRef),
+              itemVenta,
+              itemDevolucion
+            };
+          }
+        }
 
-          const loteOriginalData = loteOriginalSnap.data();
-          const stockOriginal = parseInt(loteOriginalData.cantidad || 0);
-          const stockActual = parseInt(loteOriginalData.stockRestante || 0);
+        // Read todos los productos que necesitamos
+        const productosSnaps = {};
+        for (const itemDevolucion of itemsData) {
+          if (!productosSnaps[itemDevolucion.productoId]) {
+            const productRef = doc(db, 'productos', itemDevolucion.productoId);
+            productosSnaps[itemDevolucion.productoId] = {
+              ref: productRef,
+              snap: await transaction.get(productRef)
+            };
+          }
+        }
+
+        // ============================================================
+        // FASE 2: VALIDACIONES (sin más reads)
+        // ============================================================
+
+        const movimientos = [];
+
+        for (const itemDevolucion of itemsData) {
+          const itemVenta = itemsVentaData.find(iv =>
+            iv.productoId === itemDevolucion.productoId &&
+            iv.nombreProducto === itemDevolucion.nombreProducto
+          );
+
+          const loteInfo = lotesSnaps[itemVenta.loteId];
+          if (!loteInfo.snap.exists()) throw new Error(`Lote original ${itemVenta.loteId} no encontrado`);
+
+          const loteData = loteInfo.snap.data();
+          const stockOriginal = parseInt(loteData.cantidad || 0);
+          const stockActual = parseInt(loteData.stockRestante || 0);
           const cantidadADevolver = parseFloat(itemDevolucion.cantidadADevolver || 0);
           const espacioDisponible = stockOriginal - stockActual;
 
           if (espacioDisponible < cantidadADevolver) {
-            throw new Error(`Sin espacio en lote ${loteOriginalData.numeroLote}. Disponible: ${espacioDisponible}, Solicitado: ${cantidadADevolver}`);
+            throw new Error(`Sin espacio en lote ${loteData.numeroLote}. Disponible: ${espacioDisponible}, Solicitado: ${cantidadADevolver}`);
           }
 
-          itemsConLoteOriginal.push({
-            itemDevolucion, itemVentaOriginal: itemVentaCorrespondiente,
-            loteOriginal: { id: itemVentaCorrespondiente.loteId, data: loteOriginalData }
+          movimientos.push({
+            itemDevolucion,
+            itemVenta,
+            loteRef: loteInfo.ref,
+            loteData,
+            stockActual,
+            cantidadADevolver,
+            nuevoStock: stockActual + cantidadADevolver,
+            productoId: itemDevolucion.productoId,
+            gananciaDevolucion: itemDevolucion.gananciaDevolucion || 0
           });
         }
 
-        const productosData = {};
-        for (const item of itemsConLoteOriginal) {
-          if (!productosData[item.itemDevolucion.productoId]) {
-            const productRef = doc(db, 'productos', item.itemDevolucion.productoId);
-            const productSnap = await transaction.get(productRef);
-            productosData[item.itemDevolucion.productoId] = { ref: productRef, data: productSnap.exists() ? productSnap.data() : null };
-          }
+        // Calcular nuevo estado de la venta
+        let nuevaVentaData = null;
+        if (ventaSnap.exists()) {
+          const ventaData = ventaSnap.data();
+          const montoVenta = parseFloat(ventaData.totalVenta || 0);
+          const montoDevolucionActual = parseFloat(devolucionData.montoADevolver || 0);
+          const montoDevueltoAnterior = parseFloat(ventaData.montoDevuelto || 0);
+          const totalDevuelto = montoDevueltoAnterior + montoDevolucionActual;
+          const porcentaje = montoVenta > 0 ? (totalDevuelto / montoVenta) * 100 : 0;
+          nuevaVentaData = {
+            estadoDevolucion: porcentaje >= 99 ? 'devuelta' : 'parcial',
+            montoDevuelto: totalDevuelto
+          };
         }
 
-        const todosLosMovimientos = [];
-        for (const item of itemsConLoteOriginal) {
-          const cantidadADevolver = parseFloat(item.itemDevolucion.cantidadADevolver || 0);
-          const loteData = item.loteOriginal.data;
-          const stockActualLote = parseInt(loteData.stockRestante || 0);
-          const nuevoStockLote = stockActualLote + cantidadADevolver;
+        // ============================================================
+        // FASE 3: TODOS LOS WRITES AL FINAL
+        // ============================================================
 
-          transaction.update(doc(db, 'lotes', item.loteOriginal.id), {
-            stockRestante: nuevoStockLote,
-            estado: nuevoStockLote > 0 ? 'activo' : 'agotado',
+        // Update lotes y productos
+        for (const mov of movimientos) {
+          transaction.update(mov.loteRef, {
+            stockRestante: mov.nuevoStock,
+            estado: mov.nuevoStock > 0 ? 'activo' : 'agotado',
             updatedAt: serverTimestamp()
           });
 
-          const productInfo = productosData[item.itemDevolucion.productoId];
-          if (productInfo.data) {
-            transaction.update(productInfo.ref, {
-              stockActual: (productInfo.data.stockActual || 0) + cantidadADevolver,
+          const productoInfo = productosSnaps[mov.productoId];
+          if (productoInfo.snap.exists()) {
+            const productoData = productoInfo.snap.data();
+            transaction.update(productoInfo.ref, {
+              stockActual: (productoData.stockActual || 0) + mov.cantidadADevolver,
               updatedAt: serverTimestamp()
             });
           }
-
-          todosLosMovimientos.push({
-            productoId: item.itemDevolucion.productoId,
-            nombreProducto: item.itemDevolucion.nombreProducto,
-            loteId: item.loteOriginal.id,
-            numeroLote: loteData.numeroLote,
-            cantidadDevuelta: cantidadADevolver,
-            stockAnterior: stockActualLote,
-            stockNuevo: nuevoStockLote,
-            precioCompraUnitario: parseFloat(loteData.precioCompraUnitario || 0),
-            itemVentaOriginal: item.itemVentaOriginal,
-            gananciaDevolucion: item.itemDevolucion.gananciaDevolucion || 0
-          });
         }
 
+        // Update devolución
         transaction.update(devolucionRef, {
           estado: 'aprobada',
           fechaProcesamiento: serverTimestamp(),
@@ -403,45 +449,32 @@ const DevolucionesIndexPage = () => {
           updatedAt: serverTimestamp()
         });
 
-        const ventaRef = doc(db, 'ventas', devolucionData.ventaId);
-        const ventaSnap = await transaction.get(ventaRef);
-
-        if (ventaSnap.exists()) {
-          const ventaData = ventaSnap.data();
-          const montoVenta = parseFloat(ventaData.totalVenta || 0);
-          const montoDevolucionActual = parseFloat(devolucionData.montoADevolver || 0);
-          
-          // Sumar devoluciones previas si ya tenía
-          const montoDevueltoAnterior = parseFloat(ventaData.montoDevuelto || 0);
-          const totalDevuelto = montoDevueltoAnterior + montoDevolucionActual;
-          
-          const porcentaje = montoVenta > 0 ? (totalDevuelto / montoVenta) * 100 : 0;
-          const estadoDevolucion = porcentaje >= 99 ? 'devuelta' : 'parcial';
-
+        // Update venta
+        if (nuevaVentaData) {
           transaction.update(ventaRef, {
-            estadoDevolucion,
-            montoDevuelto: totalDevuelto,
+            ...nuevaVentaData,
             updatedAt: serverTimestamp()
           });
         }
 
-        for (const mov of todosLosMovimientos) {
+        // Crear movimientos de lotes
+        for (const mov of movimientos) {
           transaction.set(doc(collection(db, 'movimientosLotes')), {
             devolucionId,
             numeroDevolucion: devolucionData.numeroDevolucion,
             ventaOriginalId: devolucionData.ventaId,
             numeroVentaOriginal: devolucionData.numeroVenta,
             productoId: mov.productoId,
-            nombreProducto: mov.nombreProducto,
-            loteId: mov.loteId,
-            numeroLote: mov.numeroLote,
-            cantidadDevuelta: mov.cantidadDevuelta,
-            stockAnteriorLote: mov.stockAnterior,
-            stockNuevoLote: mov.stockNuevo,
-            precioCompraUnitario: mov.precioCompraUnitario,
-            itemVentaOriginalId: mov.itemVentaOriginal.id,
-            cantidadVendidaOriginal: mov.itemVentaOriginal.cantidad,
-            precioVentaUnitario: mov.itemVentaOriginal.precioVentaUnitario,
+            nombreProducto: mov.itemDevolucion.nombreProducto,
+            loteId: mov.itemVenta.loteId,
+            numeroLote: mov.loteData.numeroLote,
+            cantidadDevuelta: mov.cantidadADevolver,
+            stockAnteriorLote: mov.stockActual,
+            stockNuevoLote: mov.nuevoStock,
+            precioCompraUnitario: parseFloat(mov.loteData.precioCompraUnitario || 0),
+            itemVentaOriginalId: mov.itemVenta.id,
+            cantidadVendidaOriginal: mov.itemVenta.cantidad,
+            precioVentaUnitario: mov.itemVenta.precioVentaUnitario,
             gananciaDevolucion: mov.gananciaDevolucion,
             tipoMovimiento: 'devolucion-aprobada-lote-original',
             esLoteOriginal: true,
@@ -459,10 +492,6 @@ const DevolucionesIndexPage = () => {
       alert('Error: ' + err.message);
     }
   };
-
-
-
-
 
 
   const handleRechazarDevolucion = async (id) => {
