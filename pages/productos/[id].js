@@ -12,7 +12,52 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { PhotoIcon, TrashIcon, XMarkIcon, PlusIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, XMarkIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FUNCIÓN COMPARTIDA: genera palabrasClave con prefijos para búsqueda
+//  Igual que en migrar-palabras-clave.js y searchProducts
+// ─────────────────────────────────────────────────────────────────────────────
+const MIN_PREFIX_LENGTH = 3;
+
+function generarPalabrasClave(data) {
+  const fuentes = [
+    data.nombre                  || '',
+    data.marca                   || '',
+    data.medida                  || '',
+    data.codigoTienda            || '',
+    data.codigoProveedor         || '',
+    data.modelosCompatiblesTexto || '',
+  ];
+
+  const texto   = fuentes.join(' ').toUpperCase();
+  const palabras = texto
+    .split(/[\s\-\/,\.]+/)
+    .map(p => p.trim())
+    .filter(p => p.length >= 2);
+
+  const set = new Set();
+
+  for (const palabra of palabras) {
+    // Palabra completa
+    set.add(palabra);
+
+    // Prefijos desde MIN_PREFIX_LENGTH
+    // "CENTRIFUGO" → "CEN", "CENT", "CENTR", ..., "CENTRIFUGO"
+    if (palabra.length >= MIN_PREFIX_LENGTH) {
+      for (let i = MIN_PREFIX_LENGTH; i <= palabra.length; i++) {
+        set.add(palabra.slice(0, i));
+      }
+    }
+  }
+
+  // Garantizar que los códigos exactos siempre estén (aunque sean cortos)
+  if (data.codigoTienda?.trim())    set.add(data.codigoTienda.trim().toUpperCase());
+  if (data.codigoProveedor?.trim()) set.add(data.codigoProveedor.trim().toUpperCase());
+
+  return [...set];
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const AddEditProductoPage = () => {
   const router = useRouter();
@@ -23,9 +68,8 @@ const AddEditProductoPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  const DEFAULT_STOCK_UMBRAL = 4; // Valor por defecto para el umbral de stock bajo
+  const DEFAULT_STOCK_UMBRAL = 4;
 
-  // Estado del formulario para un producto
   const [formData, setFormData] = useState({
     nombre: '',
     descripcion: '',
@@ -35,18 +79,18 @@ const AddEditProductoPage = () => {
     codigoProveedor: '',
     precioCompraDefault: 0,
     precioVentaDefault: 0,
-    precioVentaMinimo: 0, // NUEVO CAMPO: Precio de venta mínimo
+    precioVentaMinimo: 0,
     stockActual: 0,
     stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
     ubicacion: '',
-    imageUrls: [], // CAMBIO: Ahora es un array para múltiples imágenes
+    imageUrls: [],
     modelosCompatiblesTexto: '',
     descripcionPuntos: '',
     color: '',
   });
 
-  const [selectedImageFiles, setSelectedImageFiles] = useState([]); // CAMBIO: Array para múltiples archivos
-  const [imagePreviewUrls, setImagePreviewUrls] = useState([]); // CAMBIO: Array para múltiples previsualizaciones
+  const [selectedImageFiles, setSelectedImageFiles] = useState([]);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState([]);
 
   const isEditing = id !== 'nuevo';
 
@@ -76,17 +120,15 @@ const AddEditProductoPage = () => {
               codigoProveedor: productData.codigoProveedor || '',
               precioCompraDefault: productData.precioCompraDefault || 0,
               precioVentaDefault: productData.precioVentaDefault || 0,
-              precioVentaMinimo: productData.precioVentaMinimo || 0, // NUEVO: Carga precio mínimo
+              precioVentaMinimo: productData.precioVentaMinimo || 0,
               stockActual: productData.stockActual || 0,
               stockReferencialUmbral: productData.stockReferencialUmbral ?? DEFAULT_STOCK_UMBRAL,
               ubicacion: productData.ubicacion || '',
-              // CAMBIO: Manejo de múltiples imágenes - compatibilidad con el campo anterior
               imageUrls: productData.imageUrls || (productData.imageUrl ? [productData.imageUrl] : []),
               modelosCompatiblesTexto: productData.modelosCompatiblesTexto || '',
               descripcionPuntos: productData.descripcionPuntos || productData.descripcion || '',
               color: productData.color || '',
             });
-            // CAMBIO: Configurar previsualizaciones de imágenes existentes
             setImagePreviewUrls(productData.imageUrls || (productData.imageUrl ? [productData.imageUrl] : []));
           } else {
             setError('Producto no encontrado.');
@@ -99,10 +141,10 @@ const AddEditProductoPage = () => {
             modelosCompatiblesTexto: '',
             descripcionPuntos: '',
             color: '',
-            precioVentaMinimo: 0, // Inicializa precio mínimo para nuevo producto
-            imageUrls: [], // Inicializa array vacío para nuevas imágenes
+            precioVentaMinimo: 0,
+            imageUrls: [],
           }));
-          setImagePreviewUrls([]); // Inicializa previsualizaciones vacías
+          setImagePreviewUrls([]);
         }
       } catch (err) {
         console.error("Error al cargar datos:", err);
@@ -123,22 +165,20 @@ const AddEditProductoPage = () => {
     }));
   };
 
-  // NUEVO: Manejo de múltiples imágenes
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
-    const currentImageCount = selectedImageFiles.length + imagePreviewUrls.length - selectedImageFiles.length;
-    
-    // Verificar que no se excedan las 3 imágenes
+    const currentImageCount = imagePreviewUrls.length;
+
     if (currentImageCount + files.length > 3) {
       setError('Máximo 3 imágenes permitidas');
       return;
     }
 
     setError(null);
-    
+
     const newFiles = [...selectedImageFiles, ...files];
     const newPreviews = [...imagePreviewUrls];
-    
+
     files.forEach(file => {
       newPreviews.push(URL.createObjectURL(file));
     });
@@ -147,19 +187,16 @@ const AddEditProductoPage = () => {
     setImagePreviewUrls(newPreviews);
   };
 
-  // NUEVO: Remover imagen específica por índice
   const handleRemoveImage = (indexToRemove) => {
     const newPreviews = imagePreviewUrls.filter((_, index) => index !== indexToRemove);
     const newFiles = selectedImageFiles.filter((_, index) => index !== indexToRemove);
-    
-    // Si es una imagen existente (no un archivo nuevo), agregarla a la lista de imágenes a eliminar
+
     const imageToRemove = imagePreviewUrls[indexToRemove];
     if (formData.imageUrls.includes(imageToRemove)) {
-      // Actualizar formData para remover la URL de la imagen
       const updatedImageUrls = formData.imageUrls.filter(url => url !== imageToRemove);
       setFormData(prev => ({ ...prev, imageUrls: updatedImageUrls }));
     }
-    
+
     setImagePreviewUrls(newPreviews);
     setSelectedImageFiles(newFiles);
   };
@@ -175,14 +212,13 @@ const AddEditProductoPage = () => {
 
   const handleDeleteOldImages = async (oldImageUrls) => {
     if (!oldImageUrls || oldImageUrls.length === 0) return;
-    
+
     for (const imageUrl of oldImageUrls) {
       try {
         const oldImageRef = storageRef(storage, imageUrl);
         await deleteObject(oldImageRef);
-        console.log('Antigua imagen eliminada de Storage:', imageUrl);
       } catch (err) {
-        console.warn('No se pudo eliminar la antigua imagen de Storage:', err);
+        console.warn('No se pudo eliminar la imagen de Storage:', err);
       }
     }
   };
@@ -193,7 +229,6 @@ const AddEditProductoPage = () => {
     setError(null);
 
     try {
-      // Validación del precio mínimo
       if (formData.precioVentaMinimo > formData.precioVentaDefault) {
         setError('El precio de venta mínimo no puede ser mayor al precio de venta default');
         setSaving(false);
@@ -202,10 +237,9 @@ const AddEditProductoPage = () => {
 
       let finalImageUrls = [...formData.imageUrls];
 
-      // Subir nuevas imágenes si existen
       if (selectedImageFiles.length > 0) {
         const productId = isEditing ? id : Date.now().toString();
-        
+
         for (const file of selectedImageFiles) {
           const uploadedUrl = await uploadImage(file, productId);
           if (uploadedUrl) {
@@ -214,68 +248,56 @@ const AddEditProductoPage = () => {
         }
       }
 
-      // Si estamos editando y había imágenes que se eliminaron, borrarlas del storage
       if (isEditing) {
         const originalImages = formData.imageUrls;
         const currentImages = imagePreviewUrls.filter(url => originalImages.includes(url));
         const imagesToDelete = originalImages.filter(url => !currentImages.includes(url));
-        
+
         if (imagesToDelete.length > 0) {
           await handleDeleteOldImages(imagesToDelete);
         }
       }
 
-      const palabrasClave = [...new Set(
-        [
-          formData.nombre || '',
-          formData.marca || '',
-          formData.codigoTienda || '',
-          formData.codigoProveedor || '',
-          formData.modelosCompatiblesTexto || '',
-        ]
-        .join(' ')
-        .toUpperCase()
-        .split(/[\s\-\/,]+/)
-        .filter(p => p.length >= 2)
-      )];
+      // ── GENERAR PALABRAS CLAVE CON PREFIJOS ──────────────────────────────
+      // Usa la misma lógica que la migración y el buscador:
+      // "CENTRIFUGO" → ["CEN","CENT","CENTR",...,"CENTRIFUGO"]
+      const palabrasClave = generarPalabrasClave({
+        nombre:                  formData.nombre,
+        marca:                   formData.marca,
+        medida:                  formData.medida,
+        codigoTienda:            formData.codigoTienda,
+        codigoProveedor:         formData.codigoProveedor,
+        modelosCompatiblesTexto: formData.modelosCompatiblesTexto,
+      });
+      // ─────────────────────────────────────────────────────────────────────
 
       const productDataToSave = {
         ...formData,
         imageUrls: finalImageUrls,
-        precioVentaMinimo: formData.precioVentaMinimo, // NUEVO: Guardar precio mínimo
-        // Mantener compatibilidad con el campo anterior
         imageUrl: finalImageUrls.length > 0 ? finalImageUrls[0] : '',
-        palabrasClave,
+        palabrasClave,   // ← ahora incluye prefijos
         modelosCompatiblesIds: [],
         modelosCompatiblesTexto: formData.modelosCompatiblesTexto,
         descripcionPuntos: formData.descripcionPuntos,
+        descripcion: formData.descripcionPuntos,
         color: formData.color,
         updatedAt: serverTimestamp(),
       };
 
-      if (!isEditing) {
+      if (isEditing) {
+        await updateDoc(doc(db, 'productos', id), productDataToSave);
+      } else {
         productDataToSave.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'productos'), productDataToSave);
       }
 
-      if (isEditing) {
-        await updateDoc(doc(db, 'productos', id), {
-            ...productDataToSave,
-            descripcion: productDataToSave.descripcionPuntos,
-        });
-        console.log("Producto actualizado con ID: ", id);
-      } else {
-        const docRef = await addDoc(collection(db, 'productos'), {
-            ...productDataToSave,
-            descripcion: productDataToSave.descripcionPuntos,
-        });
-        console.log("Producto agregado con ID: ", docRef.id);
-      }
       router.push('/productos');
     } catch (err) {
       console.error("Error al guardar producto:", err);
-      setError("Error al guardar el producto. Verifique los campos e intente de nuevo. Detalle: " + err.message);
       if (err.code === 'permission-denied') {
         setError('No tiene permisos para realizar esta acción. Contacte al administrador.');
+      } else {
+        setError("Error al guardar el producto. Detalle: " + err.message);
       }
     } finally {
       setSaving(false);
@@ -306,7 +328,7 @@ const AddEditProductoPage = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Sección de Información Básica */}
+          {/* Información Básica */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label htmlFor="nombre" className="block text-sm font-medium text-gray-700">Nombre del Producto</label>
@@ -324,7 +346,7 @@ const AddEditProductoPage = () => {
               <textarea name="descripcionPuntos" id="descripcionPuntos" rows="4" value={formData.descripcionPuntos} onChange={handleChange}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 placeholder="Ej:&#10; - Material de alta calidad&#10; - Resistente a la corrosión&#10; - Fácil de instalar"
-              ></textarea>
+              />
             </div>
             <div>
               <label htmlFor="medida" className="block text-sm font-medium text-gray-700">Medida (opcional)</label>
@@ -343,7 +365,7 @@ const AddEditProductoPage = () => {
             </div>
           </div>
 
-          {/* Sección de Códigos y Precios */}
+          {/* Códigos y Precios */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label htmlFor="codigoTienda" className="block text-sm font-medium text-gray-700">Código de Tienda</label>
@@ -365,11 +387,8 @@ const AddEditProductoPage = () => {
               <input type="number" name="precioVentaDefault" id="precioVentaDefault" value={formData.precioVentaDefault} onChange={handleChange} required step="0.01" min="0"
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
-            {/* NUEVO CAMPO: Precio de Venta Mínimo */}
             <div>
-              <label htmlFor="precioVentaMinimo" className="block text-sm font-medium text-gray-700">
-                Precio de Venta Mínimo
-              </label>
+              <label htmlFor="precioVentaMinimo" className="block text-sm font-medium text-gray-700">Precio de Venta Mínimo</label>
               <input type="number" name="precioVentaMinimo" id="precioVentaMinimo" value={formData.precioVentaMinimo} onChange={handleChange} required step="0.01" min="0"
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
@@ -385,7 +404,7 @@ const AddEditProductoPage = () => {
             </div>
           </div>
 
-          {/* Sección: Modelos Compatibles como texto libre */}
+          {/* Modelos Compatibles */}
           <div>
             <h2 className="text-lg font-semibold text-gray-800 mb-3">Modelos Compatibles (Texto Libre)</h2>
             <p className="text-sm text-gray-500 mb-2">Ingrese los modelos compatibles, separados por comas o saltos de línea.</p>
@@ -397,16 +416,15 @@ const AddEditProductoPage = () => {
               onChange={handleChange}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               placeholder="Ej: Yamaha YBR125, Honda CB190R, Pulsar NS200"
-            ></textarea>
+            />
           </div>
 
-          {/* SECCIÓN MEJORADA: Múltiples Imágenes del Producto */}
+          {/* Imágenes */}
           <div>
             <h2 className="text-lg font-semibold text-gray-800 mb-3">
               Imágenes del Producto (opcional - máximo 3)
             </h2>
-            
-            {/* Mostrar imágenes existentes */}
+
             {imagePreviewUrls.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 {imagePreviewUrls.map((url, index) => (
@@ -426,7 +444,6 @@ const AddEditProductoPage = () => {
               </div>
             )}
 
-            {/* Botón para agregar más imágenes */}
             {imagePreviewUrls.length < 3 && (
               <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
                 <div className="space-y-1 text-center">
@@ -439,13 +456,13 @@ const AddEditProductoPage = () => {
                       <span>
                         {imagePreviewUrls.length === 0 ? 'Subir imágenes' : `Agregar imagen (${imagePreviewUrls.length}/3)`}
                       </span>
-                      <input 
-                        id="file-upload" 
-                        name="file-upload" 
-                        type="file" 
-                        className="sr-only" 
-                        onChange={handleImageChange} 
-                        accept="image/*" 
+                      <input
+                        id="file-upload"
+                        name="file-upload"
+                        type="file"
+                        className="sr-only"
+                        onChange={handleImageChange}
+                        accept="image/*"
                         multiple={imagePreviewUrls.length === 0}
                       />
                     </label>
@@ -457,7 +474,7 @@ const AddEditProductoPage = () => {
             )}
           </div>
 
-          {/* Botones de acción */}
+          {/* Botones */}
           <div className="flex justify-end space-x-4 mt-8">
             <button
               type="button"

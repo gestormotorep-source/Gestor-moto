@@ -182,69 +182,75 @@ const NuevaVentaPage = () => {
   }, [user, router.isReady, activeSale]);
 
   // Búsqueda de productos mejorada (estilo cotizaciones)
-const searchProducts = async (term, modelos) => {
-  const hayTerm = term.trim().length > 0;
-  const hayModelos = modelos.trim().length > 0;
-
-  if (!hayTerm && !hayModelos) {
+const searchProducts = async (term) => {
+  if (!term.trim()) {
     setFilteredProductos([]);
     return;
   }
-
+ 
   setIsSearching(true);
   try {
-    const idsVistos = new Set();
-    let candidatos = [];
-
-    if (hayTerm) {
-      const palabras = term.trim().toUpperCase().split(/[\s\-\/]+/).filter(p => p.length >= 2);
-
-      if (palabras.length > 0) {
-        const [snapExacto, snapPrefijo] = await Promise.all([
-          getDocs(query(collection(db, 'productos'), where('palabrasClave', 'array-contains', palabras[0]), limit(200))),
-          getDocs(query(collection(db, 'productos'), where('nombre', '>=', palabras[0]), where('nombre', '<=', palabras[0] + '\uf8ff'), limit(200)))
-        ]);
-
-        [snapExacto, snapPrefijo].forEach(snap => {
-          snap.docs.forEach(d => {
-            if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
-          });
-        });
-
-        if (palabras.length > 1) {
-          const palabrasRestantes = palabras.slice(1);
-          candidatos = candidatos.filter(p => {
-            const claves = p.palabrasClave || [];
-            return palabrasRestantes.every(palabra => claves.some(clave => clave.startsWith(palabra)));
-          });
-        }
-
-        const [porCodigoTienda, porCodigoProveedor] = await Promise.all([
-          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', term.trim().toUpperCase()), limit(5))),
-          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', term.trim().toUpperCase()), limit(5)))
-        ]);
-        [porCodigoTienda, porCodigoProveedor].forEach(snap => {
-          snap.docs.forEach(d => {
-            if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
-          });
-        });
-      }
-    } else {
-      // Solo modelos: traer todos y filtrar local (o un subset grande)
-      const snap = await getDocs(query(collection(db, 'productos'), limit(500)));
-      snap.docs.forEach(d => {
-        if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
-      });
-    }
-
-    // Filtrar por modelos compatibles localmente
-    if (hayModelos) {
-      const modeloLower = modelos.trim().toLowerCase();
-      candidatos = candidatos.filter(p =>
-        p.modelosCompatiblesTexto?.toLowerCase().includes(modeloLower)
+    const idsVistos  = new Set();
+    let   candidatos = [];
+ 
+    const termUpper = term.trim().toUpperCase();
+    const palabras  = termUpper.split(/[\s\-\/]+/).filter(p => p.length >= 1);
+ 
+    if (palabras.length > 0) {
+      const queries = palabras.flatMap(palabra => [
+        // array-contains sobre palabrasClave
+        // Ahora incluye prefijos → "CEN" hace match con el prefijo "CEN" guardado
+        getDocs(query(
+          collection(db, 'productos'),
+          where('palabrasClave', 'array-contains', palabra),
+          limit(200)
+        )),
+        // range query sobre nombre (para cuando la búsqueda empieza igual que el nombre)
+        getDocs(query(
+          collection(db, 'productos'),
+          where('nombre', '>=', palabra),
+          where('nombre', '<=', palabra + '\uf8ff'),
+          limit(100)
+        )),
+      ]);
+ 
+      // Códigos exactos y por prefijo
+      queries.push(
+        getDocs(query(collection(db, 'productos'), where('codigoTienda',    '==', termUpper), limit(5))),
+        getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(5))),
+        getDocs(query(collection(db, 'productos'), where('codigoTienda',    '>=', termUpper), where('codigoTienda',    '<=', termUpper + '\uf8ff'), limit(50))),
+        getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', termUpper), where('codigoProveedor', '<=', termUpper + '\uf8ff'), limit(50))),
       );
+ 
+      const resultados = await Promise.all(queries);
+      resultados.forEach(snap => {
+        snap.docs.forEach(d => {
+          if (!idsVistos.has(d.id)) {
+            idsVistos.add(d.id);
+            candidatos.push({ id: d.id, ...d.data() });
+          }
+        });
+      });
+ 
+      // ─── FILTRO LOCAL ────────────────────────────────────────────────────
+      // Cambio clave: includes() en vez de startsWith()
+      // Esto valida que cada palabra del término aparezca en algún lado del producto
+      candidatos = candidatos.filter(p => {
+        const nombreUpper      = (p.nombre          || '').toUpperCase();
+        const claves           = (p.palabrasClave   || []);
+        const codigoTienda     = (p.codigoTienda    || '').toUpperCase();
+        const codigoProveedor  = (p.codigoProveedor || '').toUpperCase();
+ 
+        return palabras.every(palabra =>
+          nombreUpper.includes(palabra)                    ||  // substring en nombre completo
+          claves.some(clave => clave.includes(palabra))   ||  // substring en cualquier clave
+          codigoTienda.includes(palabra)                  ||
+          codigoProveedor.includes(palabra)
+        );
+      });
+      // ─────────────────────────────────────────────────────────────────────
     }
-
+ 
     setFilteredProductos(candidatos);
   } catch (err) {
     console.error("Error al buscar productos:", err);
