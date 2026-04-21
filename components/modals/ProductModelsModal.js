@@ -48,14 +48,16 @@ export default function ProductModelsModal({ isOpen, onClose, product /* , model
                         <div className="bg-gray-200 py-2 text-center font-bold text-gray-800">
                           Modelos Compatibles: {product.nombre}
                         </div>
-                        {/* Iterar sobre los modelos y mostrar cada uno en una celda */}
-                        {product.modelosCompatiblesTexto.split(/[,;\n]/).map((modelo, index) =>
-                          modelo.trim() ? (
-                            <div key={index} className="px-4 py-2 text-black  text-center border-b border-gray-200 last:border-b-0">
-                              {modelo.trim()}
-                            </div>
-                          ) : null
-                        )}
+                        {/* ↓ este div envuelve los items con scroll */}
+                        <div className="max-h-72 overflow-y-auto">
+                          {product.modelosCompatiblesTexto.split(/[,;\n]/).map((modelo, index) =>
+                            modelo.trim() ? (
+                              <div key={index} className="px-4 py-2 text-black text-center border-b border-gray-200 last:border-b-0">
+                                {modelo.trim()}
+                              </div>
+                            ) : null
+                          )}
+                        </div>
                       </div>
                     </div>
                   ) : (

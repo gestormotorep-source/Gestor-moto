@@ -346,15 +346,15 @@ const searchProducts = async (term, modelos) => {
   // Efecto para buscar productos con debounce
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (searchTerm.trim() || searchModelos.trim()) {
-        searchProducts(searchTerm, searchModelos);
+      if (searchTerm.trim()) {
+        searchProducts(searchTerm, ''); // siempre vacío el segundo parámetro
       } else {
         setFilteredProductos([]);
       }
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, searchModelos]);
+  }, [searchTerm]);
 
   // Actualizar el total cuando cambian los items
   useEffect(() => {
@@ -1144,22 +1144,10 @@ return (
                     />
                   </div>
 
-                  {/* Filtro modelos compatibles */}
-                  <div className="relative flex-1">
-                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={searchModelos}
-                      onChange={(e) => setSearchModelos(e.target.value)}
-                      placeholder="Modelo compatible (ej: RTR200, YBR125...)"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
                   {/* Botón limpiar - solo si hay algo escrito */}
-                  {(searchTerm || searchModelos) && (
+                  {searchTerm  && (
                     <button
-                      onClick={() => { setSearchTerm(''); setSearchModelos(''); setFilteredProductos([]); }}
+                      onClick={() => { setSearchTerm(''); setFilteredProductos([]); }}
                       className="px-3 py-2 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 text-sm whitespace-nowrap"
                     >
                       Limpiar

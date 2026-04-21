@@ -47,18 +47,19 @@ export default function ProductDetailsModal({ isOpen, onClose, product /* , mode
                   {descriptionPoints.length > 0 ? (
                     <div className="flex justify-center items-center">
                       <div className="w-full max-w-xs border border-gray-200 rounded-lg overflow-hidden">
-                        {/* Título de la tabla con el nombre del producto y el código del proveedor */}
                         <div className="bg-gray-200 py-2 text-center font-bold text-gray-800">
                           Descripción del {product.nombre} {product.codigoProveedor && `(${product.codigoProveedor})`}
                         </div>
-                        {/* Iterar sobre los puntos de descripción y mostrarlos en celdas */}
-                        {descriptionPoints.map((point, index) =>
-                          point.trim() ? (
-                            <div key={index} className="px-4 py-2 text-black border-b border-gray-200 last:border-b-0">
-                              {point.trim()}
-                            </div>
-                          ) : null
-                        )}
+                        {/* ↓ scroll aquí */}
+                        <div className="max-h-72 overflow-y-auto">
+                          {descriptionPoints.map((point, index) =>
+                            point.trim() ? (
+                              <div key={index} className="px-4 py-2 text-black border-b border-gray-200 last:border-b-0">
+                                {point.trim()}
+                              </div>
+                            ) : null
+                          )}
+                        </div>
                       </div>
                     </div>
                   ) : (

@@ -336,23 +336,33 @@ const VentaDetailPage = () => {
               <div className="overflow-x-auto shadow-sm ring-1 ring-black ring-opacity-5 rounded-lg">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Unitario</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                  <tr>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">C. TIENDA</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUCTO</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MARCA</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">C. PROVEEDOR</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">COLOR</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MEDIDA</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CANTIDAD</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRECIO UNITARIO</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SUBTOTAL</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {itemsVenta.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.codigoTienda || 'N/A'}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.nombreProducto}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.marca || 'N/A'}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.codigoProveedor || 'N/A'}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.color || 'N/A'}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.medida || 'N/A'}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.cantidad}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">S/. {parseFloat(item.subtotal || 0).toFixed(2)}</td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {itemsVenta.map((item) => (
-                      <tr key={item.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.nombreProducto}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.cantidad}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">S/. {parseFloat(item.subtotal || 0).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
+                  ))}
+                </tbody>
                 </table>
               </div>
             )}

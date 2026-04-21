@@ -493,7 +493,7 @@ const DevolucionesIndexPage = () => {
     }
   };
 
-
+ 
   const handleRechazarDevolucion = async (id) => {
     const motivo = window.prompt('Motivo del rechazo (opcional):');
     if (!window.confirm('¿Rechazar esta devolución?')) return;
