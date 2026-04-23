@@ -1132,37 +1132,31 @@ return (
           {/* Panel Derecho - Buscador y Items - EXPANDIDO */}
           <div className="col-span-12 xl:col-span-9 lg:col-span-8 md:col-span-7">
             {/* Buscador de Productos */}
-            {/* Buscador de Productos */}
             <div className="bg-white border border-gray-400 rounded-lg mb-6 relative">
               <div className="p-4">
                 <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
                 
-                <div className="flex gap-3">
-                  {/* Buscador principal */}
-                  <div className="relative flex-1">
-                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Nombre, marca, código..."
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  {/* Botón limpiar - solo si hay algo escrito */}
-                  {searchTerm  && (
+                <div className="relative">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Nombre, marca, código..."
+                    className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                  {searchTerm && (
                     <button
                       onClick={() => { setSearchTerm(''); setFilteredProductos([]); }}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 text-sm whitespace-nowrap"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      Limpiar
+                      <XMarkIcon className="h-5 w-5" />
                     </button>
                   )}
                 </div>
 
                 <div className="text-sm text-gray-600 mt-2">
-                  {!searchTerm.trim() && !searchModelos.trim() ? (
+                  {!searchTerm.trim() ? (
                     'Escribe para buscar productos...'
                   ) : isSearching ? (
                     'Buscando...'
@@ -1173,7 +1167,7 @@ return (
               </div>
 
               {/* Dropdown - igual que antes */}
-              {(searchTerm.trim() !== '' || searchModelos.trim() !== '') && (
+              {searchTerm.trim() !== '' && (
                 <div className="absolute top-full left-0 right-0 bg-white border border-gray-400 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
                   {isSearching ? (
                     <div className="flex justify-center py-8">
