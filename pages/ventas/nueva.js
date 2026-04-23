@@ -1384,6 +1384,10 @@ return (
                             <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
                           </div>
                           <div>
+                          <span className="font-medium text-gray-700">C. Prov.: </span>
+                          <span className="text-gray-600">{selectedProduct.codigoProveedor || 'N/A'}</span>
+                        </div>
+                          <div>
                             <span className="font-medium text-gray-700">Marca: </span>
                             <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
                           </div>
@@ -1394,6 +1398,10 @@ return (
                           <div>
                             <span className="font-medium text-gray-700">Color: </span>
                             <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700">Medida: </span>
+                            <span className="text-gray-600">{selectedProduct.medida || 'N/A'}</span>
                           </div>
                         </div>
                         
