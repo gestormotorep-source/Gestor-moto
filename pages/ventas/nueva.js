@@ -1230,7 +1230,6 @@ return (
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. TIENDA</th>
                             <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide min-w-48">PRODUCTO</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. PROVEEDOR</th>
-                            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">LOTE</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MARCA</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MEDIDA</th>
                             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">COLOR</th>
@@ -1261,11 +1260,6 @@ return (
                                 <div className="font-medium text-gray-900 text-sm">
                                   {item.codigoProveedor}
                                 </div>
-                              </td>
-                              <td className="px-3 py-3 text-center whitespace-nowrap">
-                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
-                                  {item.numeroLote || 'N/A'}
-                                </span>
                               </td>
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className="text-sm text-gray-700">

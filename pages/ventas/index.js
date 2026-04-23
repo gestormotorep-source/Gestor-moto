@@ -3,7 +3,9 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
-import CustomDatePicker from '../../components/CustomDatePicker';
+import { Calendar } from '../../components/ui/calendar';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { useAppCache } from '../../contexts/AppCacheContext';
 import { generarPDFVentaCompleta } from '../../components/utils/pdfGeneratorVentas';
 import { generarTicketVentaCompleta } from '../../components/utils/pdfGeneratorTicket';
@@ -57,9 +59,14 @@ const VentasIndexPage = () => {
   const [searchProducto, setSearchProducto] = useState('');
   const [isSearchingProducto, setIsSearchingProducto] = useState(false);
   const [productosEncontradosMap, setProductosEncontradosMap] = useState({});
-  const [searchPending, setSearchPending] = useState(
-    !!(cached?.filtros?.searchTerm) // true si había búsqueda activa en cache
-  );
+  const [searchPending, setSearchPending] = useState(() => {
+    const cachedTerm = cached?.filtros?.searchTerm;
+    const cachedFiltered = cached?.filtros?.filteredVentas;
+    // Si hay term Y ya hay resultados cacheados para él → no necesita rebuscar
+    if (cachedTerm && cachedFiltered && cachedFiltered.length > 0) return false;
+    // Si hay term pero no hay resultados cacheados → sí necesita buscar
+    return !!cachedTerm;
+  });
 
   const [ventas, setVentas] = useState(cached?.data || []);
   const [filteredVentas, setFilteredVentas] = useState(cached?.filtros?.filteredVentas || cached?.data || []);
@@ -207,6 +214,9 @@ const VentasIndexPage = () => {
     invalidateCache('ventas');
     filtersChanged.current = true;
     setFilterPeriod(period);
+    setFilteredVentas([]); // ← agregar
+    setVentas([]);          // ← agregar
+    setCurrentPage(1);
     const today = new Date();
 
     switch (period) {
@@ -394,7 +404,17 @@ const VentasIndexPage = () => {
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
+      const currentCache = getCache('ventas');
       if (getCache('ventas')) {
+        const cachedTerm = cached?.filtros?.searchTerm;
+        const cachedFiltered = cached?.filtros?.filteredVentas;
+
+        // ✅ NUEVO: Si el searchTerm coincide y ya hay resultados → restaurar sin buscar
+        if (cachedTerm && cachedTerm === searchTerm && cachedFiltered?.length > 0) {
+          setFilteredVentas(cachedFiltered);
+          setSearchPending(false);
+          return; // Salir sin disparar búsqueda en Firestore
+        }
         if (!searchTerm.trim()) {
           setSearchPending(false); // no hay búsqueda, mostrar normal
           return;
@@ -403,7 +423,7 @@ const VentasIndexPage = () => {
       }
     }
 
-
+    if (!ventas.length) return; // esperar a que carguen las ventas
     // Si no hay término, aplicar solo filtros normales
     if (!searchTerm.trim()) {
       setSearchPending(false);
@@ -892,6 +912,105 @@ const VentasIndexPage = () => {
     setSelectedVentas(new Set()); // Limpiar selección
   };
 
+  const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
+    const [open, setOpen] = useState(false);
+    const [month, setMonth] = useState(selected || new Date());
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handler = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handler);
+      return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const prevMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    const nextMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+
+    // Generar opciones de meses y años
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i);
+
+    return (
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen(prev => !prev)}
+          className="flex items-center gap-2 px-3 py-1 border border-gray-300 rounded bg-white text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        >
+          <CalendarIcon className="h-4 w-4 text-gray-400" />
+          {selected
+            ? format(selected, 'dd/MM/yyyy', { locale: es })
+            : <span className="text-gray-400">{placeholder}</span>
+          }
+        </button>
+
+        {open && (
+          <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-xl">
+            {/* Header con flechas + dropdowns */}
+            <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
+              <button
+                onClick={prevMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-1">
+                <select
+                  value={month.getMonth()}
+                  onChange={(e) => setMonth(m => new Date(m.getFullYear(), parseInt(e.target.value), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {meses.map((mes, i) => (
+                    <option key={i} value={i}>{mes}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={month.getFullYear()}
+                  onChange={(e) => setMonth(m => new Date(parseInt(e.target.value), m.getMonth(), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {years.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={nextMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <Calendar
+              mode="single"
+              selected={selected}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={(date) => {
+                if (date) {
+                  onChange(date);
+                  setOpen(false);
+                }
+              }}
+              disabled={minDate ? { before: minDate } : undefined}
+              captionLayout="label"
+              classNames={{
+                month_caption: "hidden",
+                nav: "hidden",
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <Layout title="Mis Ventas">
       <div className="flex flex-col mx-4 py-4">
@@ -994,32 +1113,34 @@ const VentasIndexPage = () => {
                 </button>
 
                 {/* Selectores de fecha */}
-                <CustomDatePicker
-                  selected={dateRange.start}
-                  onChange={(date) => {
-                    invalidateCache('ventas');
-                    filtersChanged.current = true;
-                    setFilterPeriod('custom');
-                    const startOfDay = new Date(date);
-                    startOfDay.setHours(0, 0, 0, 0);
-                    setDateRange(prev => ({ ...prev, start: startOfDay }));
-                  }}
-                  placeholder="Fecha inicio"
-                />
+                <DatePickerPopover
+  selected={dateRange.start}
+  onChange={(date) => {
+    invalidateCache('ventas');
+    filtersChanged.current = true;
+    setFilterPeriod('custom');
+    setFilteredVentas([]); // ← agregar
+    setVentas([]); 
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    setDateRange(prev => ({ ...prev, start: startOfDay }));
+  }}
+  placeholder="Fecha inicio"
+/>
 
-                <CustomDatePicker
-                  selected={dateRange.end}
-                  onChange={(date) => {
-                    invalidateCache('ventas');
-                    filtersChanged.current = true;
-                    setFilterPeriod('custom');
-                    const endOfDay = new Date(date);
-                    endOfDay.setHours(23, 59, 59, 999);
-                    setDateRange(prev => ({ ...prev, end: endOfDay }));
-                  }}
-                  placeholder="Fecha fin"
-                  minDate={dateRange.start}
-                />
+                <DatePickerPopover
+  selected={dateRange.end}
+  onChange={(date) => {
+    invalidateCache('ventas');
+    filtersChanged.current = true;
+    setFilterPeriod('custom');
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    setDateRange(prev => ({ ...prev, end: endOfDay }));
+  }}
+  placeholder="Fecha fin"
+  minDate={dateRange.start}
+/>
 
                 {/* Filtros específicos */}
                 <select
@@ -1048,7 +1169,14 @@ const VentasIndexPage = () => {
 
                 <select
                   value={selectedEstado}
-                  onChange={(e) => { invalidateCache('ventas'); filtersChanged.current = true; setSelectedEstado(e.target.value); }}
+                  onChange={(e) => { 
+                    invalidateCache('ventas'); 
+                    filtersChanged.current = true; 
+                    setSelectedEstado(e.target.value); 
+                    setFilteredVentas([]);
+                    setVentas([]);
+                    setCurrentPage(1);
+                  }}
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
                   <option value="all">Estado</option>
@@ -1065,7 +1193,13 @@ const VentasIndexPage = () => {
                     id="limit-per-page"
                     className=" px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                     value={limitPerPage}
-                    onChange={(e) => { invalidateCache('ventas'); filtersChanged.current = true; setLimitPerPage(Number(e.target.value)); }}
+                    onChange={(e) => { 
+                      invalidateCache('ventas'); 
+                      filtersChanged.current = true; 
+                      setLimitPerPage(Number(e.target.value)); 
+                      setFilteredVentas([]); // ← agregar
+                      setVentas([]); 
+                    }}
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>

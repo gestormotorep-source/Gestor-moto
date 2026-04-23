@@ -54,6 +54,11 @@ const ProductSearchItem = ({ producto, onSelectProduct, onClearSearch, onOpenDet
             </div>
 
             <div className="flex-shrink-0">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">Medida:</span>
+              <span className="ml-1 text-sm text-gray-700 font-medium">{producto.medida || 'N/A'}</span>
+            </div>
+
+            <div className="flex-shrink-0">
               <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
               <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
             </div>

@@ -334,12 +334,12 @@ const fetchProductos = async () => {
 
     return () => clearTimeout(timeoutId);
   }, [filterNombre, filterCodigoTienda, filterCodigoProveedor, 
-      filterMarca, filterMedida, filterUbicacion, filterModelosCompatibles, productos]);
+      filterMarca, filterModelosCompatibles, productos]);
 
   // Lógica de filtrado combinada
   const applyFilters = async () => {
     const hayFiltros = filterNombre || filterCodigoTienda || filterCodigoProveedor || 
-                      filterMarca || filterMedida || filterUbicacion || filterModelosCompatibles;
+                      filterMarca || filterModelosCompatibles;
 
     if (!hayFiltros) {
       setFilteredProductos(productos);
@@ -357,17 +357,13 @@ const fetchProductos = async () => {
     const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
     const lowerFilterMarca = filterMarca.toLowerCase();
     const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
-    const lowerFilterUbicacion = filterUbicacion.toLowerCase();
     const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
-    const lowerFilterMedida = filterMedida.toLowerCase();
 
     // Función helper para verificar filtros secundarios (todos excepto nombre)
     const matchesSecondaryFilters = (producto) => {
       if (lowerFilterCodigoTienda && !producto.codigoTienda?.toLowerCase().includes(lowerFilterCodigoTienda)) return false;
       if (lowerFilterCodigoProveedor && !producto.codigoProveedor?.toLowerCase().includes(lowerFilterCodigoProveedor)) return false;
       if (lowerFilterMarca && !producto.marca?.toLowerCase().includes(lowerFilterMarca)) return false;
-      if (lowerFilterMedida && !producto.medida?.toLowerCase().includes(lowerFilterMedida)) return false;
-      if (lowerFilterUbicacion && !producto.ubicacion?.toLowerCase().includes(lowerFilterUbicacion)) return false;
       if (lowerFilterModelosCompatibles && !producto.modelosCompatiblesTexto?.toLowerCase().includes(lowerFilterModelosCompatibles)) return false;
       return true;
     };
@@ -981,186 +977,140 @@ const downloadExcelTemplate = () => {
           )}
 
           {/* Sección de Filtros y Botones */}
-<div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
-  {/* Primera línea - Filtros de búsqueda */}
-  <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-9 gap-3 mb-4">
-    {/* Nombre - Más grande */}
-    <div className="col-span-1 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2 2xl:col-span-2">
-      <label htmlFor="filterNombre" className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
-      <input
-        type="text"
-        id="filterNombre"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterNombre}
-        onChange={(e) => setFilterNombre(e.target.value)}
-        placeholder="Nombre..."
-      />
-    </div>
+  <div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
+    {/* Primera línea - Filtros de búsqueda */}
+    <div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
+    {/* Filtros + acciones en una sola línea */}
+    <div className="flex flex-wrap items-end gap-3">
+      
+      {/* Nombre */}
+      <div className="flex-grow min-w-[160px]">
+        <label className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
+        <input
+          type="text"
+          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+          value={filterNombre}
+          onChange={(e) => setFilterNombre(e.target.value)}
+          placeholder="Nombre..."
+        />
+      </div>
 
-    {/* Código Tienda */}
-    <div className="col-span-1">
-      <label htmlFor="filterCodigoTienda" className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
-      <input
-        type="text"
-        id="filterCodigoTienda"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterCodigoTienda}
-        onChange={(e) => setFilterCodigoTienda(e.target.value)}
-        placeholder="Cód. Tienda..."
-      />
-    </div>
+      {/* Código Tienda */}
+      <div className="w-32">
+        <label className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
+        <input
+          type="text"
+          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+          value={filterCodigoTienda}
+          onChange={(e) => setFilterCodigoTienda(e.target.value)}
+          placeholder="Cód. Tienda..."
+        />
+      </div>
 
-    {/* Código Proveedor */}
-    <div className="col-span-1">
-      <label htmlFor="filterCodigoProveedor" className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
-      <input
-        type="text"
-        id="filterCodigoProveedor"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterCodigoProveedor}
-        onChange={(e) => setFilterCodigoProveedor(e.target.value)}
-        placeholder="Cód. Proveedor..."
-      />
-    </div>
+      {/* Código Proveedor */}
+      <div className="w-36">
+        <label className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
+        <input
+          type="text"
+          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+          value={filterCodigoProveedor}
+          onChange={(e) => setFilterCodigoProveedor(e.target.value)}
+          placeholder="Cód. Proveedor..."
+        />
+      </div>
 
-    {/* Marca */}
-    <div className="col-span-1">
-      <label htmlFor="filterMarca" className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
-      <input
-        type="text"
-        id="filterMarca"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterMarca}
-        onChange={(e) => setFilterMarca(e.target.value)}
-        placeholder="Marca..."
-      />
-    </div>
+      {/* Marca */}
+      <div className="w-28">
+        <label className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
+        <input
+          type="text"
+          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+          value={filterMarca}
+          onChange={(e) => setFilterMarca(e.target.value)}
+          placeholder="Marca..."
+        />
+      </div>
 
-    {/* Medida */}
-    <div className="col-span-1">
-      <label htmlFor="filterMedida" className="block text-xs font-medium text-gray-700 mb-1">MEDIDA</label>
-      <input
-        type="text"
-        id="filterMedida"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterMedida}
-        onChange={(e) => setFilterMedida(e.target.value)}
-        placeholder="Medida..."
-      />
-    </div>
+      {/* Modelos Compatibles */}
+      <div className="w-36">
+        <label className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
+        <input
+          type="text"
+          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+          value={filterModelosCompatibles}
+          onChange={(e) => setFilterModelosCompatibles(e.target.value)}
+          placeholder="Ej: Yamaha..."
+        />
+      </div>
 
-    {/* Ubicación */}
-    <div className="col-span-1">
-      <label htmlFor="filterUbicacion" className="block text-xs font-medium text-gray-700 mb-1">UBICACION</label>
-      <input
-        type="text"
-        id="filterUbicacion"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterUbicacion}
-        onChange={(e) => setFilterUbicacion(e.target.value)}
-        placeholder="Ubicación..."
-      />
-    </div>
-
-    {/* Modelos Compatibles */}
-    <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1 xl:col-span-1 2xl:col-span-1">
-      <label htmlFor="filterModelosCompatibles" className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
-      <input
-        type="text"
-        id="filterModelosCompatibles"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterModelosCompatibles}
-        onChange={(e) => setFilterModelosCompatibles(e.target.value)}
-        placeholder="Ej: Yamaha, Honda..."
-      />
-    </div>
-
-    {/* Selector de productos por página */}
-    <div className="col-span-1">
-      <label htmlFor="products-per-page" className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR:</label>
-      <select
-        id="products-per-page"
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={productsPerPage}
-        onChange={(e) => {
-          setProductsPerPage(Number(e.target.value));
-          setCurrentPage(1);
-        }}
-      >
-        <option value={10}>10</option>
-        <option value={20}>20</option>
-        <option value={50}>50</option>
-        <option value={100}>100</option>
-      </select>
-    </div>
-  </div>
-
-  {/* Segunda línea - Botones de acción */}
-  <div className="flex flex-wrap items-center gap-2 lg:gap-3">
-    <button
-      onClick={handleSearchClick}
-      className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-      title="Buscar"
-    >
-      <MagnifyingGlassIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
-      <span className="hidden sm:inline">Buscar</span>
-      <span className="sm:hidden">Buscar</span>
-    </button>
-
-    <button
-      onClick={handleClearFilters}
-      className="inline-flex items-center px-3 lg:px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      title="Limpiar Filtros"
-    >
-      <ArrowPathIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
-      <span className="hidden md:inline">Limpiar Filtros</span>
-      <span className="md:hidden">Limpiar</span>
-    </button>
-
-    <button
-      onClick={actualizarTodosLosPrecios}
-      disabled={updatingPrices}
-      className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-      title="Recalcular todos los precios basado en lotes FIFO"
-    >
-      {updatingPrices ? (
-        <svg className="animate-spin h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-        </svg>
-      ) : (
-        <CurrencyDollarIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
-      )}
-      <span className="hidden md:inline">{updatingPrices ? 'Actualizando...' : 'Actualizar Precios'}</span>
-      <span className="md:hidden">{updatingPrices ? 'Actualizando...' : 'Precios'}</span>
-    </button>
-
-    {isAdmin && (
-      <>
-        <button
-          onClick={() => setIsImportModalOpen(true)}
-          className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
-          title="Importar productos desde Excel"
+      {/* Mostrar (selector) */}
+      <div className="w-24">
+        <label className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR</label>
+        <select
+          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+          value={productsPerPage}
+          onChange={(e) => { setProductsPerPage(Number(e.target.value)); setCurrentPage(1); }}
         >
-          <svg className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <span className="hidden lg:inline">Importar Excel</span>
-          <span className="lg:hidden">Import</span>
-        </button>
+          <option value={10}>10</option>
+          <option value={20}>20</option>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+        </select>
+      </div>
 
+      {/* Agregar Producto (solo admin) — junto al selector */}
+      {isAdmin && (
         <button
           onClick={() => router.push('/productos/nuevo')}
-          className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          title="Agregar Producto"
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 self-end"
         >
-          <PlusIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
-          <span className="hidden md:inline">Agregar Producto</span>
-          <span className="md:hidden">Agregar</span>
+          <PlusIcon className="h-4 w-4 mr-1" />
+          Agregar Producto
         </button>
-      </>
-    )}
+      )}
+
+      {/* Limpiar Filtros — al final de la línea */}
+      <button
+        onClick={handleClearFilters}
+        className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none self-end"
+      >
+        <ArrowPathIcon className="h-4 w-4 mr-1" />
+        Limpiar
+      </button>
+
+      {/* Actualizar Precios */}
+      <button
+        onClick={actualizarTodosLosPrecios}
+        disabled={updatingPrices}
+        className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed self-end"
+      >
+        {updatingPrices ? (
+          <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+          </svg>
+        ) : (
+          <CurrencyDollarIcon className="h-4 w-4 mr-1" />
+        )}
+        {updatingPrices ? 'Actualizando...' : 'Act. Precios'}
+      </button>
+
+      {/* Importar Excel (solo admin) */}
+      {isAdmin && (
+        <button
+          onClick={() => setIsImportModalOpen(true)}
+          className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 self-end"
+          title="Importar productos desde Excel"
+        >
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </button>
+      )}
+
+    </div>
   </div>
+
 </div>
 
           {/* Tabla de Productos */}
@@ -1203,8 +1153,8 @@ const downloadExcelTemplate = () => {
                       {getSortIcon('stockActual')}
                     </th>
                     {isAdmin && (<> <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th></>)}
+                                        <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA (S/.)</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                   </tr>
                 </thead>
@@ -1254,10 +1204,10 @@ const downloadExcelTemplate = () => {
                           </div>
                         </td></>)}
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
-                          S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
+                          S/. {parseFloat(producto.precioVentaMinimo || 0).toFixed(2)}
                         </td>
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
-                          S/. {parseFloat(producto.precioVentaMinimo || 0).toFixed(2)}
+                          S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
                         </td>
                         <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-left text-sm font-medium">
                           <div className="flex items-center space-x-1 justify-center">
