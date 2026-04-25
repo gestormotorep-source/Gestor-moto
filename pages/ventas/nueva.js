@@ -90,6 +90,10 @@ const NuevaVentaPage = () => {
   const [isSearching, setIsSearching] = useState(false);
 
   const [itemsVenta, setItemsVenta] = useState([]);
+  const [precioVentaMinimoFIFO, setPrecioVentaMinimoFIFO] = useState(0);
+
+  // Estado para precio de compra FIFO en modales
+  const [precioCompraFIFOModal, setPrecioCompraFIFOModal] = useState(0);
 
   // Estados para modal de cantidad
   const [showQuantityModal, setShowQuantityModal] = useState(false);
@@ -194,7 +198,7 @@ const searchProducts = async (term) => {
     let   candidatos = [];
  
     const termUpper = term.trim().toUpperCase();
-    const palabras  = termUpper.split(/[\s\-\/]+/).filter(p => p.length >= 1);
+    const palabras = termUpper.split(/[\s\-\/\.]+/).filter(p => p.length >= 1);
  
     if (palabras.length > 0) {
       const queries = palabras.flatMap(palabra => [
@@ -380,52 +384,76 @@ const searchProducts = async (term) => {
   };
 
   // Abrir modal de cantidad para agregar producto
-  const handleSelectProduct = (product) => {
+  const handleSelectProduct = async (product) => {
     setSelectedProduct(product);
-    setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
     setQuantity(1);
     setShowQuantityModal(true);
-    setSearchTerm(''); // Limpiar búsqueda
+    setSearchTerm('');
+
+    // Precargar precio desde lote FIFO, fallback al producto
+    try {
+      const lotesQuery = query(
+        collection(db, 'lotes'),
+        where('productoId', '==', product.id),
+        where('stockRestante', '>', 0),
+        where('estado', '==', 'activo'),
+        orderBy('fechaIngreso', 'asc'),
+        limit(1)
+      );
+      const snap = await getDocs(lotesQuery);
+      if (!snap.empty) {
+        const lote = snap.docs[0].data();
+        setPrecioVenta(parseFloat(lote.precioVentaUnitario || product.precioVentaDefault || 0));
+        setPrecioCompraFIFOModal(parseFloat(lote.precioCompraUnitario || product.precioCompraDefault || 0));
+        setPrecioVentaMinimoFIFO(parseFloat(lote.precioVentaMinimoUnitario || product.precioVentaMinimo || 0));
+      } else {
+        setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+      }
+    } catch {
+      setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+      setPrecioCompraFIFOModal(parseFloat(product.precioCompraDefault || 0));
+      setPrecioVentaMinimoFIFO(parseFloat(product.precioVentaMinimo || 0));
+    }
   };
 
   // Agregar producto a la venta
-  // Función mejorada para agregar producto con separación automática por lotes
-const handleAddProductToVenta = async () => {
-  if (!selectedProduct) return;
 
-  const exists = itemsVenta.some(item => item.productoId === selectedProduct.id);
-  if (exists) {
-    alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
-    setShowQuantityModal(false);
-    return;
-  }
+  const handleAddProductToVenta = async () => {
+    if (!selectedProduct) return;
 
-  if ((selectedProduct.stockActual || 0) < quantity) {
-    alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
-    return;
-  }
+    const exists = itemsVenta.some(item => item.productoId === selectedProduct.id);
+    if (exists) {
+      alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
+      setShowQuantityModal(false);
+      return;
+    }
 
-  try {
-    // OBTENER LOTES DISPONIBLES PARA SIMULAR LA DISTRIBUCIÓN
-    const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
-    
-    // CREAR ITEMS SEPARADOS POR LOTE
-    const itemsSeparados = await crearItemsSeparadosPorLote(
-      selectedProduct, 
-      quantity, 
-      precioVenta, 
-      lotesDisponibles
-    );
+    if ((selectedProduct.stockActual || 0) < quantity) {
+      alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
+      return;
+    }
 
-    // AGREGAR TODOS LOS ITEMS SEPARADOS
-    setItemsVenta(prev => [...prev, ...itemsSeparados]);
-    setShowQuantityModal(false);
-    setError(null);
-  } catch (err) {
-    console.error("Error al crear items por lote:", err);
-    setError("Error al calcular la distribución por lotes. Intente de nuevo.");
-  }
-};
+    try {
+      // OBTENER LOTES DISPONIBLES PARA SIMULAR LA DISTRIBUCIÓN
+      const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
+      
+      // CREAR ITEMS SEPARADOS POR LOTE
+      const itemsSeparados = await crearItemsSeparadosPorLote(
+        selectedProduct, 
+        quantity, 
+        precioVenta, 
+        lotesDisponibles
+      );
+
+      // AGREGAR TODOS LOS ITEMS SEPARADOS
+      setItemsVenta(prev => [...prev, ...itemsSeparados]);
+      setShowQuantityModal(false);
+      setError(null);
+    } catch (err) {
+      console.error("Error al crear items por lote:", err);
+      setError("Error al calcular la distribución por lotes. Intente de nuevo.");
+    }
+  };
 
 // Nueva función para obtener lotes disponibles ordenados por FIFO
 const obtenerLotesDisponiblesFIFO = async (productoId) => {
@@ -474,8 +502,8 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
       color: producto.color || '',
       cantidad: cantidadDelLote,
       precioCompraDefault: parseFloat(producto.precioCompraDefault || lote.precioCompraUnitario || 0).toFixed(2),
-      precioVentaMinimo: parseFloat(producto.precioVentaMinimo || 0).toFixed(2),
-      precioVentaUnitario: precioVenta.toFixed(2),
+      precioVentaUnitario: parseFloat(lote.precioVentaUnitario || producto.precioVentaDefault || 0).toFixed(2),
+      precioVentaMinimo: parseFloat(lote.precioVentaMinimoUnitario || producto.precioVentaMinimo || 0).toFixed(2),
       subtotal: (cantidadDelLote * precioVenta).toFixed(2),
       // DATOS DEL LOTE ESPECÍFICO
       loteId: lote.id,
@@ -1403,6 +1431,10 @@ return (
                             <span className="font-medium text-gray-700">Medida: </span>
                             <span className="text-gray-600">{selectedProduct.medida || 'N/A'}</span>
                           </div>
+                          <div>
+                            <span className="font-medium text-gray-700">P.compra: </span>
+                            <span className="text-gray-600">S/. {precioCompraFIFOModal.toFixed(2)}</span>
+                          </div>
                         </div>
                         
                         {/* Mostrar precio de venta mínimo */}
@@ -1412,7 +1444,7 @@ return (
                               Precio Venta Mínimo:
                             </span>
                             <span className="text-lg font-bold text-yellow-900">
-                              S/. {parseFloat(selectedProduct.precioVentaMinimo || 0).toFixed(2)}
+                              S/. {precioVentaMinimoFIFO.toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -1444,7 +1476,7 @@ return (
                             min="0"
                             step="0.01"
                             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-lg ${
-                              precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
+                              precioVenta < precioVentaMinimoFIFO
                                 ? 'border-red-300 focus:ring-red-500 bg-red-50'
                                 : 'border-gray-300 focus:ring-green-500'
                             }`}

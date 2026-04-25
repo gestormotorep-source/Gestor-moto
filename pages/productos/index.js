@@ -76,6 +76,7 @@ const ProductosPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [productsPerPage, setProductsPerPage] = useState(10);
   const totalPages = Math.ceil(filteredProductos.length / productsPerPage);
+  
 
   // Estados para los modales
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -168,12 +169,16 @@ const ProductosPage = () => {
       const lotesSnapshot = await getDocs(lotesQuery);
       
       let nuevoPrecioCompra = 0;
+      let nuevoPrecioVenta = 0;      
+      let nuevoPrecioVentaMinimo = 0;  
       let stockTotal = 0;
       
       // Si hay lotes disponibles, tomar el precio del primer lote (más antiguo)
       if (!lotesSnapshot.empty) {
         const primerLote = lotesSnapshot.docs[0].data();
         nuevoPrecioCompra = parseFloat(primerLote.precioCompraUnitario || 0);
+        nuevoPrecioVenta = parseFloat(primerLote.precioVentaUnitario || 0);       
+        nuevoPrecioVentaMinimo = parseFloat(primerLote.precioVentaMinimoUnitario || 0); 
         
         // Calcular stock total de todos los lotes activos
         lotesSnapshot.docs.forEach(doc => {
@@ -184,11 +189,13 @@ const ProductosPage = () => {
       // Actualizar el producto con el nuevo precio y stock
       await updateDoc(doc(db, 'productos', productoId), {
         precioCompraDefault: nuevoPrecioCompra,
+        precioVentaDefault: nuevoPrecioVenta,      // ← nuevo
+        precioVentaMinimo: nuevoPrecioVentaMinimo,  // ← nuevo
         stockActual: stockTotal,
         updatedAt: serverTimestamp()
       });
       
-      return { nuevoPrecioCompra, stockTotal };
+      return { nuevoPrecioCompra, nuevoPrecioVenta, nuevoPrecioVentaMinimo, stockTotal };
       
     } catch (error) {
       console.error(`Error al recalcular precio FIFO para producto ${productoId}:`, error);
@@ -238,7 +245,9 @@ const ProductosPage = () => {
             ? { 
                 ...p, 
                 precioCompraDefault: resultado.nuevoPrecioCompra,
-                stockActual: resultado.stockTotal 
+                stockActual: resultado.stockTotal, 
+                precioVentaDefault: resultado.nuevoPrecioVenta,     
+                precioVentaMinimo: resultado.nuevoPrecioVentaMinimo, 
               }
             : p
         )
@@ -250,7 +259,9 @@ const ProductosPage = () => {
             ? { 
                 ...p, 
                 precioCompraDefault: resultado.nuevoPrecioCompra,
-                stockActual: resultado.stockTotal 
+                stockActual: resultado.stockTotal, 
+                precioVentaDefault: resultado.nuevoPrecioVenta,       
+                precioVentaMinimo: resultado.nuevoPrecioVentaMinimo,
               }
             : p
         )
@@ -351,7 +362,7 @@ const fetchProductos = async () => {
 
     // Parsear palabras del nombre para búsqueda tipo palabrasClave
     const palabrasNombre = filterNombre.trim()
-      ? filterNombre.trim().toUpperCase().split(/[\s\-\/]+/).filter(p => p.length >= 2)
+      ? filterNombre.trim().toUpperCase().split(/[\s\-\/\.]+/).filter(p => p.length >= 2)
       : [];
 
     const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
@@ -976,139 +987,76 @@ const downloadExcelTemplate = () => {
             </div>
           )}
 
-          {/* Sección de Filtros y Botones */}
-  <div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
-    {/* Primera línea - Filtros de búsqueda */}
-    <div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
-    {/* Filtros + acciones en una sola línea */}
-    <div className="flex flex-wrap items-end gap-3">
-      
-      {/* Nombre */}
-      <div className="flex-grow min-w-[160px]">
-        <label className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
-        <input
-          type="text"
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-          value={filterNombre}
-          onChange={(e) => setFilterNombre(e.target.value)}
-          placeholder="Nombre..."
-        />
-      </div>
-
-      {/* Código Tienda */}
-      <div className="w-32">
-        <label className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
-        <input
-          type="text"
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-          value={filterCodigoTienda}
-          onChange={(e) => setFilterCodigoTienda(e.target.value)}
-          placeholder="Cód. Tienda..."
-        />
-      </div>
-
-      {/* Código Proveedor */}
-      <div className="w-36">
-        <label className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
-        <input
-          type="text"
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-          value={filterCodigoProveedor}
-          onChange={(e) => setFilterCodigoProveedor(e.target.value)}
-          placeholder="Cód. Proveedor..."
-        />
-      </div>
-
-      {/* Marca */}
-      <div className="w-28">
-        <label className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
-        <input
-          type="text"
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-          value={filterMarca}
-          onChange={(e) => setFilterMarca(e.target.value)}
-          placeholder="Marca..."
-        />
-      </div>
-
-      {/* Modelos Compatibles */}
-      <div className="w-36">
-        <label className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
-        <input
-          type="text"
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-          value={filterModelosCompatibles}
-          onChange={(e) => setFilterModelosCompatibles(e.target.value)}
-          placeholder="Ej: Yamaha..."
-        />
-      </div>
-
-      {/* Mostrar (selector) */}
-      <div className="w-24">
-        <label className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR</label>
-        <select
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-          value={productsPerPage}
-          onChange={(e) => { setProductsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-        >
-          <option value={10}>10</option>
-          <option value={20}>20</option>
-          <option value={50}>50</option>
-          <option value={100}>100</option>
-        </select>
-      </div>
-
-      {/* Agregar Producto (solo admin) — junto al selector */}
-      {isAdmin && (
-        <button
-          onClick={() => router.push('/productos/nuevo')}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 self-end"
-        >
-          <PlusIcon className="h-4 w-4 mr-1" />
-          Agregar Producto
-        </button>
-      )}
-
-      {/* Limpiar Filtros — al final de la línea */}
-      <button
-        onClick={handleClearFilters}
-        className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none self-end"
-      >
-        <ArrowPathIcon className="h-4 w-4 mr-1" />
-        Limpiar
-      </button>
-
-      {/* Actualizar Precios */}
-      <button
-        onClick={actualizarTodosLosPrecios}
-        disabled={updatingPrices}
-        className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed self-end"
-      >
-        {updatingPrices ? (
-          <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-          </svg>
-        ) : (
-          <CurrencyDollarIcon className="h-4 w-4 mr-1" />
-        )}
-        {updatingPrices ? 'Actualizando...' : 'Act. Precios'}
-      </button>
-
-      {/* Importar Excel (solo admin) */}
-      {isAdmin && (
-        <button
-          onClick={() => setIsImportModalOpen(true)}
-          className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 self-end"
-          title="Importar productos desde Excel"
-        >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </button>
-      )}
-
+{/* Sección de Filtros y Botones */}
+<div className="mb-4 border border-gray-200 rounded-lg p-3 bg-gray-50 flex-shrink-0">
+  
+  {/* Fila 1: Filtros */}
+  <div className="flex flex-wrap items-end gap-3 mb-3">
+    <div className="flex-grow min-w-[160px]">
+      <label className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
+      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterNombre} onChange={(e) => setFilterNombre(e.target.value)} placeholder="Nombre..." />
     </div>
+    <div className="w-32">
+      <label className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
+      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterCodigoTienda} onChange={(e) => setFilterCodigoTienda(e.target.value)} placeholder="Cód. Tienda..." />
+    </div>
+    <div className="w-36">
+      <label className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
+      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterCodigoProveedor} onChange={(e) => setFilterCodigoProveedor(e.target.value)} placeholder="Cód. Proveedor..." />
+    </div>
+    <div className="w-28">
+      <label className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
+      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterMarca} onChange={(e) => setFilterMarca(e.target.value)} placeholder="Marca..." />
+    </div>
+    <div className="w-36">
+      <label className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
+      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterModelosCompatibles} onChange={(e) => setFilterModelosCompatibles(e.target.value)} placeholder="Ej: Yamaha..." />
+    </div>
+    <div className="w-24">
+      <label className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR</label>
+      <select className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={productsPerPage} onChange={(e) => { setProductsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+        <option value={10}>10</option>
+        <option value={20}>20</option>
+        <option value={50}>50</option>
+        <option value={100}>100</option>
+      </select>
+    </div>
+    <button onClick={handleClearFilters}
+      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 self-end">
+      <ArrowPathIcon className="h-4 w-4 mr-1" /> Limpiar
+    </button>
+  </div>
+
+  {/* Fila 2: Botones */}
+  <div className="flex flex-wrap items-center gap-2">
+    {isAdmin && (
+      <button onClick={() => router.push('/productos/nuevo')}
+        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+        <PlusIcon className="h-4 w-4 mr-1" /> Agregar Producto
+      </button>
+    )}
+    <button onClick={actualizarTodosLosPrecios} disabled={updatingPrices}
+      className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+      {updatingPrices
+        ? <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+        : <CurrencyDollarIcon className="h-4 w-4 mr-1" />}
+      {updatingPrices ? 'Actualizando...' : 'Act. Precios'}
+    </button>
+    {isAdmin && (
+      <button onClick={() => setIsImportModalOpen(true)} title="Importar productos desde Excel"
+        className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700">
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Importar Excel
+      </button>
+    )}
   </div>
 
 </div>

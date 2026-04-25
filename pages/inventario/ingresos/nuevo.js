@@ -14,6 +14,8 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  where,
+  limit
 } from 'firebase/firestore';
 import { 
   ArrowDownTrayIcon, 
@@ -33,8 +35,14 @@ const NuevoIngresoPage = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [products, setProducts] = useState([]);
   const [proveedores, setProveedores] = useState([]);
+
+  // Estado para mostrar el modal de umbral
+  const [showUmbralEdit, setShowUmbralEdit] = useState(false);
+  const [nuevoUmbral, setNuevoUmbral] = useState(0);
+
+  // Estado para mostrar información del último lote en el modal de quantity
+  const [lotesAnteriores, setLotesAnteriores] = useState([]);
 
   const [ingresoPrincipalData, setIngresoPrincipalData] = useState({
     numeroBoleta: '',
@@ -63,6 +71,10 @@ const NuevoIngresoPage = () => {
   const [editPrecio, setEditPrecio] = useState(0);
   const [editNumeroLote, setEditNumeroLote] = useState('');
 
+  // Estados para mostrar precios en la búsqueda
+  const [precioVenta, setPrecioVenta] = useState(0);
+  const [precioVentaMinimo, setPrecioVentaMinimo] = useState(0);
+
   // Función para generar número de lote automático
   const generateLoteNumber = () => {
     const fecha = new Date();
@@ -84,14 +96,6 @@ const NuevoIngresoPage = () => {
       setError(null);
       
       try {
-        const qProducts = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
-        const productSnapshot = await getDocs(qProducts);
-        const productsList = productSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setProducts(productsList);
-
         const qProveedores = query(collection(db, 'proveedores'), orderBy('nombreEmpresa', 'asc'));
         const proveedorSnapshot = await getDocs(qProveedores);
         const proveedoresList = proveedorSnapshot.docs.map(doc => ({
@@ -114,34 +118,52 @@ const NuevoIngresoPage = () => {
   }, [user, router.isReady]);
 
   // Búsqueda de productos
-  const searchProducts = async (searchTerm) => {
-    if (!searchTerm.trim()) {
-      setFilteredProductos([]);
-      return;
-    }
-
+  const searchProducts = async (term) => {
+    if (!term.trim()) { setFilteredProductos([]); return; }
+    
     setIsSearching(true);
     try {
-      const searchTermLower = searchTerm.toLowerCase();
-      
-      const filtered = products.filter(producto => {
-        const nombre = (producto.nombre || '').toLowerCase();
-        const marca = (producto.marca || '').toLowerCase();
-        const codigoTienda = (producto.codigoTienda || '').toLowerCase();
-        const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
-        const descripcion = (producto.descripcion || '').toLowerCase();
+      const idsVistos = new Set();
+      let candidatos = [];
+      const termUpper = term.trim().toUpperCase();
+      const palabras = termUpper.split(/[\s\-\/\.]+/).filter(p => p.length >= 1);
 
-        return nombre.includes(searchTermLower) ||
-               marca.includes(searchTermLower) ||
-               codigoTienda.includes(searchTermLower) ||
-               codigoProveedor.includes(searchTermLower) ||
-               descripcion.includes(searchTermLower);
-      });
+      if (palabras.length > 0) {
+        const queries = palabras.flatMap(palabra => [
+          getDocs(query(collection(db, 'productos'), where('palabrasClave', 'array-contains', palabra), limit(200))),
+          getDocs(query(collection(db, 'productos'), where('nombre', '>=', palabra), where('nombre', '<=', palabra + '\uf8ff'), limit(100))),
+        ]);
 
-      setFilteredProductos(filtered);
+        queries.push(
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termUpper), limit(5))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(5))),
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '>=', termUpper), where('codigoTienda', '<=', termUpper + '\uf8ff'), limit(50))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', termUpper), where('codigoProveedor', '<=', termUpper + '\uf8ff'), limit(50))),
+        );
+
+        const resultados = await Promise.all(queries);
+        resultados.forEach(snap => {
+          snap.docs.forEach(d => {
+            if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
+          });
+        });
+
+        candidatos = candidatos.filter(p => {
+          const nombreUpper = (p.nombre || '').toUpperCase();
+          const claves = (p.palabrasClave || []);
+          const codigoTienda = (p.codigoTienda || '').toUpperCase();
+          const codigoProveedor = (p.codigoProveedor || '').toUpperCase();
+          return palabras.every(palabra =>
+            nombreUpper.includes(palabra) ||
+            claves.some(clave => clave.includes(palabra)) ||
+            codigoTienda.includes(palabra) ||
+            codigoProveedor.includes(palabra)
+          );
+        });
+      }
+      setFilteredProductos(candidatos);
     } catch (err) {
       console.error("Error al buscar productos:", err);
-      setError("Error al buscar productos");
     } finally {
       setIsSearching(false);
     }
@@ -173,6 +195,12 @@ const NuevoIngresoPage = () => {
     setNumeroLote(generateLoteNumber()); // Generar número de lote automático
     setShowQuantityModal(true);
     setSearchTerm(''); // Limpiar búsqueda
+    setLotesAnteriores([]);
+    obtenerLotesAnteriores(product.id).then(lotes => setLotesAnteriores(lotes));
+    setShowUmbralEdit(false);
+    setNuevoUmbral(product.stockReferencialUmbral || 4);  
+    setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+    setPrecioVentaMinimo(parseFloat(product.precioVentaMinimo || 0));
   };
 
   // Agregar producto al ingreso con lote
@@ -205,6 +233,9 @@ const NuevoIngresoPage = () => {
       stockRestanteLote: quantity, // Stock inicial del lote
       subtotal: (quantity * precioCompra).toFixed(2),
       fechaVencimiento: null, // Opcional: agregar después si es necesario
+      nuevoUmbral: showUmbralEdit ? nuevoUmbral : null,
+      precioVentaUnitario: precioVenta.toFixed(2),
+      precioVentaMinimoUnitario: precioVentaMinimo.toFixed(2),
     };
 
     setItemsIngreso(prev => [...prev, newItem]);
@@ -278,257 +309,284 @@ const handleEditItem = (item) => {
   };
 
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setSaving(true);
-  setError(null);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
 
-  const proveedorSeleccionado = proveedores.find(p => p.id === ingresoPrincipalData.proveedorId);
-  if (!proveedorSeleccionado) {
-    setError('Por favor, seleccione un proveedor válido.');
-    setSaving(false);
-    return;
-  }
-
-  if (itemsIngreso.length === 0) {
-    setError('Debe añadir al menos un producto al ingreso.');
-    setSaving(false);
-    return;
-  }
-
-  // Validar que todos los lotes tengan números únicos
-  const lotes = itemsIngreso.map(item => item.numeroLote);
-  const lotesUnicos = [...new Set(lotes)];
-  if (lotes.length !== lotesUnicos.length) {
-    setError('Hay números de lote duplicados. Cada producto debe tener un número de lote único.');
-    setSaving(false);
-    return;
-  }
-
-  // Validar ítems
-  const validItems = itemsIngreso.every(item => {
-    const cantidad = parseFloat(item.cantidad);
-    const precio = parseFloat(item.precioCompraUnitario);
-    return (
-      item.productoId &&
-      item.numeroLote.trim() &&
-      !isNaN(cantidad) && cantidad > 0 &&
-      !isNaN(precio) && precio >= 0
-    );
-  });
-
-  if (!validItems) {
-    setError('Por favor, asegúrese de que todos los ítems tengan un producto, número de lote, cantidad (>0) y precio de compra (>=0) válidos.');
-    setSaving(false);
-    return;
-  }
-
-  let costoTotalIngreso = 0;
-  itemsIngreso.forEach(item => {
-    costoTotalIngreso += parseFloat(item.subtotal || 0);
-  });
-
-  try {
-    console.log('Iniciando proceso de registro de ingreso...');
-    
-    // Crear fecha actual para usar en lugar de serverTimestamp en arrays
-    const fechaActual = new Date();
-    
-    // 1. Crear el documento de ingreso principal
-    console.log('Creando documento de ingreso...');
-    const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
-      numeroBoleta: ingresoPrincipalData.numeroBoleta.trim() || null,
-      proveedorId: ingresoPrincipalData.proveedorId,
-      proveedorNombre: proveedorSeleccionado.nombreEmpresa,
-      observaciones: ingresoPrincipalData.observaciones.trim() || null,
-      costoTotalIngreso: parseFloat(costoTotalIngreso.toFixed(2)),
-      cantidadLotes: itemsIngreso.length,
-      totalStockIngresado: itemsIngreso.reduce((sum, item) => sum + parseFloat(item.cantidad || 0), 0),
-      fechaIngreso: serverTimestamp(),
-      empleadoId: user.email || user.uid,
-      estado: 'pendiente',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    console.log('Ingreso creado con ID:', ingresoDocRef.id);
-
-    // 2. Crear lotes en colección principal
-    console.log('Creando lotes en colección principal...');
-    const lotesPrincipalesPromises = itemsIngreso.map(async (item, index) => {
-      try {
-        const loteRef = await addDoc(collection(db, 'lotes'), {
-          ingresoId: ingresoDocRef.id,
-          productoId: item.productoId,
-          nombreProducto: item.nombreProducto,
-          marca: item.marca || '',
-          codigoTienda: item.codigoTienda || '',
-          color: item.color || '',
-          numeroLote: item.numeroLote,
-          cantidad: parseFloat(item.cantidad),
-          cantidadInicial: parseFloat(item.cantidad),
-          stockRestante: parseFloat(item.cantidad),
-          precioCompraUnitario: parseFloat(item.precioCompraUnitario),
-          subtotal: parseFloat(item.subtotal),
-          proveedorId: ingresoPrincipalData.proveedorId,
-          proveedorNombre: proveedorSeleccionado.nombreEmpresa,
-          fechaIngreso: serverTimestamp(),
-          fechaVencimiento: item.fechaVencimiento || null,
-          estado: 'activo',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        console.log(`Lote ${index + 1} creado:`, loteRef.id);
-        return loteRef;
-      } catch (err) {
-        console.error(`Error creando lote ${index + 1}:`, err);
-        throw err;
-      }
-    });
-
-    // 3. Crear lotes en subcolección
-    console.log('Creando lotes en subcolección...');
-    const lotesSubcoleccionPromises = itemsIngreso.map(async (item, index) => {
-      try {
-        const loteRef = await addDoc(collection(ingresoDocRef, 'lotes'), {
-          productoId: item.productoId,
-          nombreProducto: item.nombreProducto,
-          marca: item.marca || '',
-          codigoTienda: item.codigoTienda || '',
-          color: item.color || '',
-          numeroLote: item.numeroLote,
-          cantidad: parseFloat(item.cantidad),
-          cantidadInicial: parseFloat(item.cantidad),
-          stockRestante: parseFloat(item.cantidad),
-          precioCompraUnitario: parseFloat(item.precioCompraUnitario),
-          subtotal: parseFloat(item.subtotal),
-          proveedorId: ingresoPrincipalData.proveedorId,
-          proveedorNombre: proveedorSeleccionado.nombreEmpresa,
-          fechaIngreso: serverTimestamp(),
-          fechaVencimiento: item.fechaVencimiento || null,
-          estado: 'activo',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        console.log(`Sublote ${index + 1} creado:`, loteRef.id);
-        return loteRef;
-      } catch (err) {
-        console.error(`Error creando sublote ${index + 1}:`, err);
-        throw err;
-      }
-    });
-
-    // Ejecutar creación de lotes
-    await Promise.all(lotesPrincipalesPromises);
-    console.log('Todos los lotes principales creados');
-    
-    await Promise.all(lotesSubcoleccionPromises);
-    console.log('Todos los sublotes creados');
-
-    // 4. ACTUALIZAR PRODUCTOS - SECUENCIAL para mejor debugging
-    console.log('Iniciando actualización de productos...');
-    const productosAActualizar = [...new Set(itemsIngreso.map(item => item.productoId))];
-    console.log('Productos a actualizar:', productosAActualizar);
-
-    for (let i = 0; i < productosAActualizar.length; i++) {
-      const productoId = productosAActualizar[i];
-      console.log(`Procesando producto ${i + 1}/${productosAActualizar.length}: ${productoId}`);
-      
-      try {
-        const productoRef = doc(db, 'productos', productoId);
-        console.log('Obteniendo documento del producto...');
-        const productoDoc = await getDoc(productoRef);
-        
-        if (productoDoc.exists()) {
-          console.log('Producto encontrado');
-          const productoData = productoDoc.data();
-          console.log('Datos actuales del producto:', {
-            nombre: productoData.nombre,
-            proveedores: productoData.proveedores || 'No tiene',
-            proveedorPrincipal: productoData.proveedorPrincipal || 'No tiene'
-          });
-          
-          let proveedoresArray = Array.isArray(productoData.proveedores) ? productoData.proveedores : [];
-          console.log('Array actual de proveedores:', proveedoresArray);
-          
-          // Buscar si el proveedor ya existe
-          const proveedorIndex = proveedoresArray.findIndex(p => p.proveedorId === ingresoPrincipalData.proveedorId);
-          console.log('Índice del proveedor en array:', proveedorIndex);
-          
-          // Calcular datos del proveedor
-          const itemsDelProducto = itemsIngreso.filter(item => item.productoId === productoId);
-          const precioPromedio = itemsDelProducto.reduce((sum, item) => sum + parseFloat(item.precioCompraUnitario || 0), 0) / itemsDelProducto.length;
-          const cantidadTotal = itemsDelProducto.reduce((sum, item) => sum + parseFloat(item.cantidad || 0), 0);
-          
-          // CAMBIO IMPORTANTE: usar Date() en lugar de serverTimestamp() dentro del array
-          const proveedorInfo = {
-            proveedorId: ingresoPrincipalData.proveedorId,
-            nombreProveedor: proveedorSeleccionado.nombreEmpresa,
-            ultimoIngreso: fechaActual, // Usar Date() en lugar de serverTimestamp()
-            precioCompraPromedio: parseFloat(precioPromedio.toFixed(2)),
-            cantidadTotalIngresada: cantidadTotal
-          };
-          
-          console.log('Info del proveedor a guardar:', proveedorInfo);
-          
-          if (proveedorIndex >= 0) {
-            console.log('Actualizando proveedor existente');
-            const proveedorExistente = proveedoresArray[proveedorIndex];
-            proveedoresArray[proveedorIndex] = {
-              ...proveedorInfo,
-              cantidadTotalIngresada: (proveedorExistente.cantidadTotalIngresada || 0) + cantidadTotal
-            };
-          } else {
-            console.log('Agregando nuevo proveedor');
-            proveedoresArray.push(proveedorInfo);
-          }
-          
-          console.log('Nuevo array de proveedores:', proveedoresArray);
-          
-          // Preparar datos para actualizar
-          const updateData = {
-            proveedores: proveedoresArray,
-            proveedorPrincipal: ingresoPrincipalData.proveedorId,
-            proveedorPrincipalNombre: proveedorSeleccionado.nombreEmpresa,
-            ultimaFechaIngreso: serverTimestamp(), // serverTimestamp está OK aquí porque no está en array
-            updatedAt: serverTimestamp()
-          };
-          
-          console.log('Datos a actualizar:', updateData);
-          
-          // Actualizar el producto
-          await updateDoc(productoRef, updateData);
-          console.log('Producto actualizado exitosamente');
-          
-          // Verificar la actualización
-          const verificacion = await getDoc(productoRef);
-          if (verificacion.exists()) {
-            const datosVerificados = verificacion.data();
-            console.log('Verificación - Proveedores guardados:', datosVerificados.proveedores);
-            console.log('Verificación - Proveedor principal:', datosVerificados.proveedorPrincipal);
-          }
-          
-        } else {
-          console.warn(`Producto ${productoId} no encontrado`);
-        }
-      } catch (err) {
-        console.error(`Error al actualizar producto ${productoId}:`, err);
-        // Continuar con el siguiente producto en lugar de fallar todo
-      }
+    const proveedorSeleccionado = proveedores.find(p => p.id === ingresoPrincipalData.proveedorId);
+    if (!proveedorSeleccionado) {
+      setError('Por favor, seleccione un proveedor válido.');
+      setSaving(false);
+      return;
     }
 
-    console.log('Proceso completado exitosamente');
+    if (itemsIngreso.length === 0) {
+      setError('Debe añadir al menos un producto al ingreso.');
+      setSaving(false);
+      return;
+    }
 
-    alert(`Ingreso registrado exitosamente!\n\n${itemsIngreso.length} lotes creados\n${productosAActualizar.length} productos procesados\nTotal: S/. ${costoTotalIngreso.toFixed(2)}`);
-    
-    router.push('/inventario/ingresos');
+    // Validar que todos los lotes tengan números únicos
+    const lotes = itemsIngreso.map(item => item.numeroLote);
+    const lotesUnicos = [...new Set(lotes)];
+    if (lotes.length !== lotesUnicos.length) {
+      setError('Hay números de lote duplicados. Cada producto debe tener un número de lote único.');
+      setSaving(false);
+      return;
+    }
 
-  } catch (err) {
-    console.error("Error general en el proceso:", err);
-    setError("Error al registrar el ingreso: " + err.message);
-  } finally {
-    setSaving(false);
-  }
-};
+    // Validar ítems
+    const validItems = itemsIngreso.every(item => {
+      const cantidad = parseFloat(item.cantidad);
+      const precio = parseFloat(item.precioCompraUnitario);
+      return (
+        item.productoId &&
+        item.numeroLote.trim() &&
+        !isNaN(cantidad) && cantidad > 0 &&
+        !isNaN(precio) && precio >= 0
+      );
+    });
+
+    if (!validItems) {
+      setError('Por favor, asegúrese de que todos los ítems tengan un producto, número de lote, cantidad (>0) y precio de compra (>=0) válidos.');
+      setSaving(false);
+      return;
+    }
+
+    let costoTotalIngreso = 0;
+    itemsIngreso.forEach(item => {
+      costoTotalIngreso += parseFloat(item.subtotal || 0);
+    });
+
+    try {
+      console.log('Iniciando proceso de registro de ingreso...');
+      
+      // Crear fecha actual para usar en lugar de serverTimestamp en arrays
+      const fechaActual = new Date();
+      
+      // 1. Crear el documento de ingreso principal
+      console.log('Creando documento de ingreso...');
+      const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
+        numeroBoleta: ingresoPrincipalData.numeroBoleta.trim() || null,
+        proveedorId: ingresoPrincipalData.proveedorId,
+        proveedorNombre: proveedorSeleccionado.nombreEmpresa,
+        observaciones: ingresoPrincipalData.observaciones.trim() || null,
+        costoTotalIngreso: parseFloat(costoTotalIngreso.toFixed(2)),
+        cantidadLotes: itemsIngreso.length,
+        totalStockIngresado: itemsIngreso.reduce((sum, item) => sum + parseFloat(item.cantidad || 0), 0),
+        fechaIngreso: serverTimestamp(),
+        empleadoId: user.email || user.uid,
+        estado: 'pendiente',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      console.log('Ingreso creado con ID:', ingresoDocRef.id);
+
+      // 2. Crear lotes en colección principal
+      console.log('Creando lotes en colección principal...');
+      const lotesPrincipalesPromises = itemsIngreso.map(async (item, index) => {
+        try {
+          const loteRef = await addDoc(collection(db, 'lotes'), {
+            ingresoId: ingresoDocRef.id,
+            productoId: item.productoId,
+            nombreProducto: item.nombreProducto,
+            marca: item.marca || '',
+            codigoTienda: item.codigoTienda || '',
+            color: item.color || '',
+            numeroLote: item.numeroLote,
+            cantidad: parseFloat(item.cantidad),
+            cantidadInicial: parseFloat(item.cantidad),
+            stockRestante: parseFloat(item.cantidad),
+            precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+            precioVentaUnitario: parseFloat(item.precioVentaUnitario),
+            precioVentaMinimoUnitario: parseFloat(item.precioVentaMinimoUnitario),
+            subtotal: parseFloat(item.subtotal),
+            proveedorId: ingresoPrincipalData.proveedorId,
+            proveedorNombre: proveedorSeleccionado.nombreEmpresa,
+            fechaIngreso: serverTimestamp(),
+            fechaVencimiento: item.fechaVencimiento || null,
+            estado: 'activo',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          console.log(`Lote ${index + 1} creado:`, loteRef.id);
+          return loteRef;
+        } catch (err) {
+          console.error(`Error creando lote ${index + 1}:`, err);
+          throw err;
+        }
+      });
+
+      // 3. Crear lotes en subcolección
+      console.log('Creando lotes en subcolección...');
+      const lotesSubcoleccionPromises = itemsIngreso.map(async (item, index) => {
+        try {
+          const loteRef = await addDoc(collection(ingresoDocRef, 'lotes'), {
+            productoId: item.productoId,
+            nombreProducto: item.nombreProducto,
+            marca: item.marca || '',
+            codigoTienda: item.codigoTienda || '',
+            color: item.color || '',
+            numeroLote: item.numeroLote,
+            cantidad: parseFloat(item.cantidad),
+            cantidadInicial: parseFloat(item.cantidad),
+            stockRestante: parseFloat(item.cantidad),
+            precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+            subtotal: parseFloat(item.subtotal),
+            proveedorId: ingresoPrincipalData.proveedorId,
+            proveedorNombre: proveedorSeleccionado.nombreEmpresa,
+            fechaIngreso: serverTimestamp(),
+            fechaVencimiento: item.fechaVencimiento || null,
+            estado: 'activo',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          console.log(`Sublote ${index + 1} creado:`, loteRef.id);
+          return loteRef;
+        } catch (err) {
+          console.error(`Error creando sublote ${index + 1}:`, err);
+          throw err;
+        }
+      });
+
+      // Ejecutar creación de lotes
+      await Promise.all(lotesPrincipalesPromises);
+      console.log('Todos los lotes principales creados');
+      
+      await Promise.all(lotesSubcoleccionPromises);
+      console.log('Todos los sublotes creados');
+
+      // 4. ACTUALIZAR PRODUCTOS - SECUENCIAL para mejor debugging
+      console.log('Iniciando actualización de productos...');
+      const productosAActualizar = [...new Set(itemsIngreso.map(item => item.productoId))];
+      console.log('Productos a actualizar:', productosAActualizar);
+
+      for (let i = 0; i < productosAActualizar.length; i++) {
+        const productoId = productosAActualizar[i];
+        console.log(`Procesando producto ${i + 1}/${productosAActualizar.length}: ${productoId}`);
+        
+        try {
+          const productoRef = doc(db, 'productos', productoId);
+          console.log('Obteniendo documento del producto...');
+          const productoDoc = await getDoc(productoRef);
+          
+          if (productoDoc.exists()) {
+            console.log('Producto encontrado');
+            const productoData = productoDoc.data();
+            console.log('Datos actuales del producto:', {
+              nombre: productoData.nombre,
+              proveedores: productoData.proveedores || 'No tiene',
+              proveedorPrincipal: productoData.proveedorPrincipal || 'No tiene'
+            });
+            
+            let proveedoresArray = Array.isArray(productoData.proveedores) ? productoData.proveedores : [];
+            console.log('Array actual de proveedores:', proveedoresArray);
+            
+            // Buscar si el proveedor ya existe
+            const proveedorIndex = proveedoresArray.findIndex(p => p.proveedorId === ingresoPrincipalData.proveedorId);
+            console.log('Índice del proveedor en array:', proveedorIndex);
+            
+            // Calcular datos del proveedor
+            const itemsDelProducto = itemsIngreso.filter(item => item.productoId === productoId);
+            const precioPromedio = itemsDelProducto.reduce((sum, item) => sum + parseFloat(item.precioCompraUnitario || 0), 0) / itemsDelProducto.length;
+            const cantidadTotal = itemsDelProducto.reduce((sum, item) => sum + parseFloat(item.cantidad || 0), 0);
+            
+            // CAMBIO IMPORTANTE: usar Date() en lugar de serverTimestamp() dentro del array
+            const proveedorInfo = {
+              proveedorId: ingresoPrincipalData.proveedorId,
+              nombreProveedor: proveedorSeleccionado.nombreEmpresa,
+              ultimoIngreso: fechaActual, // Usar Date() en lugar de serverTimestamp()
+              precioCompraPromedio: parseFloat(precioPromedio.toFixed(2)),
+              cantidadTotalIngresada: cantidadTotal
+            };
+            
+            console.log('Info del proveedor a guardar:', proveedorInfo);
+            
+            if (proveedorIndex >= 0) {
+              console.log('Actualizando proveedor existente');
+              const proveedorExistente = proveedoresArray[proveedorIndex];
+              proveedoresArray[proveedorIndex] = {
+                ...proveedorInfo,
+                cantidadTotalIngresada: (proveedorExistente.cantidadTotalIngresada || 0) + cantidadTotal
+              };
+            } else {
+              console.log('Agregando nuevo proveedor');
+              proveedoresArray.push(proveedorInfo);
+            }
+            
+            console.log('Nuevo array de proveedores:', proveedoresArray);
+            
+            // Preparar datos para actualizar
+            const updateData = {
+              proveedores: proveedoresArray,
+              proveedorPrincipal: ingresoPrincipalData.proveedorId,
+              proveedorPrincipalNombre: proveedorSeleccionado.nombreEmpresa,
+              ultimaFechaIngreso: serverTimestamp(), // serverTimestamp está OK aquí porque no está en array
+              updatedAt: serverTimestamp()
+            };
+            
+            console.log('Datos a actualizar:', updateData);
+            const itemDelProducto = itemsIngreso.find(item => item.productoId === productoId);
+            if (itemDelProducto?.nuevoUmbral !== null && itemDelProducto?.nuevoUmbral !== undefined) {
+              updateData.stockReferencialUmbral = itemDelProducto.nuevoUmbral;
+            }
+
+            // Actualizar el producto
+            await updateDoc(productoRef, updateData);
+            console.log('Producto actualizado exitosamente');
+            
+            // Verificar la actualización
+            const verificacion = await getDoc(productoRef);
+            if (verificacion.exists()) {
+              const datosVerificados = verificacion.data();
+              console.log('Verificación - Proveedores guardados:', datosVerificados.proveedores);
+              console.log('Verificación - Proveedor principal:', datosVerificados.proveedorPrincipal);
+            }
+            
+          } else {
+            console.warn(`Producto ${productoId} no encontrado`);
+          }
+        } catch (err) {
+          console.error(`Error al actualizar producto ${productoId}:`, err);
+          // Continuar con el siguiente producto en lugar de fallar todo
+        }
+      }
+
+      console.log('Proceso completado exitosamente');
+
+      alert(`Ingreso registrado exitosamente!\n\n${itemsIngreso.length} lotes creados\n${productosAActualizar.length} productos procesados\nTotal: S/. ${costoTotalIngreso.toFixed(2)}`);
+      
+      router.push('/inventario/ingresos');
+
+    } catch (err) {
+      console.error("Error general en el proceso:", err);
+      setError("Error al registrar el ingreso: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const obtenerLotesAnteriores = async (productoId) => {
+    try {
+      const q = query(
+        collection(db, 'lotes'),
+        where('productoId', '==', productoId),
+        orderBy('fechaIngreso', 'desc'),
+        limit(5) // últimos 5 lotes
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({
+        numeroLote: d.data().numeroLote,
+        precio: parseFloat(d.data().precioCompraUnitario || 0),
+        fecha: d.data().fechaIngreso?.toDate?.() || null,
+        estado: d.data().estado
+      }));
+    } catch (err) {
+      console.error('Error obteniendo lotes anteriores:', err);
+      return [];
+    }
+  };
 
   const totalGeneralIngreso = itemsIngreso.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
 
@@ -541,6 +599,8 @@ const handleSubmit = async (e) => {
       </Layout>
     );
   }
+
+
 
   return (
     <Layout title="Registrar Nuevo Ingreso con Lotes">
@@ -696,63 +756,64 @@ const handleSubmit = async (e) => {
                   </div>
 
                   {/* Dropdown de productos */}
-{searchTerm.trim() !== '' && (
-  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
-    {isSearching ? (
-      <div className="flex justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-      </div>
-    ) : filteredProductos.length === 0 ? (
-      <div className="p-4 text-center text-gray-500">
-        <p>No se encontraron productos</p>
-      </div>
-    ) : (
-      <div className="max-h-80">
-        {filteredProductos.slice(0, 20).map(producto => (
-          <div
-            key={producto.id}
-            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-            onClick={() => handleSelectProduct(producto)}
-          >
-            <div className="flex items-center justify-between gap-4">
-              {/* Información principal del producto */}
-              <div className="flex items-center gap-6 flex-1 min-w-0">
-                {/* Nombre y código */}
-                <div className="min-w-0 flex-shrink-0">
-                  <h4 className="font-medium text-gray-900 truncate text-sm">
-                    {producto.nombre} ({producto.codigoTienda})
-                  </h4>
-                </div>
-                
-                {/* Marca */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
-                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
-                </div>
-                
-                {/* Stock */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
-                  <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                </div>
-              </div>
-              
-              {/* Precio */}
-              <div className="text-right flex-shrink-0">
-                <p className="font-bold text-blue-600 text-base">
-                  S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
-                </p>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
-                  Precio Compra
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
+                  {searchTerm.trim() !== '' && (
+                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                      {isSearching ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        </div>
+                      ) : filteredProductos.length === 0 ? (
+                        <div className="p-4 text-center text-gray-500">
+                          <p>No se encontraron productos</p>
+                        </div>
+                      ) : (
+                        <div className="max-h-80">
+                          {filteredProductos.slice(0, 20).map(producto => (
+                            <div
+                              key={producto.id}
+                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                              onClick={() => handleSelectProduct(producto)}
+                            >
+                              <div className="flex items-center justify-between gap-4">
+                                {/* Información principal del producto */}
+                                <div className="flex items-center gap-6 flex-1 min-w-0">
+                                  {/* Nombre y código */}
+                                  <div className="min-w-0 flex-shrink-0">
+                                    <h4 className="font-medium text-gray-900 truncate text-sm">
+                                      {producto.nombre} ({producto.codigoTienda})
+                                    </h4>
+                                  </div>
+                                  
+                                  {/* Marca */}
+                                  <div className="flex-shrink-0">
+                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
+                                    <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
+                                  </div>
+                                  
+                                  {/* Stock */}
+                                  <div className="flex-shrink-0">
+                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
+                                    <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
+                                  </div>
+                                </div>
+                                
+                                {/* Precio */}
+                                <div className="text-right flex-shrink-0">
+                                  <p className="font-bold text-blue-600 text-base">
+                                    S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
+                                  </p>
+                                  <p className="text-xs text-gray-500 uppercase tracking-wide">
+                                    Precio Compra
+                                  </p>
+                                </div>
+                                
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Lotes del Ingreso */}
@@ -932,6 +993,40 @@ const handleSubmit = async (e) => {
                         </div>
                       </div>
 
+                      {/** Mostrar lotes anteriores del producto **/}
+                      {lotesAnteriores.length > 0 && (
+                        <div className="mb-4 border border-amber-200 rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b border-amber-200">
+                            <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+                              Lotes anteriores de este producto
+                            </span>
+                          </div>
+                          <div className="divide-y divide-amber-100 max-h-36 overflow-y-auto">
+                            {lotesAnteriores.map((lote, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center justify-between px-3 py-2"
+                              >
+                                <div>
+                                  <span className="text-sm font-mono text-gray-700">{lote.numeroLote}</span>
+                                  <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
+                                    lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                                  }`}>
+                                    {lote.estado}
+                                  </span>
+                                  <p className="text-xs text-gray-400 mt-0.5">
+                                    {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                                  </p>
+                                </div>
+                                <span className="text-base font-bold text-amber-800">
+                                  S/. {lote.precio.toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Número de Lote */}
                       <div className="mb-6">
                         <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -987,8 +1082,32 @@ const handleSubmit = async (e) => {
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                           />
                         </div>
-                      </div>
 
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Precio de Venta (S/.)
+                          </label>
+                          <input
+                            type="number"
+                            value={precioVenta}
+                            onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
+                            min="0" step="0.01"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Precio Venta Mínimo (S/.)
+                          </label>
+                          <input
+                            type="number"
+                            value={precioVentaMinimo}
+                            onChange={(e) => setPrecioVentaMinimo(parseFloat(e.target.value) || 0)}
+                            min="0" step="0.01"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          />
+                        </div>
+                      </div>
                       <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 mt-6">
                         <div className="flex justify-between items-center">
                           <span className="text-lg font-medium text-gray-700">Subtotal del Lote:</span>
@@ -999,7 +1118,38 @@ const handleSubmit = async (e) => {
                   )}
                 </div>
               </div>
-
+              {/* Umbral de stock */}
+              <div className="mt-4">
+                {!showUmbralEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowUmbralEdit(true)}
+                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                  >
+                    ✏️ Editar stock mínimo
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <label className="text-sm font-medium text-blue-700 whitespace-nowrap">
+                      Stock mínimo (actual: {nuevoUmbral}):
+                    </label>
+                    <input
+                      type="number"
+                      value={nuevoUmbral}
+                      onChange={(e) => setNuevoUmbral(parseInt(e.target.value) || 0)}
+                      min="0"
+                      className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowUmbralEdit(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
                 <button
                   type="button"
