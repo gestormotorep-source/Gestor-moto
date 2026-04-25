@@ -502,7 +502,7 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
       color: producto.color || '',
       cantidad: cantidadDelLote,
       precioCompraDefault: parseFloat(producto.precioCompraDefault || lote.precioCompraUnitario || 0).toFixed(2),
-      precioVentaUnitario: parseFloat(lote.precioVentaUnitario || producto.precioVentaDefault || 0).toFixed(2),
+      precioVentaUnitario: parseFloat(precioVenta).toFixed(2),
       precioVentaMinimo: parseFloat(lote.precioVentaMinimoUnitario || producto.precioVentaMinimo || 0).toFixed(2),
       subtotal: (cantidadDelLote * precioVenta).toFixed(2),
       // DATOS DEL LOTE ESPECÍFICO

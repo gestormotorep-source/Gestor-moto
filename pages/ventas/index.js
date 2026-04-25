@@ -1114,33 +1114,33 @@ const VentasIndexPage = () => {
 
                 {/* Selectores de fecha */}
                 <DatePickerPopover
-  selected={dateRange.start}
-  onChange={(date) => {
-    invalidateCache('ventas');
-    filtersChanged.current = true;
-    setFilterPeriod('custom');
-    setFilteredVentas([]); // ← agregar
-    setVentas([]); 
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    setDateRange(prev => ({ ...prev, start: startOfDay }));
-  }}
-  placeholder="Fecha inicio"
-/>
+                  selected={dateRange.start}
+                  onChange={(date) => {
+                    invalidateCache('ventas');
+                    filtersChanged.current = true;
+                    setFilterPeriod('custom');
+                    setFilteredVentas([]); // ← agregar
+                    setVentas([]); 
+                    const startOfDay = new Date(date);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    setDateRange(prev => ({ ...prev, start: startOfDay }));
+                  }}
+                  placeholder="Fecha inicio"
+                />
 
-                <DatePickerPopover
-  selected={dateRange.end}
-  onChange={(date) => {
-    invalidateCache('ventas');
-    filtersChanged.current = true;
-    setFilterPeriod('custom');
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-    setDateRange(prev => ({ ...prev, end: endOfDay }));
-  }}
-  placeholder="Fecha fin"
-  minDate={dateRange.start}
-/>
+                                <DatePickerPopover
+                  selected={dateRange.end}
+                  onChange={(date) => {
+                    invalidateCache('ventas');
+                    filtersChanged.current = true;
+                    setFilterPeriod('custom');
+                    const endOfDay = new Date(date);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    setDateRange(prev => ({ ...prev, end: endOfDay }));
+                  }}
+                  placeholder="Fecha fin"
+                  minDate={dateRange.start}
+                />
 
                 {/* Filtros específicos */}
                 <select
