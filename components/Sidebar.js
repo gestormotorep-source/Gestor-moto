@@ -73,7 +73,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       adminOnly: false,
       submenu: [
         { name: 'Productos', path: '/productos' },
-        { name: 'Faltos', path: '/productos/faltos' }
+        { name: 'Faltos', path: '/productos/faltos' },
+        { name: 'Carga', path: '/admin/editar-precios-masivo' }
       ]
     },
     {
