@@ -55,6 +55,8 @@ const NuevoIngresoPage = () => {
   const [filteredProductos, setFilteredProductos] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Estado para los items del ingreso con lote
+  const [numeroPedido, setNumeroPedido] = useState('');
   const [itemsIngreso, setItemsIngreso] = useState([]);
 
   // Estados para modal de cantidad con lote
@@ -103,6 +105,11 @@ const NuevoIngresoPage = () => {
           ...doc.data()
         }));
         setProveedores(proveedoresList);
+        
+        const ingresosSnap = await getDocs(collection(db, 'ingresos'));
+        const totalIngresos = ingresosSnap.size + 1;
+        const numPedido = `N°-${String(totalIngresos).padStart(7, '0')}`;
+        setNumeroPedido(numPedido);
 
       } catch (err) {
         console.error("Error al cargar datos:", err);
@@ -369,6 +376,7 @@ const handleEditItem = (item) => {
       console.log('Creando documento de ingreso...');
       const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
         numeroBoleta: ingresoPrincipalData.numeroBoleta.trim() || null,
+        numeroPedido: numeroPedido.trim() || null,
         proveedorId: ingresoPrincipalData.proveedorId,
         proveedorNombre: proveedorSeleccionado.nombreEmpresa,
         observaciones: ingresoPrincipalData.observaciones.trim() || null,
@@ -379,6 +387,7 @@ const handleEditItem = (item) => {
         empleadoId: user.email || user.uid,
         estado: 'pendiente',
         createdAt: serverTimestamp(),
+        fechaRecepcion: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
       console.log('Ingreso creado con ID:', ingresoDocRef.id);
@@ -632,7 +641,7 @@ const handleEditItem = (item) => {
                     {/* Número de Boleta */}
                     <div>
                       <label htmlFor="numeroBoleta" className="block text-sm font-medium text-gray-700 mb-2">
-                        Número de Boleta (Opcional)
+                        Número de Boleta o factura
                       </label>
                       <input
                         type="text"
@@ -642,6 +651,19 @@ const handleEditItem = (item) => {
                         onChange={handleIngresoPrincipalChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Ej: B-00001"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="numeroPedido" className="block text-sm font-medium text-gray-700 mb-2">
+                        Número de Pedido (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={numeroPedido}
+                        onChange={(e) => setNumeroPedido(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                        placeholder="N°-0000001"
                       />
                     </div>
 
@@ -942,235 +964,162 @@ const handleEditItem = (item) => {
           </div>
         </div>
 
-      {/* Modal de Cantidad con Lote */}
-      {showQuantityModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowQuantityModal(false)}></div>
-            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl sm:p-6">
-              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                <button
-                  type="button"
-                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  onClick={() => setShowQuantityModal(false)}
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
+{/* Modal de Cantidad con Lote */}
+{showQuantityModal && (
+  <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="flex min-h-full items-center justify-center p-4">
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowQuantityModal(false)}></div>
+      <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-7xl p-10">
+        
+        {/* X cerrar */}
+        <button type="button" onClick={() => setShowQuantityModal(false)}
+          className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
+          <XMarkIcon className="h-6 w-6" />
+        </button>
 
-              <div className="sm:flex sm:items-start">
-                <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                  <HashtagIcon className="h-6 w-6 text-blue-600" />
-                </div>
-                <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                  <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                    Crear Nuevo Lote
-                  </h3>
-                  
-                  {selectedProduct && (
-                    <div className="mt-4">
-                      <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                        <h4 className="font-semibold text-lg text-gray-900 mb-2">
-                          {selectedProduct.nombre}
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-700">Código: </span>
-                            <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Marca: </span>
-                            <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Stock actual: </span>
-                            <span className="text-gray-600">{selectedProduct.stockActual || 0}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Color: </span>
-                            <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
-                          </div>
-                        </div>
-                      </div>
+        <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <HashtagIcon className="h-7 w-7 text-blue-600" />
+          Crear Nuevo Lote
+        </h3>
 
-                      {/** Mostrar lotes anteriores del producto **/}
-                      {lotesAnteriores.length > 0 && (
-                        <div className="mb-4 border border-amber-200 rounded-lg overflow-hidden">
-                          <div className="bg-amber-50 px-3 py-2 border-b border-amber-200">
-                            <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
-                              Lotes anteriores de este producto
-                            </span>
-                          </div>
-                          <div className="divide-y divide-amber-100 max-h-36 overflow-y-auto">
-                            {lotesAnteriores.map((lote, i) => (
-                              <div
-                                key={i}
-                                className="flex items-center justify-between px-3 py-2"
-                              >
-                                <div>
-                                  <span className="text-sm font-mono text-gray-700">{lote.numeroLote}</span>
-                                  <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
-                                    lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                                  }`}>
-                                    {lote.estado}
-                                  </span>
-                                  <p className="text-xs text-gray-400 mt-0.5">
-                                    {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
-                                  </p>
-                                </div>
-                                <span className="text-base font-bold text-amber-800">
-                                  S/. {lote.precio.toFixed(2)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+        {selectedProduct && (
+          <div className="grid grid-cols-2 gap-8 items-stretch">
 
-                      {/* Número de Lote */}
-                      <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-3">
-                          <HashtagIcon className="h-4 w-4 inline mr-1" />
-                          Número de Lote
-                        </label>
-                        <div className="flex">
-                          <input
-                            type="text"
-                            value={numeroLote}
-                            onChange={(e) => setNumeroLote(e.target.value)}
-                            className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
-                            placeholder="Ej: L240915-ABC1"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setNumeroLote(generateLoteNumber())}
-                            className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 transition-colors text-sm"
-                            title="Generar nuevo número"
-                          >
-                            🎲
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Cada lote debe tener un número único. Se genera automáticamente pero puedes cambiarlo.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Cantidad
-                          </label>
-                          <input
-                            type="number"
-                            value={quantity}
-                            onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                            min="1"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Precio de Compra (S/.)
-                          </label>
-                          <input
-                            type="number"
-                            value={precioCompra}
-                            onChange={(e) => setPrecioCompra(parseFloat(e.target.value) || 0)}
-                            min="0"
-                            step="0.01"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Precio de Venta (S/.)
-                          </label>
-                          <input
-                            type="number"
-                            value={precioVenta}
-                            onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
-                            min="0" step="0.01"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Precio Venta Mínimo (S/.)
-                          </label>
-                          <input
-                            type="number"
-                            value={precioVentaMinimo}
-                            onChange={(e) => setPrecioVentaMinimo(parseFloat(e.target.value) || 0)}
-                            min="0" step="0.01"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                          />
-                        </div>
-                      </div>
-                      <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 mt-6">
-                        <div className="flex justify-between items-center">
-                          <span className="text-lg font-medium text-gray-700">Subtotal del Lote:</span>
-                          <span className="font-bold text-blue-800 text-2xl">S/. {(quantity * precioCompra).toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+            {/* COLUMNA IZQUIERDA */}
+            <div className="flex flex-col gap-4 h-full">
+              <div className="bg-gray-50 p-5 rounded-lg">
+                <h4 className="font-bold text-xl text-gray-900 mb-3">{selectedProduct.nombre}</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="font-medium text-gray-600">Código: </span><span className="text-gray-800">{selectedProduct.codigoTienda}</span></div>
+                  <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{selectedProduct.marca || 'Sin marca'}</span></div>
+                  <div><span className="font-medium text-gray-600">Stock actual: </span><span className="text-gray-800">{selectedProduct.stockActual || 0}</span></div>
+                  <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{selectedProduct.color || 'N/A'}</span></div>
                 </div>
               </div>
-              {/* Umbral de stock */}
-              <div className="mt-4">
+
+              {lotesAnteriores.length > 0 ? (
+                <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                  <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Lotes anteriores de este producto</span>
+                  </div>
+                  <div className="divide-y divide-amber-100 overflow-y-auto max-h-64">
+                    {lotesAnteriores.map((lote, i) => (
+                      <div key={i} className="flex items-center justify-between px-4 py-3">
+                        <div>
+                          <span className="text-sm font-mono text-gray-700">{lote.numeroLote}</span>
+                          <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {lote.estado}
+                          </span>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                          </p>
+                        </div>
+                        <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 border border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm">
+                  Sin lotes anteriores
+                </div>
+              )}
+
+              {/* Umbral */}
+              <div>
                 {!showUmbralEdit ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowUmbralEdit(true)}
-                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                  >
+                  <button type="button" onClick={() => setShowUmbralEdit(true)}
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
                     ✏️ Editar stock mínimo
                   </button>
                 ) : (
                   <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                    <label className="text-sm font-medium text-blue-700 whitespace-nowrap">
-                      Stock mínimo (actual: {nuevoUmbral}):
-                    </label>
-                    <input
-                      type="number"
-                      value={nuevoUmbral}
-                      onChange={(e) => setNuevoUmbral(parseInt(e.target.value) || 0)}
-                      min="0"
-                      className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowUmbralEdit(false)}
-                      className="text-xs text-gray-500 hover:text-gray-700"
-                    >
-                      ✕
-                    </button>
+                    <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Stock mínimo (actual: {nuevoUmbral}):</label>
+                    <input type="number" value={nuevoUmbral} onChange={(e) => setNuevoUmbral(parseInt(e.target.value) || 0)}
+                      min="0" onWheel={(e) => e.target.blur()}
+                      className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
+                    <button type="button" onClick={() => setShowUmbralEdit(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
                   </div>
                 )}
               </div>
-              <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
-                <button
-                  type="button"
-                  className="inline-flex w-full justify-center rounded-md bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                  onClick={handleAddProductToIngreso}
-                  disabled={quantity <= 0 || precioCompra < 0 || !numeroLote.trim()}
-                >
-                  Crear Lote
-                </button>
-                <button
-                  type="button"
-                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
-                  onClick={() => setShowQuantityModal(false)}
-                >
-                  Cancelar
-                </button>
+            </div>
+
+            {/* COLUMNA DERECHA */}
+            <div className="flex flex-col gap-5 h-full">
+              {/* Número de lote */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <HashtagIcon className="h-4 w-4 inline mr-1" />
+                  Número de Lote
+                </label>
+                <div className="flex">
+                  <input type="text" value={numeroLote} onChange={(e) => setNumeroLote(e.target.value)}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 text-base font-mono"
+                    placeholder="Ej: L240915-ABC1" />
+                  <button type="button" onClick={() => setNumeroLote(generateLoteNumber())}
+                    className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 text-base">
+                    🎲
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Se genera automáticamente pero puedes cambiarlo.</p>
               </div>
+
+              {/* 4 campos 2x2 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                  <input type="number" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                    min="1" onWheel={(e) => e.target.blur()}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Compra (S/.)</label>
+                  <input type="number" value={precioCompra} onChange={(e) => setPrecioCompra(parseFloat(e.target.value) || 0)}
+                    min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                  <input type="number" value={precioVenta} onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
+                    min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Precio Venta Mínimo (S/.)</label>
+                  <input type="number" value={precioVentaMinimo} onChange={(e) => setPrecioVentaMinimo(parseFloat(e.target.value) || 0)}
+                    min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                </div>
+              </div>
+
+              {/* Subtotal + botones al fondo */}
+              <div className="mt-auto flex flex-col gap-4">
+                <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-5 rounded-lg border border-blue-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-medium text-gray-700">Subtotal del Lote:</span>
+                    <span className="font-bold text-blue-800 text-2xl">S/. {(quantity * precioCompra).toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setShowQuantityModal(false)}
+                    className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                    Cancelar
+                  </button>
+                  <button type="button" onClick={handleAddProductToIngreso}
+                    disabled={quantity <= 0 || precioCompra < 0 || !numeroLote.trim()}
+                    className="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold text-base hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    Crear Lote
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Modal de Edición de Lote */}
       {showEditItemModal && (
@@ -1259,7 +1208,7 @@ const handleEditItem = (item) => {
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Precio de Compra (S/.)
+                            Precio de Compra
                           </label>
                           <input
                             type="number"

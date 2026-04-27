@@ -1,8 +1,9 @@
 // pages/inventario/ingresos/index.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
 import { db } from '../../../lib/firebase';
+import { useAppCache } from '../../../contexts/AppCacheContext';
 import { 
   collection, 
   getDocs, 
@@ -17,41 +18,80 @@ import {
   limit,
   Timestamp
 } from 'firebase/firestore';
-import { PlusIcon, ArrowDownTrayIcon, TrashIcon, EyeIcon, CheckCircleIcon, ExclamationCircleIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { PlusIcon,
+        ArrowDownTrayIcon, 
+        TrashIcon, 
+        EyeIcon, 
+        CheckCircleIcon, 
+        ExclamationCircleIcon, 
+        ChevronLeftIcon, 
+        ChevronRightIcon, 
+        XMarkIcon, 
+        PencilIcon,
+        CalendarIcon } 
+from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
-import CustomDatePicker from '../../../components/CustomDatePicker';
+import { Calendar } from '../../../components/ui/calendar';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const IngresosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
-  const [ingresos, setIngresos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filteredIngresos, setFilteredIngresos] = useState([]);
-  const [totalIngresosPeriodo, setTotalIngresosPeriodo] = useState(0);
 
-  // Estados para filtros de fecha
-  const [filterPeriod, setFilterPeriod] = useState('day');
+  // ── Cache ──────────────────────────────────────────────────────────────────
+  const { getCache, setCache, invalidateCache } = useAppCache();
+  const cached = getCache('ingresos');
+  const isFirstRender = useRef(true);
+  const filtersChanged = useRef(false);
+
+  // ── Estados principales ────────────────────────────────────────────────────
+  const [ingresos, setIngresos] = useState(cached?.data || []);
+  const [filteredIngresos, setFilteredIngresos] = useState(
+    cached?.filtros?.filteredIngresos || cached?.data || []
+  );
+  const [loading, setLoading] = useState(!cached);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState(cached?.filtros?.searchTerm || '');
+  const [totalIngresosPeriodo, setTotalIngresosPeriodo] = useState(
+    cached?.filtros?.totalIngresosPeriodo || 0
+  );
+
+  // ── Filtros de fecha ───────────────────────────────────────────────────────
+  const [filterPeriod, setFilterPeriod] = useState(cached?.filtros?.filterPeriod || 'day');
   const [dateRange, setDateRange] = useState(() => {
+    if (cached?.filtros?.dateRange) {
+      const { start, end } = cached.filtros.dateRange;
+      return {
+        start: start ? new Date(start) : null,
+        end:   end   ? new Date(end)   : null,
+      };
+    }
     const today = new Date();
-    const start = new Date(today);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setHours(23, 59, 59, 999);
+    const start = new Date(today); start.setHours(0,  0,  0,   0);
+    const end   = new Date(today); end.setHours(23, 59, 59, 999);
     return { start, end };
   });
 
-  // Estados para paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const [limitFirestore, setLimitFirestore] = useState(20); // cuántos baja Firestore
-  const ingresosPerPage = 20; // cuántos muestra por página (FIJO, no es useState)
-  // useEffect 1: Carga de ingresos desde Firestore con filtros del servidor
+  // ── Paginación ─────────────────────────────────────────────────────────────
+  const [currentPage, setCurrentPage] = useState(cached?.filtros?.currentPage || 1);
+  const [limitFirestore, setLimitFirestore] = useState(cached?.filtros?.limitFirestore || 20);
+  const ingresosPerPage = 20; // fijo, no es estado
+
+  // ── useEffect 1: Cargar ingresos desde Firestore ───────────────────────────
   useEffect(() => {
     if (!user) {
       router.push('/auth');
       return;
     }
+
+    // Si el cache es válido y los filtros no cambiaron, no re-fetchar
+    if (getCache('ingresos') && !filtersChanged.current) {
+      return;
+    }
+
+    // Resetear la bandera
+    filtersChanged.current = false;
 
     if (filterPeriod === 'custom' && (!dateRange.start || !dateRange.end)) return;
 
@@ -62,57 +102,54 @@ const IngresosPage = () => {
     const { start, end } = dateRange;
 
     if (start && end) {
-      const startCopy = new Date(start);
-      startCopy.setHours(0, 0, 0, 0);
-      const endCopy = new Date(end);
-      endCopy.setHours(23, 59, 59, 999);
+      const startCopy = new Date(start); startCopy.setHours(0,  0,  0,   0);
+      const endCopy   = new Date(end);   endCopy.setHours(23, 59, 59, 999);
 
       constraints = [
         where('fechaIngreso', '>=', Timestamp.fromDate(startCopy)),
         where('fechaIngreso', '<=', Timestamp.fromDate(endCopy)),
         orderBy('fechaIngreso', 'desc'),
-        limit(limitFirestore)
+        limit(limitFirestore),
       ];
     } else {
       constraints = [
         orderBy('fechaIngreso', 'desc'),
-        limit(limitFirestore) // ← antes decía limit(ingresosPerPage)
+        limit(limitFirestore),
       ];
     }
 
     const q = query(collection(db, 'ingresos'), ...constraints);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      // ✅ Sin subcolecciones - usa campos migrados directamente
       const loadedIngresos = snapshot.docs.map(docIngreso => {
         const data = docIngreso.data();
         return {
           id: docIngreso.id,
           ...data,
-          fechaIngresoOriginal: data.fechaIngreso,
+          fechaIngresoOriginal:  data.fechaIngreso,
           fechaIngresoFormatted: data.fechaIngreso?.toDate?.().toLocaleDateString('es-ES', {
             year: 'numeric', month: 'long', day: 'numeric',
-            hour: '2-digit', minute: '2-digit'
+            hour: '2-digit', minute: '2-digit',
           }) || 'N/A',
-          costoTotalIngreso: data.costoTotalIngreso || 0,
-          cantidadLotes: data.cantidadLotes || 0,        // ✅ Campo migrado
-          totalStockIngresado: data.totalStockIngresado || 0, // ✅ Campo migrado
-          estado: data.estado || 'pendiente',
+          fechaRecepcion:      data.fechaRecepcion || data.fechaIngreso,
+          costoTotalIngreso:   data.costoTotalIngreso   || 0,
+          cantidadLotes:       data.cantidadLotes        || 0,
+          totalStockIngresado: data.totalStockIngresado  || 0,
+          estado:              data.estado               || 'pendiente',
         };
       });
 
       setIngresos(loadedIngresos);
       setLoading(false);
     }, (err) => {
-      setError("Error al cargar ingresos: " + err.message);
+      setError('Error al cargar ingresos: ' + err.message);
       setLoading(false);
     });
 
     return () => unsubscribe();
-
   }, [user, router, dateRange, limitFirestore, filterPeriod]);
 
-  // useEffect 2: Conteo total del período
+  // ── useEffect 2: Conteo total del período ─────────────────────────────────
   useEffect(() => {
     if (!user) return;
     if (filterPeriod === 'custom' && (!dateRange.start || !dateRange.end)) return;
@@ -125,11 +162,8 @@ const IngresosPage = () => {
         const { start, end } = dateRange;
 
         if (start && end) {
-          const startCopy = new Date(start);
-          startCopy.setHours(0, 0, 0, 0);
-          const endCopy = new Date(end);
-          endCopy.setHours(23, 59, 59, 999);
-
+          const startCopy = new Date(start); startCopy.setHours(0,  0,  0,   0);
+          const endCopy   = new Date(end);   endCopy.setHours(23, 59, 59, 999);
           constraints = [
             where('fechaIngreso', '>=', Timestamp.fromDate(startCopy)),
             where('fechaIngreso', '<=', Timestamp.fromDate(endCopy)),
@@ -147,117 +181,148 @@ const IngresosPage = () => {
     contarIngresos();
   }, [user, dateRange, filterPeriod]);
 
-  // useEffect 3: Filtros locales + búsqueda en Firestore
+  // ── useEffect 3: Filtros locales + búsqueda en Firestore ──────────────────
   useEffect(() => {
-    let filtered = [...ingresos];
+    // Primer render: si el cache ya tiene filteredIngresos guardados, restaurar
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      if (getCache('ingresos')) {
+        const cachedTerm     = cached?.filtros?.searchTerm;
+        const cachedFiltered = cached?.filtros?.filteredIngresos;
 
-    if (searchTerm) {
-      const lower = searchTerm.toLowerCase();
-      filtered = filtered.filter(ingreso =>
-        ingreso.numeroBoleta?.toLowerCase().includes(lower) ||
-        ingreso.proveedorNombre?.toLowerCase().includes(lower) ||
-        ingreso.observaciones?.toLowerCase().includes(lower) ||
-        ingreso.estado?.toLowerCase().includes(lower)
-      );
-
-      // Si no encontró nada localmente, buscar en Firestore
-      if (filtered.length === 0 && searchTerm.length >= 3) {
-        const buscarEnFirestore = async () => {
-          try {
-            const { getDocs: getDocsFS } = await import('firebase/firestore');
-            const termUpper = searchTerm.toUpperCase();
-            const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
-
-            // Buscar por número de boleta exacto
-            const qBoleta = query(
-              collection(db, 'ingresos'),
-              where('numeroBoleta', '==', termUpper),
-              limit(5)
-            );
-
-            // Buscar por proveedor con prefijo
-            const qProveedorUpper = query(
-              collection(db, 'ingresos'),
-              where('proveedorNombre', '>=', termUpper),
-              where('proveedorNombre', '<=', termUpper + '\uf8ff'),
-              orderBy('proveedorNombre', 'asc'),
-              limit(20)
-            );
-
-            const qProveedorCap = query(
-              collection(db, 'ingresos'),
-              where('proveedorNombre', '>=', termCapitalized),
-              where('proveedorNombre', '<=', termCapitalized + '\uf8ff'),
-              orderBy('proveedorNombre', 'asc'),
-              limit(20)
-            );
-
-            const [snapBoleta, snapProvUpper, snapProvCap] = await Promise.all([
-              getDocsFS(qBoleta),
-              getDocsFS(qProveedorUpper),
-              getDocsFS(qProveedorCap),
-            ]);
-
-            const idsVistos = new Set();
-            const resultados = [];
-
-            for (const docSnap of [...snapBoleta.docs, ...snapProvUpper.docs, ...snapProvCap.docs]) {
-              if (!idsVistos.has(docSnap.id)) {
-                idsVistos.add(docSnap.id);
-                const data = docSnap.data();
-
-                // Cargar lotes para este ingreso
-                const lotesRef = collection(db, 'ingresos', docSnap.id, 'lotes');
-                const lotesSnap = await getDocs(lotesRef);
-                let totalStock = 0;
-                lotesSnap.docs.forEach(l => { totalStock += parseFloat(l.data().cantidad || 0); });
-
-                // En buscarEnFirestore, reemplaza la parte que carga lotes por:
-                resultados.push({
-                  id: docSnap.id,
-                  ...data,
-                  fechaIngresoOriginal: data.fechaIngreso,
-                  fechaIngresoFormatted: data.fechaIngreso?.toDate?.().toLocaleDateString('es-ES', {
-                    year: 'numeric', month: 'long', day: 'numeric',
-                    hour: '2-digit', minute: '2-digit'
-                  }) || 'N/A',
-                  costoTotalIngreso: data.costoTotalIngreso || 0,
-                  cantidadLotes: data.cantidadLotes || 0,        // ✅ Usar campo migrado
-                  totalStockIngresado: data.totalStockIngresado || 0, // ✅ Usar campo migrado
-                  estado: data.estado || 'pendiente',
-                });
-              }
-            }
-
-            if (resultados.length > 0) {
-              setFilteredIngresos(resultados);
-              setCurrentPage(1);
-            }
-          } catch (err) {
-            console.error('Error en búsqueda directa:', err);
-          }
-        };
-
-        buscarEnFirestore();
-        return;
+        if (cachedTerm && cachedTerm === searchTerm && cachedFiltered?.length > 0) {
+          setFilteredIngresos(cachedFiltered);
+          return;
+        }
+        if (!searchTerm.trim()) {
+          return; // sin búsqueda, mostrar lo que ya está en estado
+        }
       }
+    }
+
+    if (!ingresos.length) return;
+
+    if (!searchTerm.trim()) {
+      setFilteredIngresos(ingresos);
+      setCurrentPage(1);
+      return;
+    }
+
+    const lower = searchTerm.toLowerCase();
+
+    let filtered = [...ingresos].filter(ingreso =>
+      ingreso.numeroBoleta?.toLowerCase().includes(lower)  ||
+      ingreso.proveedorNombre?.toLowerCase().includes(lower) ||
+      ingreso.observaciones?.toLowerCase().includes(lower)  ||
+      ingreso.estado?.toLowerCase().includes(lower)
+    );
+
+    // Si no encontró nada localmente → buscar en Firestore
+    if (filtered.length === 0 && searchTerm.length >= 3) {
+      const buscarEnFirestore = async () => {
+        try {
+          const { getDocs: getDocsFS } = await import('firebase/firestore');
+          const termUpper      = searchTerm.toUpperCase();
+          const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
+
+          const qBoleta = query(
+            collection(db, 'ingresos'),
+            where('numeroBoleta', '==', termUpper),
+            limit(5)
+          );
+          const qProveedorUpper = query(
+            collection(db, 'ingresos'),
+            where('proveedorNombre', '>=', termUpper),
+            where('proveedorNombre', '<=', termUpper + '\uf8ff'),
+            orderBy('proveedorNombre', 'asc'),
+            limit(20)
+          );
+          const qProveedorCap = query(
+            collection(db, 'ingresos'),
+            where('proveedorNombre', '>=', termCapitalized),
+            where('proveedorNombre', '<=', termCapitalized + '\uf8ff'),
+            orderBy('proveedorNombre', 'asc'),
+            limit(20)
+          );
+
+          const [snapBoleta, snapProvUpper, snapProvCap] = await Promise.all([
+            getDocsFS(qBoleta),
+            getDocsFS(qProveedorUpper),
+            getDocsFS(qProveedorCap),
+          ]);
+
+          const idsVistos  = new Set();
+          const resultados = [];
+
+          for (const docSnap of [...snapBoleta.docs, ...snapProvUpper.docs, ...snapProvCap.docs]) {
+            if (!idsVistos.has(docSnap.id)) {
+              idsVistos.add(docSnap.id);
+              const data = docSnap.data();
+              resultados.push({
+                id: docSnap.id,
+                ...data,
+                fechaIngresoOriginal:  data.fechaIngreso,
+                fechaIngresoFormatted: data.fechaIngreso?.toDate?.().toLocaleDateString('es-ES', {
+                  year: 'numeric', month: 'long', day: 'numeric',
+                  hour: '2-digit', minute: '2-digit',
+                }) || 'N/A',
+                fechaRecepcion:      data.fechaRecepcion || data.fechaIngreso,
+                costoTotalIngreso:   data.costoTotalIngreso   || 0,
+                cantidadLotes:       data.cantidadLotes        || 0,
+                totalStockIngresado: data.totalStockIngresado  || 0,
+                estado:              data.estado               || 'pendiente',
+              });
+            }
+          }
+
+          if (resultados.length > 0) {
+            setFilteredIngresos(resultados);
+            setCurrentPage(1);
+          }
+        } catch (err) {
+          console.error('Error en búsqueda directa:', err);
+        }
+      };
+
+      buscarEnFirestore();
+      return;
     }
 
     setFilteredIngresos(filtered);
     setCurrentPage(1);
   }, [searchTerm, ingresos]);
 
-  // Función para manejar cambios de filtro de período
+  // ── useEffect 4: Guardar en cache cuando los datos cambian ─────────────────
+  useEffect(() => {
+    if (ingresos.length > 0) {
+      setCache('ingresos', ingresos, {
+        searchTerm,
+        filteredIngresos,
+        filterPeriod,
+        dateRange,
+        limitFirestore,
+        currentPage,
+        totalIngresosPeriodo,
+      });
+    }
+  }, [ingresos, filteredIngresos, searchTerm, filterPeriod, dateRange,
+      limitFirestore, currentPage, totalIngresosPeriodo]);
+
+  // ── Cambio de período ──────────────────────────────────────────────────────
   const handleFilterChange = (period) => {
+    invalidateCache('ingresos');
+    filtersChanged.current = true;
     setFilterPeriod(period);
+    setFilteredIngresos([]);
+    setIngresos([]);
+    setCurrentPage(1);
+
     const today = new Date();
 
     switch (period) {
       case 'day': {
-        const start = new Date(today);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(today);
-        end.setHours(23, 59, 59, 999);
+        const start = new Date(today); start.setHours(0,  0,  0,   0);
+        const end   = new Date(today); end.setHours(23, 59, 59, 999);
         setDateRange({ start, end });
         break;
       }
@@ -265,16 +330,14 @@ const IngresosPage = () => {
         const start = new Date(today);
         start.setDate(today.getDate() - today.getDay());
         start.setHours(0, 0, 0, 0);
-        const end = new Date(today);
-        end.setHours(23, 59, 59, 999);
+        const end = new Date(today); end.setHours(23, 59, 59, 999);
         setDateRange({ start, end });
         break;
       }
       case 'month': {
         const start = new Date(today.getFullYear(), today.getMonth(), 1);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(today);
-        end.setHours(23, 59, 59, 999);
+        const end = new Date(today); end.setHours(23, 59, 59, 999);
         setDateRange({ start, end });
         break;
       }
@@ -285,30 +348,34 @@ const IngresosPage = () => {
     }
   };
 
-
+  // ── Limpiar filtros ────────────────────────────────────────────────────────
   const clearFilters = () => {
+    invalidateCache('ingresos');
+    filtersChanged.current = true;
+
     const today = new Date();
-    const start = new Date(today);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setHours(23, 59, 59, 999);
+    const start = new Date(today); start.setHours(0,  0,  0,   0);
+    const end   = new Date(today); end.setHours(23, 59, 59, 999);
+
     setFilterPeriod('day');
     setDateRange({ start, end });
     setSearchTerm('');
-    setLimitFirestore(20); // ← antes decía setIngresosPerPage(20)
+    setLimitFirestore(20);
     setCurrentPage(1);
+    setFilteredIngresos([]);
+    setIngresos([]);
   };
 
-  // Paginación
-  const totalPages = Math.ceil(filteredIngresos.length / ingresosPerPage);
-  const indexOfLastIngreso = currentPage * ingresosPerPage;
+  // ── Paginación ─────────────────────────────────────────────────────────────
+  const totalPages          = Math.ceil(filteredIngresos.length / ingresosPerPage);
+  const indexOfLastIngreso  = currentPage * ingresosPerPage;
   const indexOfFirstIngreso = indexOfLastIngreso - ingresosPerPage;
-  const currentIngresos = filteredIngresos.slice(indexOfFirstIngreso, indexOfLastIngreso);
+  const currentIngresos     = filteredIngresos.slice(indexOfFirstIngreso, indexOfLastIngreso);
 
   const goToNextPage = () => { if (currentPage < totalPages) setCurrentPage(p => p + 1); };
-  const goToPrevPage = () => { if (currentPage > 1) setCurrentPage(p => p - 1); };
+  const goToPrevPage = () => { if (currentPage > 1)          setCurrentPage(p => p - 1); };
 
-  // Confirmar recepción (sin cambios)
+  // ── Confirmar recepción ────────────────────────────────────────────────────
   const handleConfirmarRecepcion = async (ingresoId) => {
     if (!window.confirm('¿Confirmar recepción? Esto agregará los productos al stock.')) return;
 
@@ -316,83 +383,88 @@ const IngresosPage = () => {
     setError(null);
     try {
       await runTransaction(db, async (transaction) => {
-        const ingresoRef = doc(db, 'ingresos', ingresoId);
+        const ingresoRef  = doc(db, 'ingresos', ingresoId);
         const ingresoSnap = await transaction.get(ingresoRef);
-        if (!ingresoSnap.exists()) throw new Error("Boleta no encontrada.");
-        if (ingresoSnap.data().estado === 'recibido') throw new Error("Ya fue confirmada.");
+        if (!ingresoSnap.exists())              throw new Error('Boleta no encontrada.');
+        if (ingresoSnap.data().estado === 'recibido') throw new Error('Ya fue confirmada.');
 
-        const lotesIngresoRef = collection(db, 'ingresos', ingresoId, 'lotes');
-        const lotesIngresoSnap = await getDocs(lotesIngresoRef);
+        const lotesIngresoRef   = collection(db, 'ingresos', ingresoId, 'lotes');
+        const lotesIngresoSnap  = await getDocs(lotesIngresoRef);
         const lotesPrincipalesSnap = await getDocs(
           query(collection(db, 'lotes'), where('ingresoId', '==', ingresoId))
         );
 
         if (lotesIngresoSnap.empty && lotesPrincipalesSnap.empty)
-          throw new Error("No se encontraron lotes.");
+          throw new Error('No se encontraron lotes.');
 
         const productoRefsAndData = [];
 
         for (const loteDoc of lotesIngresoSnap.docs) {
-          const loteData = loteDoc.data();
+          const loteData    = loteDoc.data();
           const productoRef = doc(db, 'productos', loteData.productoId);
           const productoSnap = await transaction.get(productoRef);
           if (productoSnap.exists()) {
-            productoRefsAndData.push({ loteDocRef: loteDoc.ref, loteData, productoRef, currentProductoData: productoSnap.data() });
+            productoRefsAndData.push({
+              loteDocRef: loteDoc.ref, loteData,
+              productoRef, currentProductoData: productoSnap.data(),
+            });
           }
         }
 
         for (const loteDoc of lotesPrincipalesSnap.docs) {
           const loteData = loteDoc.data();
           const yaExiste = productoRefsAndData.some(i =>
-            i.loteData.productoId === loteData.productoId &&
-            i.loteData.numeroLote === loteData.numeroLote
+            i.loteData.productoId  === loteData.productoId &&
+            i.loteData.numeroLote  === loteData.numeroLote
           );
           if (!yaExiste) {
-            const productoRef = doc(db, 'productos', loteData.productoId);
+            const productoRef  = doc(db, 'productos', loteData.productoId);
             const productoSnap = await transaction.get(productoRef);
             if (productoSnap.exists()) {
-              productoRefsAndData.push({ loteDocRef: loteDoc.ref, loteData, productoRef, currentProductoData: productoSnap.data() });
+              productoRefsAndData.push({
+                loteDocRef: loteDoc.ref, loteData,
+                productoRef, currentProductoData: productoSnap.data(),
+              });
             }
           }
         }
 
-        // ✅ Calcular cantidadLotes y totalStockIngresado ANTES de escribir
-        const cantidadLotes = productoRefsAndData.length;
+        const cantidadLotes      = productoRefsAndData.length;
         const totalStockIngresado = productoRefsAndData.reduce(
           (sum, { loteData }) => sum + (loteData.cantidad || 0), 0
         );
 
         for (const { loteDocRef, loteData, productoRef, currentProductoData } of productoRefsAndData) {
           const newStock = (currentProductoData.stockActual || 0) + (loteData.cantidad || 0);
-          transaction.update(productoRef, { stockActual: newStock, updatedAt: serverTimestamp() });
-          transaction.update(loteDocRef, { stockRestante: loteData.cantidad, estado: 'activo', updatedAt: serverTimestamp() });
+          transaction.update(productoRef,  { stockActual: newStock, updatedAt: serverTimestamp() });
+          transaction.update(loteDocRef,   { stockRestante: loteData.cantidad, estado: 'activo', updatedAt: serverTimestamp() });
         }
 
-        // ✅ Actualizar ingreso con estado + campos migrados en un solo update
         transaction.update(ingresoRef, {
           estado: 'recibido',
           fechaConfirmacion: serverTimestamp(),
-          cantidadLotes,           // ✅ Se guarda al confirmar
-          totalStockIngresado,     // ✅ Se guarda al confirmar
-          updatedAt: serverTimestamp()
+          cantidadLotes,
+          totalStockIngresado,
+          updatedAt: serverTimestamp(),
         });
       });
 
       alert('Recepción confirmada y stock actualizado.');
-      // ✅ Actualizar estado local también con los campos nuevos
-      setIngresos(prev => prev.map(ing => {
-        if (ing.id !== ingresoId) return ing;
-        const cantidadLotes = ing.cantidadLotes || 0; // ya calculado arriba pero aproximamos del estado local
-        return { ...ing, estado: 'recibido' };
-      }));
+      // Invalidar cache para que el próximo fetch traiga datos frescos
+      invalidateCache('ingresos');
+      filtersChanged.current = true;
+      setIngresos(prev => prev.map(ing =>
+        ing.id !== ingresoId ? ing : { ...ing, estado: 'recibido' }
+      ));
     } catch (err) {
-      console.error("Error al confirmar recepción:", err);
-      setError("Error: " + err.message);
+      console.error('Error al confirmar recepción:', err);
+      setError('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Eliminar ingreso ───────────────────────────────────────────────────────
   const handleDeleteIngreso = async (ingresoId, estadoIngreso) => {
     let msg = '¿Eliminar esta boleta de ingreso?';
     if (estadoIngreso === 'recibido') msg += '\nADVERTENCIA: El stock NO se revertirá automáticamente.';
@@ -402,8 +474,8 @@ const IngresosPage = () => {
     try {
       await runTransaction(db, async (transaction) => {
         const ingresoRef = doc(db, 'ingresos', ingresoId);
-        const lotesRef = collection(db, 'ingresos', ingresoId, 'lotes');
-        const lotesSnap = await getDocs(lotesRef);
+        const lotesRef   = collection(db, 'ingresos', ingresoId, 'lotes');
+        const lotesSnap  = await getDocs(lotesRef);
         lotesSnap.docs.forEach(loteDoc =>
           transaction.delete(doc(db, 'ingresos', ingresoId, 'lotes', loteDoc.id))
         );
@@ -411,12 +483,88 @@ const IngresosPage = () => {
       });
 
       alert('Boleta eliminada.');
+      invalidateCache('ingresos');
+      filtersChanged.current = true;
       setIngresos(prev => prev.filter(ing => ing.id !== ingresoId));
     } catch (err) {
-      setError("Error al eliminar: " + err.message);
+      setError('Error al eliminar: ' + err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── DatePickerPopover ──────────────────────────────────────────────────────
+  const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
+    const [open,  setOpen]  = useState(false);
+    const [month, setMonth] = useState(selected || new Date());
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handler = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handler);
+      return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const prevMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    const nextMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+
+    const meses      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const currentYear = new Date().getFullYear();
+    const years       = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i);
+
+    return (
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen(prev => !prev)}
+          className="flex items-center gap-2 px-3 py-1 border border-gray-300 rounded bg-white text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        >
+          <CalendarIcon className="h-4 w-4 text-gray-400" />
+          {selected
+            ? format(selected, 'dd/MM/yyyy', { locale: es })
+            : <span className="text-gray-400">{placeholder}</span>
+          }
+        </button>
+
+        {open && (
+          <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-xl">
+            <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
+              <button onClick={prevMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0">
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                <select value={month.getMonth()}
+                  onChange={(e) => setMonth(m => new Date(m.getFullYear(), parseInt(e.target.value), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5">
+                  {meses.map((mes, i) => <option key={i} value={i}>{mes}</option>)}
+                </select>
+                <select value={month.getFullYear()}
+                  onChange={(e) => setMonth(m => new Date(parseInt(e.target.value), m.getMonth(), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5">
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <button onClick={nextMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0">
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <Calendar
+              mode="single"
+              selected={selected}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={(date) => { if (date) { onChange(date); setOpen(false); } }}
+              disabled={minDate ? { before: minDate } : undefined}
+              captionLayout="label"
+              classNames={{ month_caption: 'hidden', nav: 'hidden' }}
+            />
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (!user) return null;
@@ -432,7 +580,7 @@ const IngresosPage = () => {
             </div>
           )}
 
-          {/* Filtros */}
+          {/* ── Filtros ───────────────────────────────────────────────────── */}
           <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 relative z-20">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
               <div className="relative flex-grow sm:mr-4">
@@ -461,6 +609,7 @@ const IngresosPage = () => {
 
             <div className="flex flex-wrap items-center gap-2 justify-between">
               <div className="flex flex-wrap items-center gap-2">
+                {/* Botones de período */}
                 {['all', 'day', 'week', 'month'].map((period) => (
                   <button
                     key={period}
@@ -475,24 +624,15 @@ const IngresosPage = () => {
                   </button>
                 ))}
 
-                {/* En ventas/index.js, el DatePicker de fecha fin */}
-                <CustomDatePicker
-                  selected={dateRange.end}
-                  onChange={(date) => {
-                    setFilterPeriod('custom');
-                    // Forzar hora al final del día
-                    const endOfDay = new Date(date);
-                    endOfDay.setHours(23, 59, 59, 999);
-                    setDateRange(prev => ({ ...prev, end: endOfDay }));
-                  }}
-                  placeholder="Fecha fin"
-                  minDate={dateRange.start}
-                />
-                <CustomDatePicker
+                {/* Fecha inicio */}
+                <DatePickerPopover
                   selected={dateRange.start}
                   onChange={(date) => {
+                    invalidateCache('ingresos');
+                    filtersChanged.current = true;
                     setFilterPeriod('custom');
-                    // Forzar hora al inicio del día
+                    setFilteredIngresos([]);
+                    setIngresos([]);
                     const startOfDay = new Date(date);
                     startOfDay.setHours(0, 0, 0, 0);
                     setDateRange(prev => ({ ...prev, start: startOfDay }));
@@ -500,9 +640,32 @@ const IngresosPage = () => {
                   placeholder="Fecha inicio"
                 />
 
+                {/* Fecha fin */}
+                <DatePickerPopover
+                  selected={dateRange.end}
+                  onChange={(date) => {
+                    invalidateCache('ingresos');
+                    filtersChanged.current = true;
+                    setFilterPeriod('custom');
+                    const endOfDay = new Date(date);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    setDateRange(prev => ({ ...prev, end: endOfDay }));
+                  }}
+                  placeholder="Fecha fin"
+                  minDate={dateRange.start}
+                />
+
+                {/* Selector de límite */}
                 <select
                   value={limitFirestore}
-                  onChange={(e) => { setLimitFirestore(Number(e.target.value)); setCurrentPage(1); }}
+                  onChange={(e) => {
+                    invalidateCache('ingresos');
+                    filtersChanged.current = true;
+                    setLimitFirestore(Number(e.target.value));
+                    setFilteredIngresos([]);
+                    setIngresos([]);
+                    setCurrentPage(1);
+                  }}
                   className="px-3 py-1 border border-gray-300 rounded shadow-sm text-sm"
                 >
                   <option value={20}>20</option>
@@ -521,6 +684,7 @@ const IngresosPage = () => {
             </div>
           </div>
 
+          {/* ── Contenido ─────────────────────────────────────────────────── */}
           {loading ? (
             <div className="flex justify-center items-center h-48">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -547,6 +711,7 @@ const IngresosPage = () => {
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° BOLETA</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROVEEDOR</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE INGRESO</th>
+                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA RECEPCIÓN</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">LOTES</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO TOTAL</th>
@@ -559,15 +724,28 @@ const IngresosPage = () => {
                   <tbody className="bg-white">
                     {currentIngresos.map((ingreso, index) => (
                       <tr key={ingreso.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">{ingreso.numeroBoleta || 'N/A'}</td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">{ingreso.proveedorNombre}</td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">{ingreso.fechaIngresoFormatted}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                          {ingreso.numeroBoleta || 'N/A'}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                          {ingreso.proveedorNombre}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                          {ingreso.fechaIngresoFormatted}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                          {ingreso.fechaRecepcion?.toDate?.().toLocaleDateString('es-ES', {
+                            year: 'numeric', month: 'long', day: 'numeric',
+                          }) || ingreso.fechaIngresoFormatted}
+                        </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             {ingreso.cantidadLotes || 0} lotes
                           </span>
                         </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-center">{ingreso.totalStockIngresado || 0}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-center">
+                          {ingreso.totalStockIngresado || 0}
+                        </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium">
                           S/. {parseFloat(ingreso.costoTotalIngreso || 0).toFixed(2)}
                         </td>
@@ -582,10 +760,13 @@ const IngresosPage = () => {
                             </span>
                           )}
                         </td>
-                        <td className="border border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-xs truncate" title={ingreso.observaciones || 'N/A'}>
+                        <td className="border border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-xs truncate"
+                            title={ingreso.observaciones || 'N/A'}>
                           {ingreso.observaciones || 'N/A'}
                         </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">{ingreso.empleadoId || 'Desconocido'}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                          {ingreso.empleadoId || 'Desconocido'}
+                        </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
                           <div className="flex items-center space-x-2 justify-center">
                             {ingreso.estado === 'pendiente' && (
@@ -595,6 +776,15 @@ const IngresosPage = () => {
                                 title="Confirmar Recepción"
                               >
                                 <CheckCircleIcon className="h-5 w-5" />
+                              </button>
+                            )}
+                            {ingreso.estado === 'pendiente' && (
+                              <button
+                                onClick={() => router.push(`/inventario/ingresos/editar/${ingreso.id}`)}
+                                className="text-yellow-600 hover:text-yellow-800 p-2 rounded-full hover:bg-yellow-50 transition-colors"
+                                title="Editar"
+                              >
+                                <PencilIcon className="h-5 w-5" />
                               </button>
                             )}
                             <button
@@ -619,7 +809,7 @@ const IngresosPage = () => {
                 </table>
               </div>
 
-              {/* Paginación - igual que ventas */}
+              {/* Paginación */}
               {filteredIngresos.length > ingresosPerPage && (
                 <div className="flex justify-between items-center mt-4">
                   <p className="text-sm text-gray-700">

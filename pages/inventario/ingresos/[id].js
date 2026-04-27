@@ -54,6 +54,9 @@ const IngresoDetailsPage = () => {
           fechaIngreso: ingresoDocSnap.data().fechaIngreso?.toDate().toLocaleDateString('es-ES', {
             year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
           }) || 'N/A',
+            fechaRecepcion: ingresoDocSnap.data().fechaRecepcion?.toDate().toLocaleDateString('es-ES', {
+            year: 'numeric', month: 'long', day: 'numeric',
+          }) || null,
         };
         setIngreso(ingresoData);
 
@@ -229,7 +232,17 @@ const IngresoDetailsPage = () => {
                             <p className="text-sm font-medium text-gray-900">{ingreso.fechaIngreso}</p>
                           </div>
                         </div>
-                        
+
+                        {ingreso.fechaRecepcion && (
+                          <div className="flex items-center">
+                            <CalendarDaysIcon className="h-4 w-4 text-gray-500 mr-2" />
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fecha de Recepción</p>
+                              <p className="text-sm font-medium text-gray-900">{ingreso.fechaRecepcion}</p>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex items-center">
                           <UserIcon className="h-4 w-4 text-gray-500 mr-2" />
                           <div>

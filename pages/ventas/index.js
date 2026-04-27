@@ -1128,7 +1128,7 @@ const VentasIndexPage = () => {
                   placeholder="Fecha inicio"
                 />
 
-                                <DatePickerPopover
+                <DatePickerPopover
                   selected={dateRange.end}
                   onChange={(date) => {
                     invalidateCache('ventas');
