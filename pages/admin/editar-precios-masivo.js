@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { db } from '../../lib/firebase';
 import {
   collection, getDocs, updateDoc, doc,
@@ -9,7 +9,6 @@ const BATCH_SIZE = 50;
 const n = (v) => parseFloat(v) || 0;
 const fmt = (v) => n(v).toFixed(2);
 
-// Ordena lotes por fechaIngreso asc en memoria (evita indice compuesto en Firestore)
 const sortLotesFIFO = (lotes) =>
   [...lotes].sort((a, b) => {
     const fa = a.fechaIngreso?.toMillis?.() ?? (a.fechaIngreso?.seconds ?? 0) * 1000;
@@ -24,60 +23,57 @@ export default function EditarPreciosMasivo() {
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(true);
 
+  // inputs como strings: { [loteId]: { venta: string, minimo: string } }
+  const [inputValues, setInputValues] = useState({});
+
   const [guardando, setGuardando] = useState(new Set());
   const [guardados, setGuardados] = useState(new Set());
   const [guardandoProd, setGuardandoProd] = useState(new Set());
 
   const [busqueda, setBusqueda] = useState('');
+  // soloAfectados NO se re-evalúa mientras escribes — se calcula al cargar
   const [soloAfectados, setSoloAfectados] = useState(true);
   const [progreso, setProgreso] = useState(null);
 
-  // ─── Mapeo de producto ───────────────────────────────────────
+  // ─── Map producto ────────────────────────────────────────────
   const mapProducto = (d) => ({ id: d.id, ...d.data() });
 
-  // ─── Carga de lotes (solo where = sin indice compuesto) ──────
+  // ─── Inicializar inputs de lotes ─────────────────────────────
+  const inicializarInputs = (lotes) => {
+    const entries = {};
+    lotes.forEach(l => {
+      entries[l.id] = {
+        venta:  fmt(l.precioVentaUnitario),
+        minimo: fmt(l.precioVentaMinimoUnitario),
+      };
+    });
+    return entries;
+  };
+
+  // ─── Cargar lotes de un producto ─────────────────────────────
   const cargarLotesDeProducto = async (producto) => {
     try {
       const snap = await getDocs(query(
         collection(db, 'lotes'),
         where('productoId', '==', producto.id)
-        // SIN orderBy aqui: evita necesitar indice compuesto
       ));
-
-      const lotes = sortLotesFIFO(
-        snap.docs.map(d => ({
-          id: d.id,
-          ...d.data(),
-          _precioVenta:  n(d.data().precioVentaUnitario),
-          _precioMinimo: n(d.data().precioVentaMinimoUnitario),
-        }))
-      );
-
+      const lotes = sortLotesFIFO(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       return { ...producto, _lotes: lotes, _showLotes: true };
     } catch (err) {
-      console.error('Error cargando lotes de', producto.nombre, ':', err.message);
+      console.error('Error lotes de', producto.nombre, ':', err.message);
       return { ...producto, _lotes: [], _showLotes: true };
     }
   };
 
-  // ─── Carga paginada de productos ─────────────────────────────
+  // ─── Carga paginada ──────────────────────────────────────────
   const cargarProductos = async (reset = false) => {
-    if (reset) {
-      setLoading(true);
-      setProductos([]);
-      setLastDoc(null);
-      setHasMore(true);
-    } else {
-      setLoadingMore(true);
-    }
+    if (reset) { setLoading(true); setProductos([]); setLastDoc(null); setHasMore(true); }
+    else setLoadingMore(true);
 
     try {
-      let q;
-      if (reset || !lastDoc) {
-        q = query(collection(db, 'productos'), orderBy('nombre', 'asc'), limit(BATCH_SIZE));
-      } else {
-        q = query(collection(db, 'productos'), orderBy('nombre', 'asc'), startAfter(lastDoc), limit(BATCH_SIZE));
-      }
+      const q = reset || !lastDoc
+        ? query(collection(db, 'productos'), orderBy('nombre', 'asc'), limit(BATCH_SIZE))
+        : query(collection(db, 'productos'), orderBy('nombre', 'asc'), startAfter(lastDoc), limit(BATCH_SIZE));
 
       const snap = await getDocs(q);
       if (snap.empty) { setHasMore(false); return; }
@@ -86,8 +82,14 @@ export default function EditarPreciosMasivo() {
       setLastDoc(snap.docs[snap.docs.length - 1]);
       setHasMore(snap.docs.length === BATCH_SIZE);
 
-      // Cargar lotes de cada producto en paralelo
       const nuevosConLotes = await Promise.all(nuevos.map(cargarLotesDeProducto));
+
+      // Inicializar inputs como strings
+      const newInputs = {};
+      nuevosConLotes.forEach(p => {
+        Object.assign(newInputs, inicializarInputs(p._lotes || []));
+      });
+      setInputValues(prev => ({ ...prev, ...newInputs }));
 
       setProductos(prev => reset ? nuevosConLotes : [...prev, ...nuevosConLotes]);
     } catch (err) {
@@ -100,29 +102,25 @@ export default function EditarPreciosMasivo() {
 
   useEffect(() => { cargarProductos(true); }, []);
 
-  // ─── Edicion local de precio en lote ────────────────────────
-  const handleLotePrecioChange = (productoId, loteId, campo, valor) => {
-    setProductos(prev => prev.map(p => {
-      if (p.id !== productoId) return p;
-      return {
-        ...p,
-        _lotes: p._lotes.map(l =>
-          l.id === loteId ? { ...l, [campo]: parseFloat(valor) || 0 } : l
-        ),
-      };
+  // ─── Cambio de input — guarda string crudo, sin parseFloat ──
+  // type="number" devuelve e.target.value como string ("1", "1.", "1.5")
+  // No parseamos aquí para no perder dígitos intermedios al escribir
+  const handleInputChange = (loteId, campo, rawValue) => {
+    // rawValue ya es string del input number: "1", "15", "15.5", ""
+    setInputValues(prev => ({
+      ...prev,
+      [loteId]: { ...prev[loteId], [campo]: rawValue },
     }));
   };
 
-  // ─── Recalcular producto FIFO (sin indice compuesto) ────────
+  // ─── Recalcular producto FIFO ────────────────────────────────
   const recalcularProductoFIFO = async (productoId) => {
     setGuardandoProd(prev => new Set(prev).add(productoId));
     try {
       const snap = await getDocs(query(
         collection(db, 'lotes'),
         where('productoId', '==', productoId)
-        // Sin where extra + orderBy = sin indice compuesto. Filtramos en memoria.
       ));
-
       const lotesActivos = sortLotesFIFO(
         snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
@@ -162,26 +160,49 @@ export default function EditarPreciosMasivo() {
     }
   };
 
-  // ─── Guardar un lote + recalcular producto ───────────────────
-  const guardarLote = async (producto, lote) => {
-    const key = lote.id;
-    setGuardando(prev => new Set(prev).add(key));
+  // ─── Guardar un lote ─────────────────────────────────────────
+  const guardarLote = async (productoId, lote) => {
+    const vals = inputValues[lote.id] || {};
+    const precioVenta  = n(vals.venta);
+    const precioMinimo = n(vals.minimo);
+
+    if (precioVenta <= 0) {
+      alert(`El precio de venta del lote ${lote.numeroLote || lote.id.slice(-6)} debe ser mayor a 0.`);
+      return;
+    }
+
+    setGuardando(prev => new Set(prev).add(lote.id));
     try {
       await updateDoc(doc(db, 'lotes', lote.id), {
-        precioVentaUnitario:       lote._precioVenta,
-        precioVentaMinimoUnitario: lote._precioMinimo,
+        precioVentaUnitario:       precioVenta,
+        precioVentaMinimoUnitario: precioMinimo,
         updatedAt:                 serverTimestamp(),
       });
-      await recalcularProductoFIFO(producto.id);
 
-      setGuardados(prev => new Set(prev).add(key));
+      // Actualizar el lote en estado local
+      setProductos(prev => prev.map(p =>
+        p.id !== productoId ? p : {
+          ...p,
+          _lotes: p._lotes.map(l =>
+            l.id !== lote.id ? l : {
+              ...l,
+              precioVentaUnitario:       precioVenta,
+              precioVentaMinimoUnitario: precioMinimo,
+            }
+          ),
+        }
+      ));
+
+      await recalcularProductoFIFO(productoId);
+
+      setGuardados(prev => new Set(prev).add(lote.id));
       setTimeout(() => {
-        setGuardados(prev => { const s = new Set(prev); s.delete(key); return s; });
-      }, 2000);
+        setGuardados(prev => { const s = new Set(prev); s.delete(lote.id); return s; });
+      }, 2500);
     } catch (err) {
       alert('Error al guardar lote: ' + err.message);
     } finally {
-      setGuardando(prev => { const s = new Set(prev); s.delete(key); return s; });
+      setGuardando(prev => { const s = new Set(prev); s.delete(lote.id); return s; });
     }
   };
 
@@ -190,29 +211,26 @@ export default function EditarPreciosMasivo() {
     const lotesParaGuardar = [];
     productosFiltrados.forEach(p => {
       (p._lotes || []).filter(l => l.estado === 'activo').forEach(l => {
-        if (l._precioVenta > 0 || l._precioMinimo > 0) {
-          lotesParaGuardar.push({ producto: p, lote: l });
+        const vals = inputValues[l.id] || {};
+        if (n(vals.venta) > 0) {
+          lotesParaGuardar.push({ productoId: p.id, lote: l });
         }
       });
     });
 
     if (!lotesParaGuardar.length) {
-      alert('No hay lotes activos con precios para guardar.');
+      alert('No hay lotes activos con precio de venta > 0 para guardar.');
       return;
     }
-    if (!window.confirm(`Guardar ${lotesParaGuardar.length} lotes y recalcular productos?`)) return;
+    if (!window.confirm(`¿Guardar ${lotesParaGuardar.length} lotes y recalcular productos?`)) return;
 
     setProgreso({ actual: 0, total: lotesParaGuardar.length });
     const CHUNK = 5;
     for (let i = 0; i < lotesParaGuardar.length; i += CHUNK) {
       const chunk = lotesParaGuardar.slice(i, i + CHUNK);
-      await Promise.all(chunk.map(({ producto, lote }) => guardarLote(producto, lote)));
+      await Promise.all(chunk.map(({ productoId, lote }) => guardarLote(productoId, lote)));
       setProgreso({ actual: Math.min(i + CHUNK, lotesParaGuardar.length), total: lotesParaGuardar.length });
     }
-
-    const productosAfectados = [...new Set(lotesParaGuardar.map(x => x.producto.id))];
-    await Promise.all(productosAfectados.map(recalcularProductoFIFO));
-
     setProgreso(null);
     alert('Todo guardado y productos actualizados.');
   };
@@ -224,32 +242,34 @@ export default function EditarPreciosMasivo() {
     ));
   };
 
-  // ─── Filtrado ────────────────────────────────────────────────
+  // ─── Filtrado — busqueda no afecta soloAfectados ─────────────
+  // "afectado" se basa en los datos originales del producto, NO en los inputs actuales
+  const esAfectado = (p) => {
+    const prodAfectado = n(p.precioVentaDefault) === 0 || n(p.precioVentaMinimo) === 0;
+    const loteAfectado = (p._lotes || []).some(
+      l => l.estado === 'activo' && (l.stockRestante || 0) > 0 &&
+           (n(l.precioVentaUnitario) === 0 || n(l.precioVentaMinimoUnitario) === 0)
+    );
+    return prodAfectado || loteAfectado;
+  };
+
+  // Tiene al menos un lote activo con stock > 0
+  const tieneStockActivo = (p) =>
+    (p._lotes || []).some(l => l.estado === 'activo' && (l.stockRestante || 0) > 0);
+
   const productosFiltrados = productos.filter(p => {
-    const coincide = !busqueda ||
+    const coincide = !busqueda.trim() ||
       (p.nombre || '').toLowerCase().includes(busqueda.toLowerCase()) ||
       (p.codigoTienda || '').toLowerCase().includes(busqueda.toLowerCase()) ||
       (p.marca || '').toLowerCase().includes(busqueda.toLowerCase());
-
     if (!coincide) return false;
-
-    if (soloAfectados) {
-      const prodAfectado = n(p.precioVentaDefault) === 0 || n(p.precioVentaMinimo) === 0;
-      const loteAfectado = (p._lotes || []).some(l =>
-        l.estado === 'activo' && (l._precioVenta === 0 || l._precioMinimo === 0)
-      );
-      return prodAfectado || loteAfectado;
-    }
+    // Con soloAfectados: solo productos con stock activo Y precio 0 pendiente
+    if (soloAfectados) return tieneStockActivo(p) && esAfectado(p);
+    // Sin soloAfectados: todos aparecen
     return true;
   });
 
-  const totalAfectados = productos.filter(p => {
-    const prodAfectado = n(p.precioVentaDefault) === 0 || n(p.precioVentaMinimo) === 0;
-    const loteAfectado = (p._lotes || []).some(l =>
-      l.estado === 'activo' && (l._precioVenta === 0 || l._precioMinimo === 0)
-    );
-    return prodAfectado || loteAfectado;
-  }).length;
+  const totalAfectados = productos.filter(esAfectado).length;
 
   // ─── Render ──────────────────────────────────────────────────
   if (loading) return (
@@ -261,12 +281,11 @@ export default function EditarPreciosMasivo() {
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
-      {/* Cabecera */}
       <div className="mb-4">
-        <h1 className="text-2xl font-bold">Edicion Masiva de Precios por Lote</h1>
+        <h1 className="text-2xl font-bold">Edición Masiva de Precios por Lote</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Edita <strong>precio de venta</strong> y <strong>precio minimo</strong> en cada lote.
-          Al guardar, el producto se actualiza con el lote activo mas antiguo (FIFO).
+          Edita <strong>precio de venta</strong> y <strong>precio mínimo</strong> en cada lote.
+          Al guardar, el producto se actualiza con el primer lote activo (FIFO).
         </p>
       </div>
 
@@ -282,7 +301,7 @@ export default function EditarPreciosMasivo() {
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm">
           <span className="font-bold text-blue-700">{productos.length}</span>
-          <span className="text-blue-600"> cargados{hasMore ? ' (hay mas)' : ' (todos)'}</span>
+          <span className="text-blue-600"> cargados{hasMore ? ' (hay más)' : ' (todos)'}</span>
         </div>
       </div>
 
@@ -290,7 +309,7 @@ export default function EditarPreciosMasivo() {
       <div className="flex flex-wrap gap-3 mb-4 items-center">
         <input
           type="text"
-          placeholder="Buscar por nombre, codigo, marca..."
+          placeholder="Buscar por nombre, código, marca..."
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-grow max-w-sm"
@@ -305,17 +324,15 @@ export default function EditarPreciosMasivo() {
           Solo afectados ({totalAfectados})
         </label>
         <span className="text-sm text-gray-500">Mostrando: {productosFiltrados.length}</span>
-
         {hasMore && (
           <button
             onClick={() => cargarProductos(false)}
             disabled={loadingMore}
             className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50"
           >
-            {loadingMore ? 'Cargando...' : 'Cargar mas productos'}
+            {loadingMore ? 'Cargando...' : 'Cargar más'}
           </button>
         )}
-
         <button
           onClick={guardarTodo}
           className="px-4 py-2 text-sm bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 ml-auto"
@@ -343,7 +360,7 @@ export default function EditarPreciosMasivo() {
       {/* Lista de productos */}
       <div className="space-y-3">
         {productosFiltrados.map(producto => {
-          const prodAfectado = n(producto.precioVentaDefault) === 0 || n(producto.precioVentaMinimo) === 0;
+          const prodAfectado = esAfectado(producto);
           const recalculando = guardandoProd.has(producto.id);
 
           return (
@@ -351,7 +368,7 @@ export default function EditarPreciosMasivo() {
               key={producto.id}
               className={`border rounded-lg overflow-hidden ${prodAfectado ? 'border-red-300' : 'border-gray-200'}`}
             >
-              {/* Cabecera producto - clickable para colapsar */}
+              {/* Cabecera producto */}
               <div
                 className={`flex flex-wrap items-center gap-4 px-4 py-3 cursor-pointer select-none ${
                   prodAfectado ? 'bg-red-50 hover:bg-red-100' : 'bg-gray-50 hover:bg-gray-100'
@@ -359,7 +376,7 @@ export default function EditarPreciosMasivo() {
                 onClick={() => toggleLotes(producto.id)}
               >
                 <div className="flex-grow min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className={`font-semibold text-sm ${prodAfectado ? 'text-red-800' : 'text-gray-900'}`}>
                       {producto.nombre}
                     </span>
@@ -370,11 +387,12 @@ export default function EditarPreciosMasivo() {
                     )}
                   </div>
                   <div className="text-xs text-gray-400 mt-0.5">
-                    {producto.codigoTienda} {producto.marca ? '· ' + producto.marca : ''} · Stock: {producto.stockActual ?? 0}
+                    {producto.codigoTienda}
+                    {producto.marca ? ' · ' + producto.marca : ''}
+                    {' · Stock: '}{producto.stockActual ?? 0}
                   </div>
                 </div>
 
-                {/* Precios actuales del producto */}
                 <div className="flex gap-4 text-xs text-gray-600">
                   <div className="text-center">
                     <div className="text-gray-400">P. Compra</div>
@@ -387,7 +405,7 @@ export default function EditarPreciosMasivo() {
                     </div>
                   </div>
                   <div className="text-center">
-                    <div className="text-gray-400">P. Minimo</div>
+                    <div className="text-gray-400">P. Mínimo</div>
                     <div className={`font-bold ${n(producto.precioVentaMinimo) === 0 ? 'text-red-600' : 'text-blue-700'}`}>
                       S/. {fmt(producto.precioVentaMinimo)}
                     </div>
@@ -404,9 +422,7 @@ export default function EditarPreciosMasivo() {
               {producto._showLotes && (
                 <div className="overflow-x-auto">
                   {(!producto._lotes || producto._lotes.length === 0) ? (
-                    <div className="px-6 py-3 text-sm text-gray-400 italic bg-white">
-                      Sin lotes registrados.
-                    </div>
+                    <div className="px-6 py-3 text-sm text-gray-400 italic bg-white">Sin lotes registrados.</div>
                   ) : (
                     <table className="min-w-full text-sm border-t border-gray-100">
                       <thead>
@@ -415,10 +431,10 @@ export default function EditarPreciosMasivo() {
                           <th className="px-4 py-2 text-center">ESTADO</th>
                           <th className="px-4 py-2 text-center">STOCK</th>
                           <th className="px-4 py-2 text-center">P. COMPRA</th>
-                          <th className="px-4 py-2 text-center w-36">P. VENTA</th>
-                          <th className="px-4 py-2 text-center w-36">P. MINIMO</th>
+                          <th className="px-4 py-2 text-center" style={{minWidth: '130px'}}>P. VENTA</th>
+                          <th className="px-4 py-2 text-center" style={{minWidth: '130px'}}>P. MÍNIMO</th>
                           <th className="px-4 py-2 text-center">FIFO</th>
-                          <th className="px-4 py-2 text-center w-24">GUARDAR</th>
+                          <th className="px-4 py-2 text-center" style={{minWidth: '90px'}}>GUARDAR</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -427,22 +443,31 @@ export default function EditarPreciosMasivo() {
                           const esPrimeroActivo = idx === producto._lotes.findIndex(
                             l => l.estado === 'activo' && (l.stockRestante || 0) > 0
                           );
-                          const loteAfectado = lote._precioVenta === 0 || lote._precioMinimo === 0;
+                          const vals = inputValues[lote.id] || { venta: '0.00', minimo: '0.00' };
+                          const ventaNum  = n(vals.venta);
+                          const minimoNum = n(vals.minimo);
+                          const loteAfectado = esActivo && (ventaNum === 0 || minimoNum === 0);
                           const estaGuardando = guardando.has(lote.id);
-                          const fueGuardado = guardados.has(lote.id);
+                          const fueGuardado   = guardados.has(lote.id);
+
+                          // Detectar cambios respecto a lo guardado en Firestore
+                          const haysCambios =
+                            ventaNum  !== n(lote.precioVentaUnitario) ||
+                            minimoNum !== n(lote.precioVentaMinimoUnitario);
 
                           return (
                             <tr
                               key={lote.id}
                               className={
-                                fueGuardado ? 'bg-green-50 border-t border-gray-100' :
-                                loteAfectado && esActivo ? 'bg-orange-50 border-t border-gray-100' :
-                                !esActivo ? 'bg-gray-50 opacity-60 border-t border-gray-100' :
-                                idx % 2 === 0 ? 'bg-white border-t border-gray-100' : 'bg-gray-50 border-t border-gray-100'
+                                fueGuardado    ? 'bg-green-50 border-t border-gray-100' :
+                                loteAfectado   ? 'bg-orange-50 border-t border-gray-100' :
+                                !esActivo      ? 'bg-gray-50 opacity-60 border-t border-gray-100' :
+                                idx % 2 === 0  ? 'bg-white border-t border-gray-100'
+                                               : 'bg-gray-50 border-t border-gray-100'
                               }
                             >
                               <td className="px-4 py-2 font-mono text-xs text-gray-700">
-                                {lote.numeroLote || lote.id.slice(-6)}
+                                <div className="font-semibold">{lote.numeroLote || lote.id.slice(-6)}</div>
                                 <div className="text-gray-400">
                                   {lote.fechaIngreso?.toDate?.()?.toLocaleDateString('es-PE') ?? '—'}
                                 </div>
@@ -464,40 +489,48 @@ export default function EditarPreciosMasivo() {
                                 S/. {fmt(lote.precioCompraUnitario)}
                               </td>
 
-                              {/* P. Venta editable */}
-                              <td className="px-2 py-1">
-                                <div className="flex items-center">
-                                  <span className="text-gray-400 mr-1 text-xs">S/.</span>
+                              {/* P. Venta */}
+                              <td className="px-2 py-1.5">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-gray-400 text-xs flex-shrink-0">S/.</span>
                                   <input
                                     type="number"
-                                    value={lote._precioVenta}
-                                    onChange={e => handleLotePrecioChange(producto.id, lote.id, '_precioVenta', e.target.value)}
-                                    step="0.01"
                                     min="0"
+                                    step="0.01"
+                                    value={vals.venta}
+                                    onChange={e => handleInputChange(lote.id, 'venta', e.target.value)}
+                                    onFocus={e => e.target.select()}
                                     disabled={!esActivo}
-                                    className={`w-full px-2 py-1.5 border rounded text-sm text-center disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 ${
-                                      lote._precioVenta === 0 && esActivo
+                                    placeholder="0.00"
+                                    className={`w-full px-2 py-1.5 border rounded text-sm text-right disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 ${
+                                      ventaNum === 0 && esActivo
                                         ? 'border-red-400 bg-red-50 focus:ring-red-300'
+                                        : haysCambios
+                                        ? 'border-amber-400 bg-amber-50 focus:ring-amber-300'
                                         : 'border-gray-300 bg-white focus:ring-blue-300'
                                     }`}
                                   />
                                 </div>
                               </td>
 
-                              {/* P. Minimo editable */}
-                              <td className="px-2 py-1">
-                                <div className="flex items-center">
-                                  <span className="text-gray-400 mr-1 text-xs">S/.</span>
+                              {/* P. Mínimo */}
+                              <td className="px-2 py-1.5">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-gray-400 text-xs flex-shrink-0">S/.</span>
                                   <input
                                     type="number"
-                                    value={lote._precioMinimo}
-                                    onChange={e => handleLotePrecioChange(producto.id, lote.id, '_precioMinimo', e.target.value)}
-                                    step="0.01"
                                     min="0"
+                                    step="0.01"
+                                    value={vals.minimo}
+                                    onChange={e => handleInputChange(lote.id, 'minimo', e.target.value)}
+                                    onFocus={e => e.target.select()}
                                     disabled={!esActivo}
-                                    className={`w-full px-2 py-1.5 border rounded text-sm text-center disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 ${
-                                      lote._precioMinimo === 0 && esActivo
+                                    placeholder="0.00"
+                                    className={`w-full px-2 py-1.5 border rounded text-sm text-right disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 ${
+                                      minimoNum === 0 && esActivo
                                         ? 'border-red-400 bg-red-50 focus:ring-red-300'
+                                        : haysCambios
+                                        ? 'border-amber-400 bg-amber-50 focus:ring-amber-300'
                                         : 'border-gray-300 bg-white focus:ring-blue-300'
                                     }`}
                                   />
@@ -512,20 +545,22 @@ export default function EditarPreciosMasivo() {
                                 ) : '—'}
                               </td>
 
-                              <td className="px-2 py-1 text-center">
+                              <td className="px-2 py-1.5 text-center">
                                 {esActivo ? (
                                   <button
-                                    onClick={() => guardarLote(producto, lote)}
+                                    onClick={() => guardarLote(producto.id, lote)}
                                     disabled={estaGuardando}
-                                    className={`px-3 py-1.5 text-xs rounded font-semibold transition-colors ${
+                                    className={`px-3 py-1.5 text-xs rounded font-semibold transition-colors w-full ${
                                       fueGuardado
-                                        ? 'bg-green-500 text-white'
+                                        ? 'bg-green-500 text-white cursor-default'
                                         : estaGuardando
                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                        : haysCambios
+                                        ? 'bg-amber-500 text-white hover:bg-amber-600'
                                         : 'bg-blue-600 text-white hover:bg-blue-700'
                                     }`}
                                   >
-                                    {fueGuardado ? 'OK' : estaGuardando ? '...' : 'Guardar'}
+                                    {fueGuardado ? '✓ OK' : estaGuardando ? '...' : haysCambios ? 'Guardar*' : 'Guardar'}
                                   </button>
                                 ) : (
                                   <span className="text-xs text-gray-400">inactivo</span>
@@ -544,7 +579,6 @@ export default function EditarPreciosMasivo() {
         })}
       </div>
 
-      {/* Cargar mas al fondo */}
       {hasMore && !loading && (
         <div className="mt-6 flex justify-center">
           <button
@@ -552,7 +586,7 @@ export default function EditarPreciosMasivo() {
             disabled={loadingMore}
             className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {loadingMore ? 'Cargando...' : 'Cargar mas productos'}
+            {loadingMore ? 'Cargando...' : 'Cargar más productos'}
           </button>
         </div>
       )}
