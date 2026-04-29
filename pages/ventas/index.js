@@ -407,26 +407,25 @@ const VentasIndexPage = () => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       const currentCache = getCache('ventas');
-      if (getCache('ventas')) {
+      if (currentCache) {
         const cachedTerm = cached?.filtros?.searchTerm;
         const cachedFiltered = cached?.filtros?.filteredVentas;
 
-        // ✅ NUEVO: Si el searchTerm coincide y ya hay resultados → restaurar sin buscar
         if (cachedTerm && cachedTerm === searchTerm && cachedFiltered?.length > 0) {
           setFilteredVentas(cachedFiltered);
           setSearchPending(false);
-          return; // Salir sin disparar búsqueda en Firestore
-        }
-        if (!searchTerm.trim()) {
-          setSearchPending(false); // no hay búsqueda, mostrar normal
           return;
         }
-        // Hay búsqueda activa, NO hacer return, dejar que corra
+        if (!searchTerm.trim()) {
+          setSearchPending(false);
+          return;
+        }
       }
     }
 
-    if (!ventas.length) return; // esperar a que carguen las ventas
-    // Si no hay término, aplicar solo filtros normales
+    if (!ventas.length) return;
+
+    // Sin término de búsqueda → solo filtros normales
     if (!searchTerm.trim()) {
       setSearchPending(false);
       let filtered = [...ventas];
@@ -441,46 +440,19 @@ const VentasIndexPage = () => {
       return;
     }
 
-    const lower = searchTerm.toLowerCase();
-
-    // Filtro local primero (rápido, sin lecturas)
-    let filteredLocal = [...ventas].filter(venta =>
-      venta.numeroVenta?.toLowerCase().includes(lower) ||
-      venta.clienteNombre?.toLowerCase().includes(lower) ||
-      venta.observaciones?.toLowerCase().includes(lower) ||
-      venta.tipoVenta?.toLowerCase().includes(lower)
-    );
-
-    // Aplicar filtros adicionales al resultado local
-    if (selectedMetodoPago !== 'all') {
-      filteredLocal = filteredLocal.filter(v => ventaIncludesPaymentMethod(v, selectedMetodoPago));
-    }
-    if (selectedTipoVenta !== 'all') {
-      filteredLocal = filteredLocal.filter(v => v.tipoVenta === selectedTipoVenta);
-    }
-
-    // Si encontró resultados locales, mostrarlos inmediatamente
-    if (filteredLocal.length > 0) {
-      setFilteredVentas(filteredLocal);
-      setCurrentPage(1);
-      return; // No necesita buscar más
-    }
-
-    // Si no encontró nada local → buscar en Firestore
-    // Primero por número/cliente en Firestore, luego por producto en itemsVenta
+    // CON searchTerm → siempre ir a Firestore
     const buscarEnFirestore = async () => {
-      setIsSearchingProducto(true); // reutilizamos el spinner
+      setIsSearchingProducto(true);
       try {
         const { getDocs } = await import('firebase/firestore');
-
-        // ── Búsqueda 1: por número de venta y cliente (igual que antes) ──
+        const lower = searchTerm.toLowerCase();
         const termUpper = searchTerm.toUpperCase();
         const termCapitalized = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1).toLowerCase();
 
         const qNumero = query(
           collection(db, 'ventas'),
           where('numeroVenta', '==', termUpper),
-          limit(5)
+          limit(limitPerPage)
         );
         const qClienteUpper = query(
           collection(db, 'ventas'),
@@ -491,7 +463,7 @@ const VentasIndexPage = () => {
             where('fechaVenta', '<=', Timestamp.fromDate(dateRange.end)),
           ] : []),
           orderBy('clienteNombre', 'asc'),
-          limit(20)
+          limit(limitPerPage)
         );
         const qClienteCapitalized = query(
           collection(db, 'ventas'),
@@ -502,7 +474,7 @@ const VentasIndexPage = () => {
             where('fechaVenta', '<=', Timestamp.fromDate(dateRange.end)),
           ] : []),
           orderBy('clienteNombre', 'asc'),
-          limit(20)
+          limit(limitPerPage)
         );
 
         const [snapNumero, snapUpper, snapCapitalized] = await Promise.all([
@@ -512,13 +484,13 @@ const VentasIndexPage = () => {
         ]);
 
         const idsVistos = new Set();
-        const resultadosFirestore = [];
+        let resultados = [];
 
         [...snapNumero.docs, ...snapUpper.docs, ...snapCapitalized.docs].forEach(docSnap => {
           if (!idsVistos.has(docSnap.id)) {
             idsVistos.add(docSnap.id);
             const data = docSnap.data();
-            resultadosFirestore.push({
+            resultados.push({
               id: docSnap.id,
               ...data,
               fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
@@ -532,64 +504,55 @@ const VentasIndexPage = () => {
           }
         });
 
-        // Si encontró por número/cliente en Firestore, mostrar y parar
-        if (resultadosFirestore.length > 0) {
-          resultadosFirestore.sort((a, b) => {
-            const fa = a.fechaVenta instanceof Date ? a.fechaVenta : new Date(a.fechaVenta);
-            const fb = b.fechaVenta instanceof Date ? b.fechaVenta : new Date(b.fechaVenta);
-            return fb - fa;
-          });
-          setFilteredVentas(resultadosFirestore);
-          setCurrentPage(1);
-          return;
-        }
-
-        // ── Búsqueda 2: por producto en itemsVenta de las ventas ya cargadas ──
-        // Solo lee las ventas del período/límite actual, no todas
-        const ventasARevisar = ventas;
-        const ventasConProducto = [];
-
-        await Promise.all(
-          ventasARevisar.map(async (venta) => {
-            try {
-              const itemsSnap = await getDocs(
-                collection(db, 'ventas', venta.id, 'itemsVenta')
-              );
-              const tieneProducto = itemsSnap.docs.some(docSnap => {
-                const item = docSnap.data();
-                return (
-                  item.nombreProducto?.toLowerCase().includes(lower) ||
-                  item.codigoTienda?.toLowerCase().includes(lower) ||
-                  item.codigoProveedor?.toLowerCase().includes(lower) ||
-                  item.marca?.toLowerCase().includes(lower)
+        // Si Firestore no encontró nada por cliente/número → buscar por producto en itemsVenta
+        if (resultados.length === 0) {
+          const ventasConProducto = [];
+          await Promise.all(
+            ventas.map(async (venta) => {
+              try {
+                const itemsSnap = await getDocs(
+                  collection(db, 'ventas', venta.id, 'itemsVenta')
                 );
-              });
-              if (tieneProducto) ventasConProducto.push(venta);
-            } catch (e) {
-              console.error(`Error leyendo items de venta ${venta.id}:`, e);
-            }
-          })
-        );
-
-        if (ventasConProducto.length > 0) {
-          ventasConProducto.sort((a, b) => {
-            const fa = a.fechaVenta instanceof Date ? a.fechaVenta : new Date(a.fechaVenta);
-            const fb = b.fechaVenta instanceof Date ? b.fechaVenta : new Date(b.fechaVenta);
-            return fb - fa;
-          });
-          setFilteredVentas(ventasConProducto);
-        } else {
-          // No encontró nada en ningún lado
-          setFilteredVentas([]);
+                const tieneProducto = itemsSnap.docs.some(docSnap => {
+                  const item = docSnap.data();
+                  return (
+                    item.nombreProducto?.toLowerCase().includes(lower) ||
+                    item.codigoTienda?.toLowerCase().includes(lower) ||
+                    item.codigoProveedor?.toLowerCase().includes(lower) ||
+                    item.marca?.toLowerCase().includes(lower)
+                  );
+                });
+                if (tieneProducto) ventasConProducto.push(venta);
+              } catch (e) {
+                console.error(`Error leyendo items de venta ${venta.id}:`, e);
+              }
+            })
+          );
+          resultados = ventasConProducto;
         }
 
+        // Aplicar filtros de método pago y tipo venta
+        if (selectedMetodoPago !== 'all') {
+          resultados = resultados.filter(v => ventaIncludesPaymentMethod(v, selectedMetodoPago));
+        }
+        if (selectedTipoVenta !== 'all') {
+          resultados = resultados.filter(v => v.tipoVenta === selectedTipoVenta);
+        }
+
+        resultados.sort((a, b) => {
+          const fa = a.fechaVenta instanceof Date ? a.fechaVenta : new Date(a.fechaVenta);
+          const fb = b.fechaVenta instanceof Date ? b.fechaVenta : new Date(b.fechaVenta);
+          return fb - fa;
+        });
+
+        setFilteredVentas(resultados);
         setCurrentPage(1);
 
       } catch (err) {
         console.error('Error en búsqueda:', err);
       } finally {
         setIsSearchingProducto(false);
-        setSearchPending(false); 
+        setSearchPending(false);
       }
     };
 
@@ -597,7 +560,7 @@ const VentasIndexPage = () => {
     const timeout = setTimeout(buscarEnFirestore, delay);
     return () => clearTimeout(timeout);
 
-  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta, dateRange]);
+  }, [searchTerm, ventas, selectedMetodoPago, selectedTipoVenta, dateRange, limitPerPage]);
 
   // useEffect separado solo para contar - no descarga documentos
   useEffect(() => {
