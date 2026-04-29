@@ -17,8 +17,8 @@ import {
   PencilIcon,
   XMarkIcon,
   HashtagIcon,
-  CalendarIcon ,
-  ChevronLeftIcon, 
+  CalendarIcon,
+  ChevronLeftIcon,
   ChevronRightIcon
 } from '@heroicons/react/24/outline';
 import { Calendar } from '../../../../components/ui/calendar';
@@ -82,6 +82,11 @@ const EditarIngresoPage = () => {
   const [editLoteQuantity, setEditLoteQuantity] = useState(1);
   const [editLotePrecio, setEditLotePrecio] = useState(0);
   const [editLoteNumero, setEditLoteNumero] = useState('');
+  const [editLotePrecioVenta, setEditLotePrecioVenta] = useState(0);
+  const [editLotePrecioVentaMinimo, setEditLotePrecioVentaMinimo] = useState(0);
+  const [lotesAnterioresEdit, setLotesAnterioresEdit] = useState([]);
+  const [showUmbralEditLote, setShowUmbralEditLote] = useState(false);
+  const [nuevoUmbralLote, setNuevoUmbralLote] = useState(0);
 
   const generateLoteNumber = () => {
     const fecha = new Date();
@@ -101,12 +106,10 @@ const EditarIngresoPage = () => {
       setLoadingData(true);
       setError(null);
       try {
-        // Proveedores
         const qProv = query(collection(db, 'proveedores'), orderBy('nombreEmpresa', 'asc'));
         const provSnap = await getDocs(qProv);
         setProveedores(provSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Ingreso principal
         const ingresoSnap = await getDoc(doc(db, 'ingresos', id));
         if (!ingresoSnap.exists()) { setError('Ingreso no encontrado.'); return; }
         const data = ingresoSnap.data();
@@ -116,17 +119,45 @@ const EditarIngresoPage = () => {
         setObservaciones(data.observaciones || '');
         setProveedorId(data.proveedorId || '');
 
-        // Fecha recepción
         const fechaRef = data.fechaRecepcion || data.fechaIngreso;
         if (fechaRef?.toDate) {
           setFechaRecepcion(fechaRef.toDate());
         }
 
-        // Lotes existentes (subcolección)
+        // Cargar subcolección
         const lotesSnap = await getDocs(
           query(collection(db, 'ingresos', id, 'lotes'), orderBy('nombreProducto', 'asc'))
         );
-        setLotesExistentes(lotesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        // Cargar lotes principales para complementar precioVentaUnitario y precioVentaMinimoUnitario
+        // que la subcolección puede no tener en ingresos anteriores al fix de nuevo.js
+        const lotesPrincipalesSnap = await getDocs(
+          query(collection(db, 'lotes'), where('ingresoId', '==', id))
+        );
+
+        // Indexar por numeroLote para cruce rápido
+        const lotesPrincipalesMap = {};
+        lotesPrincipalesSnap.docs.forEach(d => {
+          const data = d.data();
+          lotesPrincipalesMap[data.numeroLote] = data;
+        });
+
+        // Combinar: subcolección como base, rellenar precios faltantes desde colección principal
+        const lotesCompletos = lotesSnap.docs.map(d => {
+          const sub = { id: d.id, ...d.data() };
+          const principal = lotesPrincipalesMap[sub.numeroLote] || {};
+          return {
+            ...sub,
+            precioVentaUnitario:       (sub.precioVentaUnitario != null && sub.precioVentaUnitario !== 0)
+                                         ? sub.precioVentaUnitario
+                                         : (principal.precioVentaUnitario ?? 0),
+            precioVentaMinimoUnitario: (sub.precioVentaMinimoUnitario != null && sub.precioVentaMinimoUnitario !== 0)
+                                         ? sub.precioVentaMinimoUnitario
+                                         : (principal.precioVentaMinimoUnitario ?? 0),
+          };
+        });
+
+        setLotesExistentes(lotesCompletos);
 
       } catch (err) {
         setError('Error al cargar: ' + err.message);
@@ -155,7 +186,9 @@ const EditarIngresoPage = () => {
         ]);
         queries.push(
           getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termUpper), limit(5))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(5))),
           getDocs(query(collection(db, 'productos'), where('codigoTienda', '>=', termUpper), where('codigoTienda', '<=', termUpper + '\uf8ff'), limit(50))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', termUpper), where('codigoProveedor', '<=', termUpper + '\uf8ff'), limit(50))),
         );
         const resultados = await Promise.all(queries);
         resultados.forEach(snap => {
@@ -167,10 +200,12 @@ const EditarIngresoPage = () => {
           const nombreUpper = (p.nombre || '').toUpperCase();
           const claves = (p.palabrasClave || []);
           const codigoTienda = (p.codigoTienda || '').toUpperCase();
+          const codigoProveedor = (p.codigoProveedor || '').toUpperCase();
           return palabras.every(palabra =>
             nombreUpper.includes(palabra) ||
             claves.some(clave => clave.includes(palabra)) ||
-            codigoTienda.includes(palabra)
+            codigoTienda.includes(palabra) ||
+            codigoProveedor.includes(palabra)
           );
         });
       }
@@ -237,6 +272,22 @@ const EditarIngresoPage = () => {
       return;
     }
     if (!numeroLote.trim()) { alert('Debe ingresar un número de lote.'); return; }
+
+    const mismoNombreOtroId = itemsIngreso.filter(item =>
+      item.nombreProducto === selectedProduct.nombre &&
+      item.productoId !== selectedProduct.id
+    );
+    if (mismoNombreOtroId.length > 0) {
+      const confirmar = window.confirm(
+        `⚠️ ATENCIÓN: Ya tienes lotes de "${selectedProduct.nombre}" con un producto DIFERENTE en este ingreso.\n\n` +
+        `Producto seleccionado ahora:\n` +
+        `  • C.Proveedor: ${selectedProduct.codigoProveedor || 'Sin código'}\n` +
+        `  • Marca: ${selectedProduct.marca || 'Sin marca'}\n` +
+        `  • ID: ${selectedProduct.id}\n\n` +
+        `¿Estás seguro que este es el producto correcto?`
+      );
+      if (!confirmar) return;
+    }
 
     const newItem = {
       id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -307,6 +358,12 @@ const EditarIngresoPage = () => {
     setEditLoteQuantity(Number(lote.cantidad));
     setEditLotePrecio(Number(lote.precioCompraUnitario));
     setEditLoteNumero(lote.numeroLote);
+    setEditLotePrecioVenta(Number(lote.precioVentaUnitario || 0));
+    setEditLotePrecioVentaMinimo(Number(lote.precioVentaMinimoUnitario || 0));
+    setShowUmbralEditLote(false);
+    setNuevoUmbralLote(0);
+    setLotesAnterioresEdit([]);
+    obtenerLotesAnteriores(lote.productoId).then(lotes => setLotesAnterioresEdit(lotes));
     setShowEditLoteModal(true);
   };
 
@@ -321,34 +378,35 @@ const EditarIngresoPage = () => {
     if (editLoteQuantity <= 0) { alert('Cantidad debe ser mayor a 0.'); return; }
 
     try {
-      // Actualizar en subcolección
-      await updateDoc(doc(db, 'ingresos', id, 'lotes', editingLote.id), {
+      const updatePayload = {
         numeroLote: editLoteNumero.trim(),
         cantidad: Number(editLoteQuantity),
         cantidadInicial: Number(editLoteQuantity),
         stockRestante: Number(editLoteQuantity),
         precioCompraUnitario: Number(editLotePrecio),
+        precioVentaUnitario: Number(editLotePrecioVenta),
+        precioVentaMinimoUnitario: Number(editLotePrecioVentaMinimo),
         subtotal: Number(editLoteQuantity) * Number(editLotePrecio),
         updatedAt: serverTimestamp(),
-      });
+      };
 
-      // Actualizar también en colección principal de lotes
+      await updateDoc(doc(db, 'ingresos', id, 'lotes', editingLote.id), updatePayload);
+
       const lotePrincipalSnap = await getDocs(
         query(collection(db, 'lotes'), where('ingresoId', '==', id), where('numeroLote', '==', editingLote.numeroLote), limit(1))
       );
       if (!lotePrincipalSnap.empty) {
-        await updateDoc(doc(db, 'lotes', lotePrincipalSnap.docs[0].id), {
-          numeroLote: editLoteNumero.trim(),
-          cantidad: Number(editLoteQuantity),
-          cantidadInicial: Number(editLoteQuantity),
-          stockRestante: Number(editLoteQuantity),
-          precioCompraUnitario: Number(editLotePrecio),
-          subtotal: Number(editLoteQuantity) * Number(editLotePrecio),
+        await updateDoc(doc(db, 'lotes', lotePrincipalSnap.docs[0].id), updatePayload);
+      }
+
+      // Actualizar umbral si fue editado
+      if (showUmbralEditLote && nuevoUmbralLote >= 0) {
+        await updateDoc(doc(db, 'productos', editingLote.productoId), {
+          stockReferencialUmbral: nuevoUmbralLote,
           updatedAt: serverTimestamp(),
         });
       }
 
-      // Actualizar estado local
       setLotesExistentes(prev => prev.map(l => {
         if (l.id !== editingLote.id) return l;
         return {
@@ -356,6 +414,8 @@ const EditarIngresoPage = () => {
           numeroLote: editLoteNumero.trim(),
           cantidad: Number(editLoteQuantity),
           precioCompraUnitario: Number(editLotePrecio),
+          precioVentaUnitario: Number(editLotePrecioVenta),
+          precioVentaMinimoUnitario: Number(editLotePrecioVentaMinimo),
           subtotal: Number(editLoteQuantity) * Number(editLotePrecio),
         };
       }));
@@ -369,7 +429,6 @@ const EditarIngresoPage = () => {
     if (!window.confirm('¿Eliminar este lote existente? Esta acción no se puede deshacer.')) return;
     try {
       await deleteDoc(doc(db, 'ingresos', id, 'lotes', lote.id));
-      // Eliminar también de colección principal
       const lotePrincipalSnap = await getDocs(
         query(collection(db, 'lotes'), where('ingresoId', '==', id), where('numeroLote', '==', lote.numeroLote), limit(1))
       );
@@ -393,7 +452,6 @@ const EditarIngresoPage = () => {
     try {
       const fechaActual = new Date();
 
-      // 1. Actualizar campos principales del ingreso
       const updateData = {
         numeroBoleta: numeroBoleta.trim() || null,
         numeroPedido: numeroPedido.trim() || null,
@@ -407,14 +465,12 @@ const EditarIngresoPage = () => {
         const fecha = new Date(fechaRecepcion);
         fecha.setHours(12, 0, 0, 0);
         updateData.fechaRecepcion = fecha;
-        }
+      }
 
       await updateDoc(doc(db, 'ingresos', id), updateData);
 
-      // 2. Guardar nuevos lotes (itemsIngreso)
       if (itemsIngreso.length > 0) {
         for (const item of itemsIngreso) {
-          // Subcolección
           await addDoc(collection(db, 'ingresos', id, 'lotes'), {
             productoId: item.productoId,
             nombreProducto: item.nombreProducto,
@@ -436,7 +492,6 @@ const EditarIngresoPage = () => {
             updatedAt: serverTimestamp(),
           });
 
-          // Colección principal lotes
           await addDoc(collection(db, 'lotes'), {
             ingresoId: id,
             productoId: item.productoId,
@@ -461,7 +516,6 @@ const EditarIngresoPage = () => {
             updatedAt: serverTimestamp(),
           });
 
-          // Actualizar umbral si aplica
           if (item.nuevoUmbral !== null && item.nuevoUmbral !== undefined) {
             await updateDoc(doc(db, 'productos', item.productoId), {
               stockReferencialUmbral: item.nuevoUmbral,
@@ -471,7 +525,6 @@ const EditarIngresoPage = () => {
         }
       }
 
-      // 3. Recalcular totales del ingreso
       const todosLotes = [
         ...lotesExistentes,
         ...itemsIngreso.map(i => ({ subtotal: parseFloat(i.subtotal), cantidad: parseFloat(i.cantidad) }))
@@ -570,8 +623,6 @@ const EditarIngresoPage = () => {
     );
   };
 
-
-
   const todosLosLotes = [...lotesExistentes, ...itemsIngreso];
   const totalGeneral = todosLosLotes.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
 
@@ -612,7 +663,6 @@ const EditarIngresoPage = () => {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Número de Boleta */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Número de Boleta / Factura
@@ -626,7 +676,6 @@ const EditarIngresoPage = () => {
                     />
                   </div>
 
-                  {/* Número de Pedido */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Número de Pedido (Opcional)
@@ -640,20 +689,18 @@ const EditarIngresoPage = () => {
                     />
                   </div>
 
-                  {/* Fecha de Recepción */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Fecha de Recepción
                     </label>
                     <p className="text-xs text-gray-500 mb-2">Fecha física de llegada de mercadería.</p>
                     <DatePickerPopover
-                    selected={fechaRecepcion}
-                    onChange={(date) => setFechaRecepcion(date)}
-                    placeholder="Seleccionar fecha"
+                      selected={fechaRecepcion}
+                      onChange={(date) => setFechaRecepcion(date)}
+                      placeholder="Seleccionar fecha"
                     />
                   </div>
 
-                  {/* Proveedor */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Proveedor
@@ -671,7 +718,6 @@ const EditarIngresoPage = () => {
                     </select>
                   </div>
 
-                  {/* Observaciones */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Observaciones (Opcional)
@@ -707,7 +753,6 @@ const EditarIngresoPage = () => {
                     </div>
                   </div>
 
-                  {/* Botón Guardar */}
                   <div className="pt-4">
                     <button
                       type="submit"
@@ -737,7 +782,7 @@ const EditarIngresoPage = () => {
             {/* Panel Derecho */}
             <div className="col-span-12 lg:col-span-8">
 
-              {/* Buscador */}
+              {/* Buscador — igual al nuevo.js */}
               <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
                 <div className="p-4">
                   <h2 className="text-lg font-semibold mb-4 text-gray-800">Agregar Nuevo Lote</h2>
@@ -761,6 +806,7 @@ const EditarIngresoPage = () => {
                   </div>
                 </div>
 
+                {/* Dropdown igual al nuevo.js */}
                 {searchTerm.trim() !== '' && (
                   <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
                     {isSearching ? (
@@ -768,39 +814,46 @@ const EditarIngresoPage = () => {
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                       </div>
                     ) : filteredProductos.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500">No se encontraron productos</div>
+                      <div className="p-4 text-center text-gray-500">
+                        <p>No se encontraron productos</p>
+                      </div>
                     ) : (
-                      filteredProductos.slice(0, 20).map(producto => (
-                        <div
-                          key={producto.id}
-                          className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                          onClick={() => handleSelectProduct(producto)}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-6 flex-1 min-w-0">
-                              <div className="min-w-0 flex-shrink-0">
-                                <h4 className="font-medium text-gray-900 truncate text-sm">
-                                  {producto.nombre} ({producto.codigoTienda})
-                                </h4>
+                      <div className="max-h-80">
+                        {filteredProductos.slice(0, 20).map(producto => (
+                          <div
+                            key={producto.id}
+                            className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                            onClick={() => handleSelectProduct(producto)}
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <h4 className="font-semibold text-gray-900 text-sm">{producto.nombre}</h4>
+                                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                                  {producto.codigoTienda && (
+                                    <span>C.Tienda: <span className="font-mono font-semibold text-gray-700">{producto.codigoTienda}</span></span>
+                                  )}
+                                  {producto.codigoProveedor && (
+                                    <span className="text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded">
+                                      C.Prov: <span className="font-mono">{producto.codigoProveedor}</span>
+                                    </span>
+                                  )}
+                                  {producto.marca && (
+                                    <span>Marca: <span className="font-semibold text-gray-700">{producto.marca}</span></span>
+                                  )}
+                                  {producto.medida && (
+                                    <span>Medida: <span className="font-semibold text-gray-700">{producto.medida}</span></span>
+                                  )}
+                                  <span>Stock: <span className="font-bold text-gray-900">{producto.stockActual || 0}</span></span>
+                                </div>
                               </div>
-                              <div className="flex-shrink-0">
-                                <span className="text-xs text-gray-500">Marca:</span>
-                                <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
+                              <div className="text-right flex-shrink-0">
+                                <p className="font-bold text-blue-600 text-base">S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}</p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Precio Compra</p>
                               </div>
-                              <div className="flex-shrink-0">
-                                <span className="text-xs text-gray-500">Stock:</span>
-                                <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                              </div>
-                            </div>
-                            <div className="text-right flex-shrink-0">
-                              <p className="font-bold text-blue-600 text-base">
-                                S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
-                              </p>
-                              <p className="text-xs text-gray-500">Precio Compra</p>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
@@ -839,7 +892,6 @@ const EditarIngresoPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {/* Lotes existentes */}
                             {lotesExistentes.map((lote, index) => (
                               <tr key={lote.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                                 <td className="px-3 py-3 text-center">
@@ -876,7 +928,6 @@ const EditarIngresoPage = () => {
                                 </td>
                               </tr>
                             ))}
-                            {/* Lotes nuevos (pendientes) */}
                             {itemsIngreso.map((item, index) => (
                               <tr key={item.id} className="bg-blue-50">
                                 <td className="px-3 py-3 text-center">
@@ -935,14 +986,15 @@ const EditarIngresoPage = () => {
         </div>
       </div>
 
-      {/* Modal agregar nuevo lote */}
+      {/* ===================== MODAL AGREGAR NUEVO LOTE — igual al nuevo.js ===================== */}
       {showQuantityModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowQuantityModal(false)}></div>
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowQuantityModal(false)}></div>
             <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-7xl p-10">
-              <button onClick={() => setShowQuantityModal(false)}
-                className="absolute right-4 top-4 text-gray-400 hover:text-gray-500">
+
+              <button type="button" onClick={() => setShowQuantityModal(false)}
+                className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
                 <XMarkIcon className="h-6 w-6" />
               </button>
 
@@ -952,25 +1004,35 @@ const EditarIngresoPage = () => {
               </h3>
 
               {selectedProduct && (
-                <div className="grid grid-cols-2 gap-8">
-                  {/* Columna izquierda */}
-                  <div className="flex flex-col gap-4">
-                    <div className="bg-gray-50 p-5 rounded-lg">
-                      <h4 className="font-bold text-xl text-gray-900 mb-3">{selectedProduct.nombre}</h4>
+                <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                  {/* COLUMNA IZQUIERDA */}
+                  <div className="flex flex-col gap-4 h-full">
+                    <div className="bg-gray-50 p-5 rounded-lg border-2 border-blue-200">
+                      <h4 className="font-bold text-xl text-gray-900 mb-1">{selectedProduct.nombre}</h4>
+                      {selectedProduct.codigoProveedor && (
+                        <div className="mb-3">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-blue-100 text-blue-800 font-mono">
+                            C. Proveedor: {selectedProduct.codigoProveedor}
+                          </span>
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div><span className="font-medium text-gray-600">Código: </span><span>{selectedProduct.codigoTienda}</span></div>
-                        <div><span className="font-medium text-gray-600">Marca: </span><span>{selectedProduct.marca || 'Sin marca'}</span></div>
-                        <div><span className="font-medium text-gray-600">Stock actual: </span><span>{selectedProduct.stockActual || 0}</span></div>
-                        <div><span className="font-medium text-gray-600">Color: </span><span>{selectedProduct.color || 'N/A'}</span></div>
+                        <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{selectedProduct.codigoTienda || 'N/A'}</span></div>
+                        <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{selectedProduct.marca || 'Sin marca'}</span></div>
+                        <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{selectedProduct.medida || 'N/A'}</span></div>
+                        <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{selectedProduct.color || 'N/A'}</span></div>
+                        <div><span className="font-medium text-gray-600">Stock actual: </span><span className="font-bold text-gray-900">{selectedProduct.stockActual || 0}</span></div>
+                        <div><span className="font-medium text-gray-600">ID: </span><span className="text-gray-400 text-xs font-mono">{selectedProduct.id}</span></div>
                       </div>
                     </div>
 
                     {lotesAnteriores.length > 0 ? (
                       <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
                         <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
-                          <span className="text-xs font-semibold text-amber-700 uppercase">Lotes anteriores</span>
+                          <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Lotes anteriores de este producto</span>
                         </div>
-                        <div className="divide-y divide-amber-100 max-h-48 overflow-y-auto">
+                        <div className="divide-y divide-amber-100 overflow-y-auto max-h-64">
                           {lotesAnteriores.map((lote, i) => (
                             <div key={i} className="flex items-center justify-between px-4 py-3">
                               <div>
@@ -993,6 +1055,7 @@ const EditarIngresoPage = () => {
                       </div>
                     )}
 
+                    {/* Umbral */}
                     <div>
                       {!showUmbralEdit ? (
                         <button type="button" onClick={() => setShowUmbralEdit(true)}
@@ -1004,31 +1067,34 @@ const EditarIngresoPage = () => {
                           <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Stock mínimo (actual: {nuevoUmbral}):</label>
                           <input type="number" value={nuevoUmbral} onChange={(e) => setNuevoUmbral(parseInt(e.target.value) || 0)}
                             min="0" onWheel={(e) => e.target.blur()}
-                            className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm" />
-                          <button type="button" onClick={() => setShowUmbralEdit(false)} className="text-xs text-gray-500">✕</button>
+                            className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
+                          <button type="button" onClick={() => setShowUmbralEdit(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Columna derecha */}
-                  <div className="flex flex-col gap-5">
+                  {/* COLUMNA DERECHA */}
+                  <div className="flex flex-col gap-5 h-full">
+                    {/* Número de lote */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <HashtagIcon className="h-4 w-4 inline mr-1" /> Número de Lote
+                        <HashtagIcon className="h-4 w-4 inline mr-1" />
+                        Número de Lote
                       </label>
                       <div className="flex">
                         <input type="text" value={numeroLote} onChange={(e) => setNumeroLote(e.target.value)}
                           className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 text-base font-mono"
                           placeholder="Ej: L240915-ABC1" />
                         <button type="button" onClick={() => setNumeroLote(generateLoteNumber())}
-                          className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200">
+                          className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 text-base">
                           🎲
                         </button>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">Se genera automáticamente pero puedes cambiarlo.</p>
                     </div>
 
+                    {/* 4 campos 2x2 */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
@@ -1037,7 +1103,7 @@ const EditarIngresoPage = () => {
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">P. de Compra (S/.)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Compra (S/.)</label>
                         <input type="number" value={precioCompra} onChange={(e) => setPrecioCompra(parseFloat(e.target.value) || 0)}
                           min="0" step="0.01" onWheel={(e) => e.target.blur()}
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
@@ -1056,6 +1122,7 @@ const EditarIngresoPage = () => {
                       </div>
                     </div>
 
+                    {/* Subtotal + botones al fondo */}
                     <div className="mt-auto flex flex-col gap-4">
                       <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-5 rounded-lg border border-blue-200">
                         <div className="flex justify-between items-center">
@@ -1064,13 +1131,13 @@ const EditarIngresoPage = () => {
                         </div>
                       </div>
                       <div className="flex justify-end gap-3">
-                        <button onClick={() => setShowQuantityModal(false)}
-                          className="px-6 py-3 rounded-lg bg-white text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold">
+                        <button type="button" onClick={() => setShowQuantityModal(false)}
+                          className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
                           Cancelar
                         </button>
-                        <button onClick={handleAddProductToIngreso}
+                        <button type="button" onClick={handleAddProductToIngreso}
                           disabled={quantity <= 0 || precioCompra < 0 || !numeroLote.trim()}
-                          className="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                          className="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold text-base hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
                           Agregar Lote
                         </button>
                       </div>
@@ -1083,11 +1150,11 @@ const EditarIngresoPage = () => {
         </div>
       )}
 
-      {/* Modal editar lote nuevo (pendiente) */}
+      {/* ===================== MODAL EDITAR LOTE NUEVO (pendiente) ===================== */}
       {showEditItemModal && editingItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowEditItemModal(false)}></div>
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditItemModal(false)}></div>
             <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-8">
               <button onClick={() => setShowEditItemModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-500">
                 <XMarkIcon className="h-6 w-6" />
@@ -1144,61 +1211,166 @@ const EditarIngresoPage = () => {
         </div>
       )}
 
-      {/* Modal editar lote existente */}
+      {/* ===================== MODAL EDITAR LOTE EXISTENTE — layout grande igual al de crear lote ===================== */}
       {showEditLoteModal && editingLote && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowEditLoteModal(false)}></div>
-            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-8">
-              <button onClick={() => setShowEditLoteModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-500">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditLoteModal(false)}></div>
+            <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-7xl p-10">
+
+              <button type="button" onClick={() => setShowEditLoteModal(false)}
+                className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
                 <XMarkIcon className="h-6 w-6" />
               </button>
-              <h3 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                <PencilIcon className="h-5 w-5 text-blue-600" /> Editar Lote Existente
+
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                <PencilIcon className="h-7 w-7 text-blue-600" />
+                Editar Lote Existente
               </h3>
-              <div className="bg-gray-50 p-4 rounded-lg mb-5">
-                <p className="font-medium text-gray-900">{editingLote.nombreProducto}</p>
-                <p className="text-sm text-gray-600">Código: {editingLote.codigoTienda} | Marca: {editingLote.marca}</p>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Número de Lote</label>
-                  <div className="flex">
-                    <input type="text" value={editLoteNumero} onChange={(e) => setEditLoteNumero(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 font-mono" />
-                    <button type="button" onClick={() => setEditLoteNumero(generateLoteNumber())}
-                      className="px-3 py-2 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200">🎲</button>
+
+              <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                {/* COLUMNA IZQUIERDA */}
+                <div className="flex flex-col gap-4 h-full">
+                  <div className="bg-gray-50 p-5 rounded-lg border-2 border-blue-200">
+                    <h4 className="font-bold text-xl text-gray-900 mb-1">{editingLote.nombreProducto}</h4>
+                    {editingLote.codigoProveedor && (
+                      <div className="mb-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-blue-100 text-blue-800 font-mono">
+                          C. Proveedor: {editingLote.codigoProveedor}
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{editingLote.codigoTienda || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{editingLote.marca || 'Sin marca'}</span></div>
+                      <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{editingLote.medida || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{editingLote.color || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Lote actual: </span><span className="font-bold text-blue-700 font-mono">{editingLote.numeroLote}</span></div>
+                      <div><span className="font-medium text-gray-600">Estado: </span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${editingLote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {editingLote.estado || 'activo'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+
+                  {lotesAnterioresEdit.length > 0 ? (
+                    <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                      <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Lotes anteriores de este producto</span>
+                      </div>
+                      <div className="divide-y divide-amber-100 overflow-y-auto max-h-64">
+                        {lotesAnterioresEdit.map((lote, i) => (
+                          <div key={i} className="flex items-center justify-between px-4 py-3">
+                            <div>
+                              <span className="text-sm font-mono text-gray-700">{lote.numeroLote}</span>
+                              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {lote.estado}
+                              </span>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                              </p>
+                            </div>
+                            <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 border border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm">
+                      Sin lotes anteriores
+                    </div>
+                  )}
+
+                  {/* Umbral */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
-                    <input type="number" value={editLoteQuantity} onChange={(e) => setEditLoteQuantity(parseInt(e.target.value) || 1)}
-                      min="1" onWheel={(e) => e.target.blur()}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                    {!showUmbralEditLote ? (
+                      <button type="button" onClick={() => setShowUmbralEditLote(true)}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                        ✏️ Editar stock mínimo
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                        <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Nuevo stock mínimo:</label>
+                        <input type="number" value={nuevoUmbralLote} onChange={(e) => setNuevoUmbralLote(parseInt(e.target.value) || 0)}
+                          min="0" onWheel={(e) => e.target.blur()}
+                          className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
+                        <button type="button" onClick={() => setShowUmbralEditLote(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
+                      </div>
+                    )}
                   </div>
+                </div>
+
+                {/* COLUMNA DERECHA */}
+                <div className="flex flex-col gap-5 h-full">
+                  {/* Número de lote */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">P. de Compra (S/.)</label>
-                    <input type="number" value={editLotePrecio} onChange={(e) => setEditLotePrecio(parseFloat(e.target.value) || 0)}
-                      min="0" step="0.01" onWheel={(e) => e.target.blur()}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <HashtagIcon className="h-4 w-4 inline mr-1" />
+                      Número de Lote
+                    </label>
+                    <div className="flex">
+                      <input type="text" value={editLoteNumero} onChange={(e) => setEditLoteNumero(e.target.value)}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 text-base font-mono"
+                        placeholder="Ej: L240915-ABC1" />
+                      <button type="button" onClick={() => setEditLoteNumero(generateLoteNumber())}
+                        className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 text-base">
+                        🎲
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Debe ser único entre todos los lotes del ingreso.</p>
+                  </div>
+
+                  {/* 4 campos 2x2 */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                      <input type="number" value={editLoteQuantity} onChange={(e) => setEditLoteQuantity(parseInt(e.target.value) || 1)}
+                        min="1" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Compra (S/.)</label>
+                      <input type="number" value={editLotePrecio} onChange={(e) => setEditLotePrecio(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                      <input type="number" value={editLotePrecioVenta} onChange={(e) => setEditLotePrecioVenta(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio Venta Mínimo (S/.)</label>
+                      <input type="number" value={editLotePrecioVentaMinimo} onChange={(e) => setEditLotePrecioVentaMinimo(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                    </div>
+                  </div>
+
+                  {/* Subtotal + botones al fondo */}
+                  <div className="mt-auto flex flex-col gap-4">
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-5 rounded-lg border border-blue-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Subtotal del Lote:</span>
+                        <span className="font-bold text-blue-800 text-2xl">S/. {(editLoteQuantity * editLotePrecio).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <button type="button" onClick={() => setShowEditLoteModal(false)}
+                        className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                        Cancelar
+                      </button>
+                      <button type="button" onClick={handleUpdateLoteExistente}
+                        disabled={editLoteQuantity <= 0 || editLotePrecio < 0 || !editLoteNumero.trim()}
+                        className="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold text-base hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        Guardar Cambios
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <div className="flex justify-between">
-                    <span className="font-medium text-gray-700">Subtotal:</span>
-                    <span className="font-bold text-blue-800 text-xl">S/. {(editLoteQuantity * editLotePrecio).toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={() => setShowEditLoteModal(false)}
-                  className="px-5 py-2 rounded-lg bg-white ring-1 ring-gray-300 hover:bg-gray-50 font-semibold text-gray-900">Cancelar</button>
-                <button onClick={handleUpdateLoteExistente}
-                  disabled={editLoteQuantity <= 0 || editLotePrecio < 0 || !editLoteNumero.trim()}
-                  className="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 disabled:bg-gray-400">
-                  Guardar
-                </button>
               </div>
             </div>
           </div>

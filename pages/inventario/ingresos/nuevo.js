@@ -226,6 +226,21 @@ const NuevoIngresoPage = () => {
       return;
     }
 
+    const mismoNombreOtroId = itemsIngreso.filter(item =>
+      item.nombreProducto === selectedProduct.nombre &&
+      item.productoId !== selectedProduct.id
+    );
+    if (mismoNombreOtroId.length > 0) {
+      const confirmar = window.confirm(
+        `⚠️ ATENCIÓN: Ya tienes lotes de "${selectedProduct.nombre}" con un producto DIFERENTE en este ingreso.\n\n` +
+        `Producto seleccionado ahora:\n` +
+        `  • C.Proveedor: ${selectedProduct.codigoProveedor || 'Sin código'}\n` +
+        `  • Marca: ${selectedProduct.marca || 'Sin marca'}\n` +
+        `  • ID: ${selectedProduct.id}\n\n` +
+        `¿Estás seguro que este es el producto correcto?`
+      );
+      if (!confirmar) return;
+    }
     const newItem = {
       id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       productoId: selectedProduct.id,
@@ -791,47 +806,39 @@ const handleEditItem = (item) => {
                       ) : (
                         <div className="max-h-80">
                           {filteredProductos.slice(0, 20).map(producto => (
-                            <div
-                              key={producto.id}
-                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                              onClick={() => handleSelectProduct(producto)}
-                            >
-                              <div className="flex items-center justify-between gap-4">
-                                {/* Información principal del producto */}
-                                <div className="flex items-center gap-6 flex-1 min-w-0">
-                                  {/* Nombre y código */}
-                                  <div className="min-w-0 flex-shrink-0">
-                                    <h4 className="font-medium text-gray-900 truncate text-sm">
-                                      {producto.nombre} ({producto.codigoTienda})
-                                    </h4>
-                                  </div>
-                                  
-                                  {/* Marca */}
-                                  <div className="flex-shrink-0">
-                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
-                                    <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
-                                  </div>
-                                  
-                                  {/* Stock */}
-                                  <div className="flex-shrink-0">
-                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
-                                    <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                                  </div>
+                          <div
+                            key={producto.id}
+                            className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                            onClick={() => handleSelectProduct(producto)}
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <h4 className="font-semibold text-gray-900 text-sm">{producto.nombre}</h4>
+                                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                                  {producto.codigoTienda && (
+                                    <span>C.Tienda: <span className="font-mono font-semibold text-gray-700">{producto.codigoTienda}</span></span>
+                                  )}
+                                  {producto.codigoProveedor && (
+                                    <span className="text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded">
+                                      C.Prov: <span className="font-mono">{producto.codigoProveedor}</span>
+                                    </span>
+                                  )}
+                                  {producto.marca && (
+                                    <span>Marca: <span className="font-semibold text-gray-700">{producto.marca}</span></span>
+                                  )}
+                                  {producto.medida && (
+                                    <span>Medida: <span className="font-semibold text-gray-700">{producto.medida}</span></span>
+                                  )}
+                                  <span>Stock: <span className="font-bold text-gray-900">{producto.stockActual || 0}</span></span>
                                 </div>
-                                
-                                {/* Precio */}
-                                <div className="text-right flex-shrink-0">
-                                  <p className="font-bold text-blue-600 text-base">
-                                    S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
-                                  </p>
-                                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                                    Precio Compra
-                                  </p>
-                                </div>
-                                
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className="font-bold text-blue-600 text-base">S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}</p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Precio Compra</p>
                               </div>
                             </div>
-                          ))}
+                          </div>
+                        ))}
                         </div>
                       )}
                     </div>
@@ -987,13 +994,22 @@ const handleEditItem = (item) => {
 
             {/* COLUMNA IZQUIERDA */}
             <div className="flex flex-col gap-4 h-full">
-              <div className="bg-gray-50 p-5 rounded-lg">
-                <h4 className="font-bold text-xl text-gray-900 mb-3">{selectedProduct.nombre}</h4>
+              <div className="bg-gray-50 p-5 rounded-lg border-2 border-blue-200">
+                <h4 className="font-bold text-xl text-gray-900 mb-1">{selectedProduct.nombre}</h4>
+                {selectedProduct.codigoProveedor && (
+                  <div className="mb-3">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-blue-100 text-blue-800 font-mono">
+                      C. Proveedor: {selectedProduct.codigoProveedor}
+                    </span>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className="font-medium text-gray-600">Código: </span><span className="text-gray-800">{selectedProduct.codigoTienda}</span></div>
+                  <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{selectedProduct.codigoTienda || 'N/A'}</span></div>
                   <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{selectedProduct.marca || 'Sin marca'}</span></div>
-                  <div><span className="font-medium text-gray-600">Stock actual: </span><span className="text-gray-800">{selectedProduct.stockActual || 0}</span></div>
+                  <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{selectedProduct.medida || 'N/A'}</span></div>
                   <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{selectedProduct.color || 'N/A'}</span></div>
+                  <div><span className="font-medium text-gray-600">Stock actual: </span><span className="font-bold text-gray-900">{selectedProduct.stockActual || 0}</span></div>
+                  <div><span className="font-medium text-gray-600">ID: </span><span className="text-gray-400 text-xs font-mono">{selectedProduct.id}</span></div>
                 </div>
               </div>
 

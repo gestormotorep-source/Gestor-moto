@@ -1302,7 +1302,7 @@ return (
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className="text-sm font-medium text-gray-900">
                                   {item.cantidad}
-                                  <span className="text-gray-400 font-normal"> / {item.stockActual ?? 0}</span>
+                                  <span className="text-black font-normal"> / {item.stockActual ?? 0}</span>
                                 </span>
                               </td>
                               <td className="px-3 py-3 text-center whitespace-nowrap">

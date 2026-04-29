@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
 import { db } from '../../../lib/firebase';
-import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, orderBy, where, limit } from 'firebase/firestore';
 import { 
   ArrowLeftIcon, 
   CubeTransparentIcon,
@@ -54,21 +54,60 @@ const IngresoDetailsPage = () => {
           fechaIngreso: ingresoDocSnap.data().fechaIngreso?.toDate().toLocaleDateString('es-ES', {
             year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
           }) || 'N/A',
-            fechaRecepcion: ingresoDocSnap.data().fechaRecepcion?.toDate().toLocaleDateString('es-ES', {
+          fechaRecepcion: ingresoDocSnap.data().fechaRecepcion?.toDate().toLocaleDateString('es-ES', {
             year: 'numeric', month: 'long', day: 'numeric',
           }) || null,
         };
         setIngreso(ingresoData);
 
-        // 2. Obtener los lotes de la subcolección 'lotes'
+        // 2. Obtener lotes de la subcolección
         const lotesCollectionRef = collection(db, 'ingresos', id, 'lotes');
         const qLotes = query(lotesCollectionRef, orderBy('nombreProducto', 'asc'));
         const querySnapshotLotes = await getDocs(qLotes);
 
-        const loadedLotes = querySnapshotLotes.docs.map(docLote => ({
-          id: docLote.id,
-          ...docLote.data(),
+        // 3. Obtener lotes principales para complementar campos faltantes
+        //    (precioVentaUnitario, precioVentaMinimoUnitario, codigoProveedor, medida)
+        const lotesPrincipalesSnap = await getDocs(
+          query(collection(db, 'lotes'), where('ingresoId', '==', id))
+        );
+        const lotesPrincipalesMap = {};
+        lotesPrincipalesSnap.docs.forEach(d => {
+          const data = d.data();
+          lotesPrincipalesMap[data.numeroLote] = data;
+        });
+
+        // 4. Obtener datos de los productos para codigoProveedor y medida
+        //    (algunos lotes no los guardan directamente)
+        const productoIds = [...new Set(querySnapshotLotes.docs.map(d => d.data().productoId).filter(Boolean))];
+        const productosMap = {};
+        await Promise.all(productoIds.map(async (pid) => {
+          try {
+            const snap = await getDoc(doc(db, 'productos', pid));
+            if (snap.exists()) productosMap[pid] = snap.data();
+          } catch (_) {}
         }));
+
+        // 5. Combinar todo
+        const loadedLotes = querySnapshotLotes.docs.map(docLote => {
+          const sub = { id: docLote.id, ...docLote.data() };
+          const principal = lotesPrincipalesMap[sub.numeroLote] || {};
+          const producto  = productosMap[sub.productoId] || {};
+
+          return {
+            ...sub,
+            // Precios de venta: subcolección → lote principal → 0
+            precioVentaUnitario: (sub.precioVentaUnitario != null && sub.precioVentaUnitario !== 0)
+              ? sub.precioVentaUnitario
+              : (principal.precioVentaUnitario ?? 0),
+            precioVentaMinimoUnitario: (sub.precioVentaMinimoUnitario != null && sub.precioVentaMinimoUnitario !== 0)
+              ? sub.precioVentaMinimoUnitario
+              : (principal.precioVentaMinimoUnitario ?? 0),
+            // Campos del producto que el lote puede no tener
+            codigoProveedor: sub.codigoProveedor || principal.codigoProveedor || producto.codigoProveedor || '',
+            medida: sub.medida || principal.medida || producto.medida || '',
+          };
+        });
+
         setLotes(loadedLotes);
 
       } catch (err) {
@@ -82,9 +121,7 @@ const IngresoDetailsPage = () => {
     fetchIngresoDetails();
   }, [id, user, router]);
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   if (loading) {
     return (
@@ -102,12 +139,12 @@ const IngresoDetailsPage = () => {
         <div className="min-h-screen bg-gray-50 py-6">
           <div className="max-w-4xl mx-auto px-6 sm:px-8 lg:px-12">
             <div className="bg-white rounded-xl shadow-lg p-6">
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
                 <span className="block sm:inline">{error}</span>
               </div>
               <button
                 onClick={() => router.push('/inventario/ingresos')}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 transition-colors"
               >
                 <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
                 Volver a Ingresos
@@ -128,7 +165,7 @@ const IngresoDetailsPage = () => {
               <p className="text-gray-600 mb-4">No se pudo cargar la boleta de ingreso.</p>
               <button
                 onClick={() => router.push('/inventario/ingresos')}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 transition-colors"
               >
                 <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
                 Volver a Ingresos
@@ -142,28 +179,11 @@ const IngresoDetailsPage = () => {
 
   const getEstadoBadge = (estado) => {
     const estadoConfig = {
-      'pendiente': { 
-        bg: 'bg-yellow-100', 
-        text: 'text-yellow-800', 
-        label: 'Pendiente',
-        border: 'border-yellow-200'
-      },
-      'recibido': { 
-        bg: 'bg-green-100', 
-        text: 'text-green-800', 
-        label: 'Confirmado',
-        border: 'border-green-200'
-      },
-      'cancelado': { 
-        bg: 'bg-red-100', 
-        text: 'text-red-800', 
-        label: 'Cancelado',
-        border: 'border-red-200'
-      }
+      'pendiente': { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Pendiente',  border: 'border-yellow-200' },
+      'recibido':  { bg: 'bg-green-100',  text: 'text-green-800',  label: 'Confirmado', border: 'border-green-200'  },
+      'cancelado': { bg: 'bg-red-100',    text: 'text-red-800',    label: 'Cancelado',  border: 'border-red-200'   },
     };
-    
     const config = estadoConfig[estado] || estadoConfig['pendiente'];
-    
     return (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${config.bg} ${config.text} ${config.border}`}>
         {config.label}
@@ -188,14 +208,12 @@ const IngresoDetailsPage = () => {
                     <h1 className="text-2xl font-bold text-white">
                       Boleta {ingreso.numeroBoleta || `#${ingreso.id.substring(0, 8)}`}
                     </h1>
-                    <p className="text-blue-100 mt-1">
-                      Detalles de la boleta de ingreso con lotes
-                    </p>
+                    <p className="text-blue-100 mt-1">Detalles de la boleta de ingreso con lotes</p>
                   </div>
                 </div>
                 <button
                   onClick={() => router.push('/inventario/ingresos')}
-                  className="inline-flex items-center px-4 py-2 border border-blue-500 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300 transition-colors"
+                  className="inline-flex items-center px-4 py-2 border border-blue-500 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-500 transition-colors"
                 >
                   <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
                   Volver a Boletas
@@ -214,7 +232,6 @@ const IngresoDetailsPage = () => {
                       <ClipboardDocumentListIcon className="h-5 w-5 text-blue-600 mr-2" />
                       Información General
                     </h2>
-                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-3">
                         <div className="flex items-center">
@@ -224,7 +241,6 @@ const IngresoDetailsPage = () => {
                             <p className="text-sm font-medium text-gray-900">{ingreso.proveedorNombre || 'N/A'}</p>
                           </div>
                         </div>
-                        
                         <div className="flex items-center">
                           <CalendarDaysIcon className="h-4 w-4 text-gray-500 mr-2" />
                           <div>
@@ -232,7 +248,6 @@ const IngresoDetailsPage = () => {
                             <p className="text-sm font-medium text-gray-900">{ingreso.fechaIngreso}</p>
                           </div>
                         </div>
-
                         {ingreso.fechaRecepcion && (
                           <div className="flex items-center">
                             <CalendarDaysIcon className="h-4 w-4 text-gray-500 mr-2" />
@@ -242,7 +257,6 @@ const IngresoDetailsPage = () => {
                             </div>
                           </div>
                         )}
-
                         <div className="flex items-center">
                           <UserIcon className="h-4 w-4 text-gray-500 mr-2" />
                           <div>
@@ -251,13 +265,11 @@ const IngresoDetailsPage = () => {
                           </div>
                         </div>
                       </div>
-                      
                       <div className="space-y-3">
                         <div>
                           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Estado</p>
                           {getEstadoBadge(ingreso.estado)}
                         </div>
-                        
                         <div className="flex items-center">
                           <BanknotesIcon className="h-4 w-4 text-gray-500 mr-2" />
                           <div>
@@ -265,12 +277,10 @@ const IngresoDetailsPage = () => {
                             <p className="text-lg font-bold text-green-600">S/. {parseFloat(ingreso.costoTotalIngreso || 0).toFixed(2)}</p>
                           </div>
                         </div>
-                        
                         <div>
                           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total de Lotes</p>
                           <p className="text-sm font-medium text-gray-900">{lotes.length} lotes</p>
                         </div>
-                        
                         <div>
                           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Stock Total</p>
                           <p className="text-sm font-medium text-gray-900">{totalCantidadLotes} unidades</p>
@@ -321,60 +331,113 @@ const IngresoDetailsPage = () => {
                         <table className="w-full border-collapse">
                           <thead className="bg-blue-50">
                             <tr className="border-b border-gray-300">
-                              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide">Producto</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Lote</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Código</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Marca</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Color</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Cantidad</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. Compra</th>
-                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Subtotal</th>
+                              <th className="px-4 py-3 text-left   text-xs font-semibold text-gray-600 uppercase tracking-wide">Producto</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">Lote</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">C. Tienda</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">C. Proveedor</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">Marca</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">Medida</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">Color</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">Cant.</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">P. Compra</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">P. Venta</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">P. Venta Mín.</th>
+                              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide">Subtotal</th>
                             </tr>
                           </thead>
                           
                           <tbody>
                             {lotes.map((lote, index) => (
                               <tr key={lote.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                <td className="px-4 py-4">
-                                  <div className="font-medium text-gray-900 text-sm">
-                                    {lote.nombreProducto || 'N/A'}
-                                  </div>
+                                
+                                {/* Producto */}
+                                <td className="px-4 py-3">
+                                  <div className="font-medium text-gray-900 text-sm">{lote.nombreProducto || 'N/A'}</div>
                                 </td>
-                                <td className="px-3 py-4 text-center">
+
+                                {/* Lote */}
+                                <td className="px-3 py-3 text-center">
                                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                     {lote.numeroLote || 'N/A'}
                                   </span>
                                 </td>
-                                <td className="px-3 py-4 text-center">
-                                  <span className="text-sm text-gray-900 font-medium bg-gray-100 px-2 py-1 rounded">
+
+                                {/* C. Tienda */}
+                                <td className="px-3 py-3 text-center">
+                                  <span className="text-xs text-gray-700 font-mono bg-gray-100 px-2 py-1 rounded">
                                     {lote.codigoTienda || 'N/A'}
                                   </span>
                                 </td>
-                                <td className="px-3 py-4 text-center">
-                                  <span className="text-sm text-gray-700">
-                                    {lote.marca || 'Sin marca'}
-                                  </span>
+
+                                {/* C. Proveedor */}
+                                <td className="px-3 py-3 text-center">
+                                  {lote.codigoProveedor ? (
+                                    <span className="text-xs font-mono font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                                      {lote.codigoProveedor}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
                                 </td>
-                                <td className="px-3 py-4 text-center">
-                                  <span className="text-sm text-gray-600">
-                                    {lote.color || 'N/A'}
-                                  </span>
+
+                                {/* Marca */}
+                                <td className="px-3 py-3 text-center">
+                                  <span className="text-sm text-gray-700">{lote.marca || 'N/A'}</span>
                                 </td>
-                                <td className="px-3 py-4 text-center">
+
+                                {/* Medida */}
+                                <td className="px-3 py-3 text-center">
+                                  <span className="text-sm text-gray-700">{lote.medida || '—'}</span>
+                                </td>
+
+                                {/* Color */}
+                                <td className="px-3 py-3 text-center">
+                                  <span className="text-sm text-gray-600">{lote.color || 'N/A'}</span>
+                                </td>
+
+                                {/* Cantidad */}
+                                <td className="px-3 py-3 text-center">
                                   <span className="text-sm font-medium text-gray-900 bg-blue-100 px-2 py-1 rounded">
                                     {lote.cantidad || 0}
                                   </span>
                                 </td>
-                                <td className="px-3 py-4 text-center">
+
+                                {/* P. Compra */}
+                                <td className="px-3 py-3 text-center">
                                   <span className="text-sm font-medium text-green-700">
                                     S/. {parseFloat(lote.precioCompraUnitario || 0).toFixed(2)}
                                   </span>
                                 </td>
-                                <td className="px-3 py-4 text-center">
+
+                                {/* P. Venta */}
+                                <td className="px-3 py-3 text-center">
+                                  {lote.precioVentaUnitario > 0 ? (
+                                    <span className="text-sm font-semibold text-blue-700">
+                                      S/. {parseFloat(lote.precioVentaUnitario).toFixed(2)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
+                                </td>
+
+                                {/* P. Venta Mínimo */}
+                                <td className="px-3 py-3 text-center">
+                                  {lote.precioVentaMinimoUnitario > 0 ? (
+                                    <span className="text-sm font-medium text-orange-600">
+                                      S/. {parseFloat(lote.precioVentaMinimoUnitario).toFixed(2)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
+                                </td>
+
+                                {/* Subtotal */}
+                                <td className="px-3 py-3 text-center">
                                   <span className="text-sm font-semibold text-gray-900">
                                     S/. {parseFloat(lote.subtotal || 0).toFixed(2)}
                                   </span>
                                 </td>
+
                               </tr>
                             ))}
                           </tbody>

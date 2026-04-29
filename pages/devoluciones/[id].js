@@ -62,7 +62,6 @@ const DevolucionDetallePage = () => {
     setError(null);
 
     try {
-      // Obtener datos de la devolución
       const devolucionRef = doc(db, 'devoluciones', id);
       const devolucionSnap = await getDoc(devolucionRef);
 
@@ -81,7 +80,6 @@ const DevolucionDetallePage = () => {
       setDevolucion(devolucionData);
       setAdjustedAmount(devolucionData.montoADevolver || 0);
 
-      // Obtener items de la devolución
       const itemsQuery = query(collection(devolucionRef, 'itemsDevolucion'));
       const itemsSnap = await getDocs(itemsQuery);
       const items = itemsSnap.docs.map(doc => ({
@@ -90,7 +88,6 @@ const DevolucionDetallePage = () => {
       }));
       setItemsDevolucion(items);
 
-      // Obtener datos de la venta original
       if (devolucionData.ventaId) {
         const ventaRef = doc(db, 'ventas', devolucionData.ventaId);
         const ventaSnap = await getDoc(ventaRef);
@@ -120,8 +117,7 @@ const DevolucionDetallePage = () => {
     try {
       await runTransaction(db, async (transaction) => {
         const devolucionRef = doc(db, 'devoluciones', id);
-        
-        // Actualizar estado de la devolución
+
         transaction.update(devolucionRef, {
           estado: 'aprobada',
           fechaProcesamiento: serverTimestamp(),
@@ -130,7 +126,6 @@ const DevolucionDetallePage = () => {
           updatedAt: serverTimestamp(),
         });
 
-        // Crear registro de pago (devolución de dinero)
         if (adjustedAmount > 0) {
           const pagoRef = doc(collection(db, 'pagos'));
           transaction.set(pagoRef, {
@@ -138,8 +133,8 @@ const DevolucionDetallePage = () => {
             devolucionId: id,
             numeroVenta: devolucion.numeroVenta,
             numeroDevolucion: devolucion.numeroDevolucion,
-            metodoPago: 'devolucion_efectivo', // O el método original
-            monto: -adjustedAmount, // Negativo porque es una salida de dinero
+            metodoPago: 'devolucion_efectivo',
+            monto: -adjustedAmount,
             clienteId: devolucion.clienteId,
             clienteNombre: devolucion.clienteNombre,
             empleadoId: user.email || user.uid,
@@ -151,13 +146,10 @@ const DevolucionDetallePage = () => {
             updatedAt: serverTimestamp(),
           });
         }
-
-        // TODO: Aquí podrías también actualizar el stock si es necesario
-        // dependiendo de tu lógica de negocio
       });
 
       alert('Devolución aprobada con éxito');
-      await fetchDevolucionData(); // Recargar datos
+      await fetchDevolucionData();
       setShowApprovalModal(false);
     } catch (err) {
       console.error('Error al aprobar devolución:', err);
@@ -243,7 +235,6 @@ const DevolucionDetallePage = () => {
       'descripcion_incorrecta': 'Descripción incorrecta',
       'otro': 'Otro motivo'
     };
-
     return motivoLabels[motivo] || motivo;
   };
 
@@ -284,333 +275,282 @@ const DevolucionDetallePage = () => {
 
   return (
     <Layout title={`Devolución ${devolucion.numeroDevolucion}`}>
-      <div className="min-h-screen bg-gray-50 py-6">
-        <div className="max-w-7xl mx-auto px-6 sm:px-8">
-          
-          {error && (
-            <div className="mb-6 bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
 
-          {/* Header */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-            <div className="p-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                    Devolución {devolucion.numeroDevolucion}
-                  </h1>
-                  <div className="flex items-center space-x-4">
-                    {getEstadoBadge(devolucion.estado)}
-                    <span className="text-sm text-gray-500">
-                      Solicitada el {devolucion.fechaSolicitud?.toLocaleDateString('es-ES')}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                  {devolucion.estado === 'solicitada' && (
-                    <>
-                      <button
-                        onClick={() => setShowApprovalModal(true)}
-                        disabled={updating}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                      >
-                        <CheckCircleIcon className="h-4 w-4 mr-2" />
-                        Aprobar
-                      </button>
-                      <button
-                        onClick={() => setShowRejectionModal(true)}
-                        disabled={updating}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                      >
-                        <XCircleIcon className="h-4 w-4 mr-2" />
-                        Rechazar
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => router.push('/devoluciones')}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                  >
-                    <ArrowLeftIcon className="h-4 w-4 mr-2" />
-                    Volver
-                  </button>
-                </div>
-              </div>
-            </div>
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg">
+            {error}
           </div>
+        )}
 
-          <div className="grid grid-cols-12 gap-6">
-            
-            {/* Panel Izquierdo - Información General */}
-            <div className="col-span-12 lg:col-span-4 space-y-6">
-              
-              {/* Información de la Devolución */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <DocumentTextIcon className="h-5 w-5 mr-2" />
-                    Información de la Devolución
-                  </h3>
-                </div>
-                <div className="p-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500">Número de Devolución</label>
-                    <p className="mt-1 text-sm text-gray-900 font-mono">{devolucion.numeroDevolucion}</p>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500">Venta Original</label>
-                    <p className="mt-1 text-sm text-gray-900 font-mono">{devolucion.numeroVenta}</p>
-                  </div>
+        {/* ── Header compacto ── */}
+        <div className="flex justify-between items-center mb-4 bg-white rounded-lg shadow-sm border border-gray-200 px-5 py-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl font-bold text-gray-900">
+              Devolución <span className="font-mono">{devolucion.numeroDevolucion}</span>
+            </h1>
+            {getEstadoBadge(devolucion.estado)}
+            <span className="text-sm text-gray-400">
+              Solicitada el {devolucion.fechaSolicitud?.toLocaleDateString('es-ES')}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {devolucion.estado === 'solicitada' && (
+              <>
+                <button
+                  onClick={() => setShowApprovalModal(true)}
+                  disabled={updating}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                >
+                  <CheckCircleIcon className="h-4 w-4 mr-1.5" />
+                  Aprobar
+                </button>
+                <button
+                  onClick={() => setShowRejectionModal(true)}
+                  disabled={updating}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                >
+                  <XCircleIcon className="h-4 w-4 mr-1.5" />
+                  Rechazar
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => router.push('/devoluciones')}
+              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <ArrowLeftIcon className="h-4 w-4 mr-1.5" />
+              Volver
+            </button>
+          </div>
+        </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500">Cliente</label>
-                    <p className="mt-1 text-sm text-gray-900">{devolucion.clienteNombre}</p>
-                    {devolucion.clienteDNI && (
-                      <p className="text-xs text-gray-500">DNI: {devolucion.clienteDNI}</p>
-                    )}
-                  </div>
+        {/* ── 2 columnas de información ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500">Motivo</label>
-                    <p className="mt-1 text-sm text-gray-900">{getMotivoBadge(devolucion.motivo)}</p>
-                  </div>
-
-                  {devolucion.descripcionMotivo && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-500">Descripción del Motivo</label>
-                      <p className="mt-1 text-sm text-gray-900">{devolucion.descripcionMotivo}</p>
-                    </div>
-                  )}
-
-                  {devolucion.observaciones && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-500">Observaciones</label>
-                      <p className="mt-1 text-sm text-gray-900">{devolucion.observaciones}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Información de Fechas y Estado */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <CalendarIcon className="h-5 w-5 mr-2" />
-                    Fechas y Estado
-                  </h3>
-                </div>
-                <div className="p-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500">Fecha de Solicitud</label>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {devolucion.fechaSolicitud?.toLocaleDateString('es-ES', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500">Solicitado por</label>
-                    <p className="mt-1 text-sm text-gray-900 flex items-center">
-                      <UserIcon className="h-4 w-4 mr-1" />
-                      {devolucion.solicitadoPor}
-                    </p>
-                  </div>
-
-                  {devolucion.fechaProcesamiento && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-500">Fecha de Procesamiento</label>
-                      <p className="mt-1 text-sm text-gray-900">
-                        {devolucion.fechaProcesamiento?.toLocaleDateString('es-ES', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </p>
-                    </div>
-                  )}
-
-                  {devolucion.procesadoPor && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-500">Procesado por</label>
-                      <p className="mt-1 text-sm text-gray-900 flex items-center">
-                        <UserIcon className="h-4 w-4 mr-1" />
-                        {devolucion.procesadoPor}
-                      </p>
-                    </div>
-                  )}
-
-                  {devolucion.motivoRechazo && (
-                    <div>
-                      <label className="block text-sm font-medium text-red-600">Motivo de Rechazo</label>
-                      <p className="mt-1 text-sm text-red-800 bg-red-50 p-2 rounded">
-                        {devolucion.motivoRechazo}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Información Financiera */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <CurrencyDollarIcon className="h-5 w-5 mr-2" />
-                    Información Financiera
-                  </h3>
-                </div>
-                <div className="p-4 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-500">Monto Solicitado:</span>
-                    <span className="text-lg font-semibold text-gray-900">
-                      S/. {devolucion.montoADevolver?.toFixed(2)}
-                    </span>
-                  </div>
-
-                  {devolucion.montoAprobado !== undefined && (
-                    <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                      <span className="text-sm font-medium text-green-600">Monto Aprobado:</span>
-                      <span className="text-lg font-semibold text-green-700">
-                        S/. {devolucion.montoAprobado?.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-
-                  {ventaOriginal && (
-                    <div className="pt-2 border-t border-gray-200 text-xs text-gray-500">
-                      <p>Venta original: S/. {ventaOriginal.totalVenta?.toFixed(2)}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+          {/* Col 1: Información de la Devolución */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center">
+                <DocumentTextIcon className="h-4 w-4 mr-2 text-gray-500" />
+                Información de la Devolución
+              </h3>
             </div>
-
-            {/* Panel Derecho - Items y Venta Original */}
-            <div className="col-span-12 lg:col-span-8 space-y-6">
-              
-              {/* Items a Devolver */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <ShoppingBagIcon className="h-5 w-5 mr-2" />
-                    Productos a Devolver
-                  </h3>
-                </div>
-                <div className="p-4">
-                  {itemsDevolucion.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8">No hay productos registrados para esta devolución</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cant. Original</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cant. Devolver</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Precio Unit.</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Subtotal</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {itemsDevolucion.map((item, index) => (
-                            <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-4 py-3">
-                                <div>
-                                  <div className="font-medium text-gray-900">{item.nombreProducto}</div>
-                                  <div className="text-sm text-gray-500">
-                                    {item.codigoTienda} - {item.marca} - {item.color || 'N/A'}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-center text-sm text-gray-900">
-                                {item.cantidadOriginal}
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                  {item.cantidadADevolver}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-center text-sm text-gray-900">
-                                S/. {parseFloat(item.precioVentaUnitario).toFixed(2)}
-                              </td>
-                              <td className="px-4 py-3 text-center font-medium text-gray-900">
-                                S/. {parseFloat(item.montoDevolucion).toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot className="bg-gray-50">
-                          <tr>
-                            <td colSpan="4" className="px-4 py-3 text-right font-medium text-gray-900">
-                              Total:
-                            </td>
-                            <td className="px-4 py-3 text-center font-bold text-gray-900 text-lg">
-                              S/. {devolucion.montoADevolver?.toFixed(2)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </div>
+            <div className="px-4 py-3 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">N° Devolución</label>
+                <p className="mt-0.5 text-sm text-gray-900 font-mono font-semibold">{devolucion.numeroDevolucion}</p>
               </div>
-
-              {/* Información de la Venta Original */}
-              {ventaOriginal && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                  <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      Información de la Venta Original
-                    </h3>
-                  </div>
-                  <div className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-500">Número de Venta</label>
-                        <p className="mt-1 text-sm text-gray-900 font-mono">{ventaOriginal.numeroVenta}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-500">Fecha de Venta</label>
-                        <p className="mt-1 text-sm text-gray-900">
-                          {ventaOriginal.fechaVenta?.toLocaleDateString('es-ES')}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-500">Total de la Venta</label>
-                        <p className="mt-1 text-sm text-gray-900 font-semibold">
-                          S/. {ventaOriginal.totalVenta?.toFixed(2)}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-500">Método de Pago</label>
-                        <p className="mt-1 text-sm text-gray-900">{ventaOriginal.metodoPago}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-500">Vendido por</label>
-                        <p className="mt-1 text-sm text-gray-900">{ventaOriginal.empleadoId}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-500">Estado</label>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {ventaOriginal.estado}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Venta Original</label>
+                <p className="mt-0.5 text-sm text-gray-900 font-mono">{devolucion.numeroVenta}</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Cliente</label>
+                <p className="mt-0.5 text-sm text-gray-900 font-medium">{devolucion.clienteNombre}</p>
+                {devolucion.clienteDNI && (
+                  <p className="text-xs text-gray-500">DNI: {devolucion.clienteDNI}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Motivo</label>
+                <p className="mt-0.5 text-sm text-gray-900">{getMotivoBadge(devolucion.motivo)}</p>
+              </div>
+              {devolucion.descripcionMotivo && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Descripción</label>
+                  <p className="mt-0.5 text-sm text-gray-900">{devolucion.descripcionMotivo}</p>
+                </div>
+              )}
+              {devolucion.observaciones && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Observaciones</label>
+                  <p className="mt-0.5 text-sm text-gray-900">{devolucion.observaciones}</p>
                 </div>
               )}
             </div>
           </div>
+
+          {/* Col 2: Fechas y Estado */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center">
+                <CalendarIcon className="h-4 w-4 mr-2 text-gray-500" />
+                Fechas y Estado
+              </h3>
+            </div>
+            <div className="px-4 py-3 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Fecha de Solicitud</label>
+                <p className="mt-0.5 text-sm text-gray-900">
+                  {devolucion.fechaSolicitud?.toLocaleDateString('es-ES', {
+                    year: 'numeric', month: 'long', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                  })}
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Solicitado por</label>
+                <p className="mt-0.5 text-sm text-gray-900 flex items-center">
+                  <UserIcon className="h-3.5 w-3.5 mr-1 text-gray-400" />
+                  {devolucion.solicitadoPor}
+                </p>
+              </div>
+              {devolucion.fechaProcesamiento && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Fecha de Procesamiento</label>
+                  <p className="mt-0.5 text-sm text-gray-900">
+                    {devolucion.fechaProcesamiento?.toLocaleDateString('es-ES', {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+              )}
+              {devolucion.procesadoPor && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Procesado por</label>
+                  <p className="mt-0.5 text-sm text-gray-900 flex items-center">
+                    <UserIcon className="h-3.5 w-3.5 mr-1 text-gray-400" />
+                    {devolucion.procesadoPor}
+                  </p>
+                </div>
+              )}
+              {devolucion.motivoRechazo && (
+                <div>
+                  <label className="block text-xs font-medium text-red-500 uppercase tracking-wide">Motivo de Rechazo</label>
+                  <p className="mt-0.5 text-sm text-red-800 bg-red-50 p-2 rounded border border-red-200">
+                    {devolucion.motivoRechazo}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
+
+        {/* ── Tabla de Productos a Devolver — ancho completo ── */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
+          <div className="px-4 py-3 border-b border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center">
+              <ShoppingBagIcon className="h-4 w-4 mr-2 text-gray-500" />
+              Productos a Devolver
+            </h3>
+          </div>
+          <div>
+            {itemsDevolucion.length === 0 ? (
+              <p className="text-center text-gray-500 py-10">No hay productos registrados para esta devolución</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[200px]">Producto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Marca</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Cód. Tienda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Cód. Proveedor</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Medida</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Cant. Original</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Cant. Devolver</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Precio Unit.</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {itemsDevolucion.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">
+                          {item.nombreProducto}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                          {item.marca || <span className="text-gray-400">N/A</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 font-mono whitespace-nowrap">
+                          {item.codigoTienda || <span className="text-gray-400 font-sans">N/A</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 font-mono whitespace-nowrap">
+                          {item.codigoProveedor || <span className="text-gray-400 font-sans">N/A</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                          {item.color || <span className="text-gray-400">N/A</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                          {item.medida || <span className="text-gray-400">N/A</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm text-gray-700">
+                          {item.cantidadOriginal}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-800">
+                            {item.cantidadADevolver}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-700 whitespace-nowrap">
+                          S/. {parseFloat(item.precioVentaUnitario).toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900 whitespace-nowrap">
+                          S/. {parseFloat(item.montoDevolucion).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                    <tr>
+                      <td colSpan="9" className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                        Total a Devolver:
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-900 text-base whitespace-nowrap">
+                        S/. {devolucion.montoADevolver?.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Información de la Venta Original — ancho completo ── */}
+        {ventaOriginal && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="px-4 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Información de la Venta Original
+              </h3>
+            </div>
+            <div className="px-4 py-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">N° Venta</label>
+                  <p className="mt-0.5 text-sm text-gray-900 font-mono font-semibold">{ventaOriginal.numeroVenta}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Fecha de Venta</label>
+                  <p className="mt-0.5 text-sm text-gray-900">{ventaOriginal.fechaVenta?.toLocaleDateString('es-ES')}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Total de la Venta</label>
+                  <p className="mt-0.5 text-sm font-bold text-gray-900">S/. {ventaOriginal.totalVenta?.toFixed(2)}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Método de Pago</label>
+                  <p className="mt-0.5 text-sm text-gray-900 capitalize">{ventaOriginal.metodoPago}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Vendido por</label>
+                  <p className="mt-0.5 text-sm text-gray-900">{ventaOriginal.empleadoId}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Estado</label>
+                  <span className="mt-0.5 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    {ventaOriginal.estado}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de Aprobación */}
@@ -631,7 +571,6 @@ const DevolucionDetallePage = () => {
                     <p className="text-sm text-gray-500">
                       ¿Está seguro de que desea aprobar esta devolución?
                     </p>
-                    
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700">
                         Monto a devolver (S/.)
@@ -692,7 +631,6 @@ const DevolucionDetallePage = () => {
                     <p className="text-sm text-gray-500 mb-4">
                       Por favor, proporcione el motivo del rechazo:
                     </p>
-                    
                     <textarea
                       value={rejectionReason}
                       onChange={(e) => setRejectionReason(e.target.value)}

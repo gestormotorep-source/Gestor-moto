@@ -271,6 +271,7 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                         <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Medida</th>
                         <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Cant.</th>
                         <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">P. Compra</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">P. Venta</th>
                         <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Subtotal</th>
                         <th className="px-3 py-2.5 text-right text-xs font-semibold text-emerald-600 uppercase tracking-wider">Ganancia</th>
                       </tr>
@@ -293,15 +294,11 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                             <td className="px-3 py-2.5 text-gray-600 font-mono whitespace-nowrap">{item.codigoProveedor || <span className="text-gray-400">N/A</span>}</td>
                             <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{item.color || <span className="text-gray-400">N/A</span>}</td>
                             <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{item.medida || <span className="text-gray-400">N/A</span>}</td>
-                            <td className="px-3 py-2.5 text-center text-gray-700">
-                              <span className="font-medium">{qty}</span>
-                              {item.stockActual !== null && item.stockActual !== undefined && (
-                                <span className="text-black text-xs">/{item.stockActual}</span>
-                              )}
-                            </td>
+                            <td className="px-3 py-2.5 text-center text-gray-700">{qty}</td>
                             <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">
                               {pCompra > 0 ? formatCurrency(pCompra) : <span className="text-gray-400">—</span>}
                             </td>
+                            <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{formatCurrency(pVenta)}</td>
                             <td className="px-3 py-2.5 text-right font-semibold text-gray-900 whitespace-nowrap">{formatCurrency(subtotal)}</td>
                             <td className="px-3 py-2.5 text-right font-semibold text-emerald-600 whitespace-nowrap">{formatCurrency(ganancia)}</td>
                           </tr>
@@ -312,6 +309,7 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                       <tr>
                         <td colSpan="7" className="px-3 py-2.5 text-right text-sm font-semibold text-gray-600">Totales:</td>
                         <td className="px-3 py-2.5 text-right text-sm font-bold text-gray-500">{totalCompra > 0 ? formatCurrency(totalCompra) : '—'}</td>
+                        <td className="px-3 py-2.5 text-right text-sm font-bold text-gray-700">—</td>
                         <td className="px-3 py-2.5 text-right text-sm font-bold text-gray-900">{formatCurrency(totalVentaRow)}</td>
                         <td className="px-3 py-2.5 text-right text-sm font-bold text-emerald-600">{formatCurrency(totalGanancia)}</td>
                       </tr>
@@ -680,18 +678,7 @@ const CajaPage = () => {
       const itemsSnap = await getDocs(query(
         collection(db, 'ventas', ventaId, 'itemsVenta'), orderBy('createdAt', 'asc')
       ));
-      const items = await Promise.all(
-        itemsSnap.docs.map(async (d) => {
-          const item = { id: d.id, ...d.data() };
-          if (item.productoId) {
-            const prodSnap = await getDoc(doc(db, 'productos', item.productoId));
-            if (prodSnap.exists()) {
-              item.stockActual = prodSnap.data().stockActual ?? null;
-            }
-          }
-          return item;
-        })
-      );
+      const items = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
       let gananciaTotal = 0, metodoCalculo = 'estimado';
       if (venta.gananciaTotalVenta && typeof venta.gananciaTotalVenta === 'number') {

@@ -709,9 +709,10 @@ const IngresosPage = () => {
                   <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° BOLETA</th>
+                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° PEDIDO</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROVEEDOR</th>
-                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE INGRESO</th>
-                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA RECEPCIÓN</th>
+                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA RECEPCION</th>
+                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA FACTURACION</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">LOTES</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO TOTAL</th>
@@ -726,6 +727,9 @@ const IngresosPage = () => {
                       <tr key={ingreso.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                           {ingreso.numeroBoleta || 'N/A'}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-mono">
+                          {ingreso.numeroPedido || '—'}
                         </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700">
                           {ingreso.proveedorNombre}

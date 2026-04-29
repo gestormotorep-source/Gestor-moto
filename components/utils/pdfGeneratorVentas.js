@@ -536,7 +536,6 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
                 throw new Error('No se pudo obtener la informacion de la venta');
             }
             
-            // Si no se proporciona clienteData y hay un clienteId, obtenerlo
             let cliente = clienteData;
             if (!cliente && venta.clienteId && venta.clienteId !== 'general') {
                 try {
@@ -550,7 +549,7 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
             }
             
             const result = await generarPDFVenta(venta, cliente);
-            return result; // { url, fileName }
+            return result; 
             
         } catch (error) {
             console.error('Error al generar PDF de venta:', error);

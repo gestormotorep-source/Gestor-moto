@@ -100,19 +100,21 @@ const VentasIndexPage = () => {
   const ventasPerPage = 20;
 
   useEffect(() => {
-    if (!user) { router.push('/auth'); return; }
+  if (!user) { router.push('/auth'); return; }
 
-    if (getCache('ventas') && !filtersChanged.current) {
-      if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
-        // no hacer return, continúa al fetch para cargar devoluciones
-      }
+  // ── GUARD DE CACHE ──────────────────────────────────────
+  if (getCache('ventas') && !filtersChanged.current) {
+    // Solo saltamos el fetch si NO es un estado especial de devolución
+    if (selectedEstado !== 'devuelta' && selectedEstado !== 'parcial') {
+      setLoading(false);
+      return; // ← ESTE RETURN ES LO QUE FALTABA
     }
+  }
+  // ────────────────────────────────────────────────────────
 
-    // Resetear la bandera
-    filtersChanged.current = false;
-
-    setLoading(true);
-    setError(null);
+  filtersChanged.current = false;
+  setLoading(true);
+  setError(null);
 
     let constraints = [];
     const { start, end } = dateRange;
@@ -1159,11 +1161,11 @@ const VentasIndexPage = () => {
                 <select
                   value={selectedTipoVenta}
                   onChange={(e) => setSelectedTipoVenta(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm max-w-[170px]"
                 >
                   <option value="all">Tipo de Venta</option>
-                  <option value="ventaDirecta">Venta Directa</option>
-                  <option value="cotizacionAprobada">Cotización Aprobada</option>
+                  <option value="ventaDirecta">Directa</option>
+                  <option value="cotizacionAprobada">Cot. Aprobada</option>
                   <option value="abono">Abono</option>
                 </select>
 
@@ -1177,7 +1179,7 @@ const VentasIndexPage = () => {
                     setVentas([]);
                     setCurrentPage(1);
                   }}
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm max-w-[120px]"
                 >
                   <option value="all">Estado</option>
                   <option value="completada">Completada</option>

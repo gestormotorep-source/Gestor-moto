@@ -1,9 +1,10 @@
 // pages/productos/index.js
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import * as XLSX from 'xlsx';
 import { db } from '../../lib/firebase';
+import { useAppCache } from '../../contexts/AppCacheContext';
 import {
   collection,
   getDocs,
@@ -17,7 +18,6 @@ import {
   serverTimestamp,
   limit,
   startAfter,
-  getCountFromServer
 } from 'firebase/firestore';
 import {
   PencilIcon,
@@ -48,37 +48,67 @@ const ProductosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
-  const [productos, setProductos] = useState([]);
 
-  const [totalProductos, setTotalProductos] = useState(0);
+  // ── Cache ────────────────────────────────────────────────────────────────
+  const { getCache, setCache, invalidateCache } = useAppCache();
+  const cached = getCache('productos');
+  const isFirstRender = useRef(true);
+  const filtersChanged = useRef(false);
 
-  const [loading, setLoading] = useState(true);
+  // ── Estados principales — inicializados desde cache ──────────────────────
+  const [productos, setProductos] = useState(cached?.data || []);
+  const [filteredProductos, setFilteredProductos] = useState(
+    cached?.filtros?.filteredProductos || cached?.data || []
+  );
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
   const [updatingPrices, setUpdatingPrices] = useState(false);
-  
+  const [totalProductos, setTotalProductos] = useState(
+    cached?.filtros?.totalProductos || 0
+  );
 
-  // Estados para los filtros
-  const [filterNombre, setFilterNombre] = useState('');
-  const [filterCodigoProveedor, setFilterCodigoProveedor] = useState('');
-  const [filterMarca, setFilterMarca] = useState(''); // Cambiado de filterColor
-  const [filterCodigoTienda, setFilterCodigoTienda] = useState('');
-  const [filterUbicacion, setFilterUbicacion] = useState('');
-  const [filterModelosCompatibles, setFilterModelosCompatibles] = useState('');
-  const [filterMedida, setFilterMedida] = useState('');
+  // ── Filtros — rehidratados desde cache ───────────────────────────────────
+  const [filterNombre, setFilterNombre] = useState(
+    cached?.filtros?.filterNombre || ''
+  );
+  const [filterCodigoProveedor, setFilterCodigoProveedor] = useState(
+    cached?.filtros?.filterCodigoProveedor || ''
+  );
+  const [filterMarca, setFilterMarca] = useState(
+    cached?.filtros?.filterMarca || ''
+  );
+  const [filterCodigoTienda, setFilterCodigoTienda] = useState(
+    cached?.filtros?.filterCodigoTienda || ''
+  );
+  const [filterUbicacion, setFilterUbicacion] = useState(
+    cached?.filtros?.filterUbicacion || ''
+  );
+  const [filterModelosCompatibles, setFilterModelosCompatibles] = useState(
+    cached?.filtros?.filterModelosCompatibles || ''
+  );
+  const [filterMedida, setFilterMedida] = useState(
+    cached?.filtros?.filterMedida || ''
+  );
 
-  const [filteredProductos, setFilteredProductos] = useState([]);
+  // ── Ordenamiento — rehidratado desde cache ───────────────────────────────
+  const [sortColumn, setSortColumn] = useState(
+    cached?.filtros?.sortColumn || null
+  );
+  const [sortDirection, setSortDirection] = useState(
+    cached?.filtros?.sortDirection || 'asc'
+  );
 
-  // Estados para ordenamiento
-  const [sortColumn, setSortColumn] = useState(null);
-  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' o 'desc'
+  // ── Paginación — rehidratada desde cache ─────────────────────────────────
+  const [currentPage, setCurrentPage] = useState(
+    cached?.filtros?.currentPage || 1
+  );
+  const [productsPerPage, setProductsPerPage] = useState(
+    cached?.filtros?.productsPerPage || 10
+  );
 
-  // Estados para la paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const [productsPerPage, setProductsPerPage] = useState(10);
   const totalPages = Math.ceil(filteredProductos.length / productsPerPage);
-  
 
-  // Estados para los modales
+  // ── Modales ───────────────────────────────────────────────────────────────
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
   const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
@@ -90,267 +120,171 @@ const ProductosPage = () => {
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
 
-  // Función para manejar el ordenamiento
-  const handleSort = (columnKey) => {
-    let newDirection = 'asc';
-    
-    // Si ya estamos ordenando por esta columna, cambiar dirección
-    if (sortColumn === columnKey) {
-      newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-    }
-    
-    setSortColumn(columnKey);
-    setSortDirection(newDirection);
-    
-    // Aplicar el ordenamiento
-    const sortedProducts = [...filteredProductos].sort((a, b) => {
-      let aValue = a[columnKey] || '';
-      let bValue = b[columnKey] || '';
-      
-      // Convertir a string para comparación consistente
-      aValue = aValue.toString().toLowerCase();
-      bValue = bValue.toString().toLowerCase();
-      
-      // Para código de tienda, intentar comparación numérica si es posible
-      if (columnKey === 'codigoTienda') {
-        // Extraer números del código para ordenamiento numérico
-        const aNumeric = aValue.match(/\d+/);
-        const bNumeric = bValue.match(/\d+/);
-        
-        if (aNumeric && bNumeric) {
-          const aNum = parseInt(aNumeric[0]);
-          const bNum = parseInt(bNumeric[0]);
-          
-          if (aNum !== bNum) {
-            return newDirection === 'asc' ? aNum - bNum : bNum - aNum;
-          }
-        }
-      }
-      
-      // Comparación alfabética estándar
-      if (aValue < bValue) {
-        return newDirection === 'asc' ? -1 : 1;
-      }
-      if (aValue > bValue) {
-        return newDirection === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-    
-    setFilteredProductos(sortedProducts);
-    setCurrentPage(1); // Resetear a la primera página al ordenar
-  };
+  // Import Excel
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResults, setImportResults] = useState(null);
+  const [previewData, setPreviewData] = useState([]);
 
-  // Función para mostrar el icono de ordenamiento
-  const getSortIcon = (columnKey) => {
-    if (sortColumn !== columnKey) {
-      return null;
-    }
-    
-    return sortDirection === 'asc' ? (
-      <ChevronUpIcon className="h-4 w-4 inline ml-1" />
-    ) : (
-      <ChevronDownIcon className="h-4 w-4 inline ml-1" />
-    );
-  };
+  // ── Carga de productos — respeta cache ────────────────────────────────────
+  const fetchProductos = async (forceReload = false) => {
+    if (!user) { router.push('/auth'); return; }
 
-  // Función para recalcular el precio de compra de un producto basado en FIFO
-  const recalcularPrecioCompraFIFO = async (productoId) => {
+    // Si hay cache y no es una recarga forzada, no volver a Firestore
+    if (cached && !forceReload && !filtersChanged.current) {
+      setLoading(false);
+      return;
+    }
+
+    filtersChanged.current = false;
+    setLoading(true);
+    setError(null);
+
     try {
-      // Buscar todos los lotes activos del producto, ordenados por fecha de ingreso (FIFO)
-      const lotesQuery = query(
-        collection(db, 'lotes'),
-        where('productoId', '==', productoId),
-        where('stockRestante', '>', 0),
-        where('estado', '==', 'activo'),
-        orderBy('fechaIngreso', 'asc')
-      );
-      
-      const lotesSnapshot = await getDocs(lotesQuery);
-      
-      let nuevoPrecioCompra = 0;
-      let nuevoPrecioVenta = 0;      
-      let nuevoPrecioVentaMinimo = 0;  
-      let stockTotal = 0;
-      
-      // Si hay lotes disponibles, tomar el precio del primer lote (más antiguo)
-      if (!lotesSnapshot.empty) {
-        const primerLote = lotesSnapshot.docs[0].data();
-        nuevoPrecioCompra = parseFloat(primerLote.precioCompraUnitario || 0);
-        nuevoPrecioVenta = parseFloat(primerLote.precioVentaUnitario || 0);       
-        nuevoPrecioVentaMinimo = parseFloat(primerLote.precioVentaMinimoUnitario || 0); 
-        
-        // Calcular stock total de todos los lotes activos
-        lotesSnapshot.docs.forEach(doc => {
-          stockTotal += parseInt(doc.data().stockRestante || 0);
-        });
-      }
-      
-      // Actualizar el producto con el nuevo precio y stock
-      await updateDoc(doc(db, 'productos', productoId), {
-        precioCompraDefault: nuevoPrecioCompra,
-        precioVentaDefault: nuevoPrecioVenta,      // ← nuevo
-        precioVentaMinimo: nuevoPrecioVentaMinimo,  // ← nuevo
-        stockActual: stockTotal,
-        updatedAt: serverTimestamp()
-      });
-      
-      return { nuevoPrecioCompra, nuevoPrecioVenta, nuevoPrecioVentaMinimo, stockTotal };
-      
-    } catch (error) {
-      console.error(`Error al recalcular precio FIFO para producto ${productoId}:`, error);
-      throw error;
-    }
-  };
-
-  // Función para actualizar precios de todos los productos
-  const actualizarTodosLosPrecios = async () => {
-  if (!window.confirm('¿Recalcular precios de todos los productos?')) return;
-  
-  setUpdatingPrices(true);
-  let actualizados = 0;
-  let errores = 0;
-
-  // Procesar en lotes de 10 en paralelo
-  const BATCH_SIZE = 10;
-  for (let i = 0; i < productos.length; i += BATCH_SIZE) {
-    const batch = productos.slice(i, i + BATCH_SIZE);
-    await Promise.all(
-      batch.map(async (producto) => {
-        try {
-          await recalcularPrecioCompraFIFO(producto.id);
-          actualizados++;
-        } catch {
-          errores++;
-        }
-      })
-    );
-  }
-
-  await fetchProductos();
-  setAlertMessage(`Actualización completa: ${actualizados} actualizados${errores > 0 ? `, ${errores} errores` : ''}.`);
-  setIsAlertModalOpen(true);
-  setUpdatingPrices(false);
-};
-
-  // Función para recalcular precio de un producto específico
-  const recalcularProductoEspecifico = async (productoId) => {
-    try {
-      const resultado = await recalcularPrecioCompraFIFO(productoId);
-      
-      // Actualizar el producto en la lista local
-      setProductos(prevProductos => 
-        prevProductos.map(p => 
-          p.id === productoId 
-            ? { 
-                ...p, 
-                precioCompraDefault: resultado.nuevoPrecioCompra,
-                stockActual: resultado.stockTotal, 
-                precioVentaDefault: resultado.nuevoPrecioVenta,     
-                precioVentaMinimo: resultado.nuevoPrecioVentaMinimo, 
-              }
-            : p
-        )
-      );
-      
-      setFilteredProductos(prevFiltered => 
-        prevFiltered.map(p => 
-          p.id === productoId 
-            ? { 
-                ...p, 
-                precioCompraDefault: resultado.nuevoPrecioCompra,
-                stockActual: resultado.stockTotal, 
-                precioVentaDefault: resultado.nuevoPrecioVenta,       
-                precioVentaMinimo: resultado.nuevoPrecioVentaMinimo,
-              }
-            : p
-        )
-      );
-      
-      setAlertMessage(`Precio actualizado: S/. ${resultado.nuevoPrecioCompra.toFixed(2)} (Stock: ${resultado.stockTotal})`);
-      setIsAlertModalOpen(true);
-      
-    } catch (error) {
-      console.error('Error al recalcular producto específico:', error);
-      setError('Error al recalcular el precio. Intente de nuevo.');
-    }
-  };
-
-  // Función para cargar todos los productos
-// Reemplaza fetchProductos
-const fetchProductos = async () => {
-  if (!user) { router.push('/auth'); return; }
-  
-  setLoading(true);
-  setError(null);
-
-  try {
-    // Primera carga rápida: solo 50 productos para mostrar inmediato
-    const qFirst = query(
-      collection(db, 'productos'),
-      orderBy('nombre', 'asc'),
-      limit(50)
-    );
-
-    const firstSnapshot = await getDocs(qFirst);
-    const firstBatch = firstSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    // Mostrar los primeros 50 inmediatamente
-    setProductos(firstBatch);
-    setFilteredProductos(firstBatch);
-    setLoading(false); // ← UI ya disponible aquí
-
-    // Cargar el resto en background sin bloquear
-    if (firstSnapshot.docs.length === 50) {
-      const qRest = query(
+      // Primera carga rápida: 50 productos para mostrar inmediato
+      const qFirst = query(
         collection(db, 'productos'),
         orderBy('nombre', 'asc'),
-        startAfter(firstSnapshot.docs[firstSnapshot.docs.length - 1])
+        limit(50)
       );
+      const firstSnapshot = await getDocs(qFirst);
+      const firstBatch = firstSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      const restSnapshot = await getDocs(qRest);
-      const restBatch = restSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // Mostrar los primeros 50 inmediatamente
+      setProductos(firstBatch);
+      setFilteredProductos(firstBatch);
+      setLoading(false); // UI disponible de inmediato
 
-      const allProducts = [...firstBatch, ...restBatch];
-      setProductos(allProducts);
-      setFilteredProductos(allProducts);
-      setTotalProductos(allProducts.length);
-    } else {
-      setTotalProductos(firstBatch.length);
+      // Cargar el resto en background sin bloquear
+      if (firstSnapshot.docs.length === 50) {
+        const qRest = query(
+          collection(db, 'productos'),
+          orderBy('nombre', 'asc'),
+          startAfter(firstSnapshot.docs[firstSnapshot.docs.length - 1])
+        );
+        const restSnapshot = await getDocs(qRest);
+        const restBatch = restSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        const allProducts = [...firstBatch, ...restBatch];
+        setProductos(allProducts);
+        setFilteredProductos(allProducts);
+        setTotalProductos(allProducts.length);
+        // Guardar TODO en cache solo cuando ya tenemos el array completo
+        setCache('productos', allProducts, {
+          filteredProductos: allProducts,
+          filterNombre: '',
+          filterCodigoProveedor: '',
+          filterMarca: '',
+          filterCodigoTienda: '',
+          filterUbicacion: '',
+          filterModelosCompatibles: '',
+          filterMedida: '',
+          sortColumn: null,
+          sortDirection: 'asc',
+          currentPage: 1,
+          productsPerPage,
+          totalProductos: allProducts.length,
+        });
+      } else {
+        setTotalProductos(firstBatch.length);
+        setCache('productos', firstBatch, {
+          filteredProductos: firstBatch,
+          filterNombre: '',
+          filterCodigoProveedor: '',
+          filterMarca: '',
+          filterCodigoTienda: '',
+          filterUbicacion: '',
+          filterModelosCompatibles: '',
+          filterMedida: '',
+          sortColumn: null,
+          sortDirection: 'asc',
+          currentPage: 1,
+          productsPerPage,
+          totalProductos: firstBatch.length,
+        });
+      }
+    } catch (err) {
+      console.error('Error al cargar productos:', err);
+      setError('Error al cargar productos.');
+      setLoading(false);
+    }
+  };
+
+  // ── useEffect principal — solo carga si no hay cache ─────────────────────
+  useEffect(() => {
+    if (!user) return;
+
+    if (cached && !filtersChanged.current) {
+      // Cache válido: restaurar estado sin ir a Firestore
+      setProductos(cached.data);
+      if (cached.filtros?.filteredProductos?.length > 0) {
+        setFilteredProductos(cached.filtros.filteredProductos);
+      } else {
+        setFilteredProductos(cached.data);
+      }
+      setLoading(false);
+      return;
     }
 
-  } catch (err) {
-    console.error("Error al cargar productos:", err);
-    setError("Error al cargar productos.");
-    setLoading(false);
-  }
-};
-
-  useEffect(() => {
     fetchProductos();
-  }, [user, router]);
+  }, [user]);
 
-
-    // Reemplaza el useEffect de filtros o agrégalo
+  // ── Persistir cache cuando cambia algo relevante ──────────────────────────
+  // Solo persistimos cuando hay datos reales (no en el primer render vacío)
   useEffect(() => {
+    if (productos.length === 0) return;
+    // No sobreescribir cache con datos parciales durante la carga en background
+    if (loading) return;
+
+    setCache('productos', productos, {
+      filteredProductos,
+      filterNombre,
+      filterCodigoProveedor,
+      filterMarca,
+      filterCodigoTienda,
+      filterUbicacion,
+      filterModelosCompatibles,
+      filterMedida,
+      sortColumn,
+      sortDirection,
+      currentPage,
+      productsPerPage,
+      totalProductos,
+    });
+  }, [
+    productos, filteredProductos,
+    filterNombre, filterCodigoProveedor, filterMarca, filterCodigoTienda,
+    filterUbicacion, filterModelosCompatibles, filterMedida,
+    sortColumn, sortDirection, currentPage, productsPerPage, totalProductos,
+  ]);
+
+  // ── Filtros con debounce — igual que ventas, no afectan la carga ─────────
+  useEffect(() => {
+    // En primer render con cache válido, ya tenemos filteredProductos restaurado
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      if (cached?.filtros?.filteredProductos?.length > 0) {
+        return; // ya restaurado arriba, no volver a filtrar
+      }
+    }
+
+    if (productos.length === 0) return;
+
     const timeoutId = setTimeout(() => {
       applyFilters();
-    }, 300); // debounce 300ms
+    }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [filterNombre, filterCodigoTienda, filterCodigoProveedor, 
-      filterMarca, filterModelosCompatibles, productos]);
+  }, [
+    filterNombre, filterCodigoTienda, filterCodigoProveedor,
+    filterMarca, filterModelosCompatibles, productos
+  ]);
 
-  // Lógica de filtrado combinada
+  // ── Lógica de filtrado ────────────────────────────────────────────────────
   const applyFilters = async () => {
-    const hayFiltros = filterNombre || filterCodigoTienda || filterCodigoProveedor || 
-                      filterMarca || filterModelosCompatibles;
+    const hayFiltros = filterNombre || filterCodigoTienda || filterCodigoProveedor ||
+      filterMarca || filterModelosCompatibles;
 
     if (!hayFiltros) {
       setFilteredProductos(productos);
@@ -360,7 +294,6 @@ const fetchProductos = async () => {
       return;
     }
 
-    // Parsear palabras del nombre para búsqueda tipo palabrasClave
     const palabrasNombre = filterNombre.trim()
       ? filterNombre.trim().toUpperCase().split(/[\s\-\/\.]+/).filter(p => p.length >= 2)
       : [];
@@ -370,7 +303,6 @@ const fetchProductos = async () => {
     const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
     const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
 
-    // Función helper para verificar filtros secundarios (todos excepto nombre)
     const matchesSecondaryFilters = (producto) => {
       if (lowerFilterCodigoTienda && !producto.codigoTienda?.toLowerCase().includes(lowerFilterCodigoTienda)) return false;
       if (lowerFilterCodigoProveedor && !producto.codigoProveedor?.toLowerCase().includes(lowerFilterCodigoProveedor)) return false;
@@ -379,7 +311,6 @@ const fetchProductos = async () => {
       return true;
     };
 
-    // Función helper para verificar nombre con palabrasClave
     const matchesNombrePalabrasClave = (producto) => {
       if (palabrasNombre.length === 0) return true;
       const claves = producto.palabrasClave || [];
@@ -388,7 +319,7 @@ const fetchProductos = async () => {
       );
     };
 
-    // ── PASO 1: Filtrar localmente sobre los productos ya cargados ──
+    // PASO 1: Filtrar localmente — instantáneo, sin Firestore
     const localFiltered = productos.filter(producto =>
       matchesNombrePalabrasClave(producto) && matchesSecondaryFilters(producto)
     );
@@ -401,12 +332,11 @@ const fetchProductos = async () => {
       return;
     }
 
-    // ── PASO 2: No encontró nada localmente → buscar en Firestore ──
+    // PASO 2: No encontró nada localmente → buscar en Firestore
     try {
       setLoading(true);
       const resultados = new Map();
 
-      // Buscar por nombre usando palabrasClave (array-contains con la primera palabra)
       if (palabrasNombre.length > 0) {
         const q = query(
           collection(db, 'productos'),
@@ -415,18 +345,12 @@ const fetchProductos = async () => {
         );
         const snapshot = await getDocs(q);
         let candidatos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        // Filtrar localmente por el resto de palabras
         candidatos = candidatos.filter(p => {
           const claves = p.palabrasClave || [];
-          return palabrasNombre.every(palabra =>
-            claves.some(clave => clave.includes(palabra))
-          );
+          return palabrasNombre.every(palabra => claves.some(clave => clave.includes(palabra)));
         });
-
         candidatos.forEach(p => resultados.set(p.id, p));
 
-        // Además buscar por código exacto si el término podría ser un código
         const termOriginal = filterNombre.trim().toUpperCase();
         const porCodigo = await Promise.all([
           getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termOriginal), limit(5))),
@@ -439,7 +363,6 @@ const fetchProductos = async () => {
         });
       }
 
-      // Buscar por código de tienda exacto (filtro propio, no nombre)
       if (filterCodigoTienda) {
         const snap = await getDocs(query(
           collection(db, 'productos'),
@@ -451,7 +374,6 @@ const fetchProductos = async () => {
         });
       }
 
-      // Buscar por código proveedor exacto
       if (filterCodigoProveedor) {
         const snap = await getDocs(query(
           collection(db, 'productos'),
@@ -463,7 +385,6 @@ const fetchProductos = async () => {
         });
       }
 
-      // Buscar por marca con prefijo
       if (filterMarca) {
         const termUpper = filterMarca.toUpperCase();
         const snap = await getDocs(query(
@@ -477,7 +398,6 @@ const fetchProductos = async () => {
         });
       }
 
-      // Aplicar todos los filtros restantes sobre los resultados de Firestore
       const finalResults = Array.from(resultados.values()).filter(producto =>
         matchesNombrePalabrasClave(producto) && matchesSecondaryFilters(producto)
       );
@@ -486,7 +406,6 @@ const fetchProductos = async () => {
       setCurrentPage(1);
       setSortColumn(null);
       setSortDirection('asc');
-
     } catch (err) {
       console.error('Error en búsqueda Firestore:', err);
       setError('Error al buscar productos');
@@ -495,41 +414,163 @@ const fetchProductos = async () => {
     }
   };
 
-  const handleSearchClick = () => {
-    applyFilters();
+  // ── Ordenamiento ──────────────────────────────────────────────────────────
+  const handleSort = (columnKey) => {
+    let newDirection = 'asc';
+    if (sortColumn === columnKey) {
+      newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    }
+    setSortColumn(columnKey);
+    setSortDirection(newDirection);
+
+    const sortedProducts = [...filteredProductos].sort((a, b) => {
+      let aValue = (a[columnKey] || '').toString().toLowerCase();
+      let bValue = (b[columnKey] || '').toString().toLowerCase();
+
+      if (columnKey === 'codigoTienda') {
+        const aNum = aValue.match(/\d+/);
+        const bNum = bValue.match(/\d+/);
+        if (aNum && bNum) {
+          const diff = parseInt(aNum[0]) - parseInt(bNum[0]);
+          if (diff !== 0) return newDirection === 'asc' ? diff : -diff;
+        }
+      }
+
+      if (aValue < bValue) return newDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return newDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    setFilteredProductos(sortedProducts);
+    setCurrentPage(1);
   };
 
+  const getSortIcon = (columnKey) => {
+    if (sortColumn !== columnKey) return null;
+    return sortDirection === 'asc'
+      ? <ChevronUpIcon className="h-4 w-4 inline ml-1" />
+      : <ChevronDownIcon className="h-4 w-4 inline ml-1" />;
+  };
+
+  // ── FIFO helpers ──────────────────────────────────────────────────────────
+  const recalcularPrecioCompraFIFO = async (productoId) => {
+    try {
+      const lotesQuery = query(
+        collection(db, 'lotes'),
+        where('productoId', '==', productoId),
+        where('stockRestante', '>', 0),
+        where('estado', '==', 'activo'),
+        orderBy('fechaIngreso', 'asc')
+      );
+      const lotesSnapshot = await getDocs(lotesQuery);
+
+      let nuevoPrecioCompra = 0, nuevoPrecioVenta = 0, nuevoPrecioVentaMinimo = 0, stockTotal = 0;
+
+      if (!lotesSnapshot.empty) {
+        const primerLote = lotesSnapshot.docs[0].data();
+        nuevoPrecioCompra = parseFloat(primerLote.precioCompraUnitario || 0);
+        nuevoPrecioVenta = parseFloat(primerLote.precioVentaUnitario || 0);
+        nuevoPrecioVentaMinimo = parseFloat(primerLote.precioVentaMinimoUnitario || 0);
+        lotesSnapshot.docs.forEach(d => { stockTotal += parseInt(d.data().stockRestante || 0); });
+      }
+
+      await updateDoc(doc(db, 'productos', productoId), {
+        precioCompraDefault: nuevoPrecioCompra,
+        precioVentaDefault: nuevoPrecioVenta,
+        precioVentaMinimo: nuevoPrecioVentaMinimo,
+        stockActual: stockTotal,
+        updatedAt: serverTimestamp()
+      });
+
+      return { nuevoPrecioCompra, nuevoPrecioVenta, nuevoPrecioVentaMinimo, stockTotal };
+    } catch (error) {
+      console.error(`Error FIFO para producto ${productoId}:`, error);
+      throw error;
+    }
+  };
+
+  const actualizarTodosLosPrecios = async () => {
+    if (!window.confirm('¿Recalcular precios de todos los productos?')) return;
+    setUpdatingPrices(true);
+    let actualizados = 0, errores = 0;
+
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < productos.length; i += BATCH_SIZE) {
+      const batch = productos.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (producto) => {
+        try { await recalcularPrecioCompraFIFO(producto.id); actualizados++; }
+        catch { errores++; }
+      }));
+    }
+
+    // Forzar recarga y actualizar cache
+    invalidateCache('productos');
+    filtersChanged.current = true;
+    await fetchProductos(true);
+    setAlertMessage(`Actualización completa: ${actualizados} actualizados${errores > 0 ? `, ${errores} errores` : ''}.`);
+    setIsAlertModalOpen(true);
+    setUpdatingPrices(false);
+  };
+
+  const recalcularProductoEspecifico = async (productoId) => {
+    try {
+      const resultado = await recalcularPrecioCompraFIFO(productoId);
+
+      const updater = (list) => list.map(p =>
+        p.id === productoId
+          ? { ...p, precioCompraDefault: resultado.nuevoPrecioCompra, stockActual: resultado.stockTotal, precioVentaDefault: resultado.nuevoPrecioVenta, precioVentaMinimo: resultado.nuevoPrecioVentaMinimo }
+          : p
+      );
+
+      setProductos(updater);
+      setFilteredProductos(updater);
+      setAlertMessage(`Precio actualizado: S/. ${resultado.nuevoPrecioCompra.toFixed(2)} (Stock: ${resultado.stockTotal})`);
+      setIsAlertModalOpen(true);
+    } catch (error) {
+      setError('Error al recalcular el precio. Intente de nuevo.');
+    }
+  };
+
+  // ── Limpiar filtros ───────────────────────────────────────────────────────
   const handleClearFilters = () => {
-  setFilterNombre('');
-  setFilterCodigoProveedor('');
-  setFilterCodigoTienda('');
-  setFilterUbicacion('');
-  setFilterModelosCompatibles('');
-  setFilterMarca(''); // Cambiado de setFilterColor
-  setFilterMedida('');
-  setFilteredProductos(productos);
-  setCurrentPage(1);
-  
-  // Limpiar el ordenamiento
-  setSortColumn(null);
-  setSortDirection('asc');
-};
+    // NO invalidamos el cache de datos — solo reseteamos los filtros visuales
+    setFilterNombre('');
+    setFilterCodigoProveedor('');
+    setFilterCodigoTienda('');
+    setFilterUbicacion('');
+    setFilterModelosCompatibles('');
+    setFilterMarca('');
+    setFilterMedida('');
+    setFilteredProductos(productos); // restaurar lista completa desde memoria
+    setCurrentPage(1);
+    setSortColumn(null);
+    setSortDirection('asc');
+  };
 
-
+  // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = async (productId) => {
     try {
       await deleteDoc(doc(db, 'productos', productId));
-      setProductos(prevProductos => prevProductos.filter(p => p.id !== productId));
-      setFilteredProductos(prevFiltered => prevFiltered.filter(p => p.id !== productId));
+      const updater = (list) => list.filter(p => p.id !== productId);
+      const newProductos = updater(productos);
+      setProductos(newProductos);
+      setFilteredProductos(updater);
+      // Actualizar cache tras eliminar
+      setCache('productos', newProductos, {
+        filteredProductos: newProductos,
+        filterNombre, filterCodigoProveedor, filterMarca, filterCodigoTienda,
+        filterUbicacion, filterModelosCompatibles, filterMedida,
+        sortColumn, sortDirection, currentPage, productsPerPage,
+        totalProductos: newProductos.length,
+      });
       setAlertMessage('Producto eliminado con éxito.');
       setIsAlertModalOpen(true);
     } catch (err) {
-      console.error("Error al eliminar producto:", err);
-      setError("Error al eliminar el producto. " + err.message);
+      setError('Error al eliminar el producto. ' + err.message);
       setAlertMessage('Hubo un error al eliminar el producto.');
       setIsAlertModalOpen(true);
     } finally {
-      setIsConfirmModalOpen(false); // Cierra el modal de confirmación
+      setIsConfirmModalOpen(false);
     }
   };
 
@@ -539,196 +580,93 @@ const fetchProductos = async () => {
     setIsConfirmModalOpen(true);
   };
 
-  // Funciones para los modales
-  const openImageModal = (producto) => {
-  setSelectedProductForDetails(producto);
-  setIsImageModalOpen(true);
-};
-  const closeImageModal = () => {
-  setIsImageModalOpen(false);
-  setSelectedProductForDetails(null);
-};
+  // ── Modales helpers ───────────────────────────────────────────────────────
+  const openImageModal = (producto) => { setSelectedProductForDetails(producto); setIsImageModalOpen(true); };
+  const closeImageModal = () => { setIsImageModalOpen(false); setSelectedProductForDetails(null); };
+  const openProductDetailsModal = (product) => { setSelectedProductForDetails(product); setIsProductDetailsModalOpen(true); };
+  const closeProductDetailsModal = () => { setSelectedProductForDetails(null); setIsProductDetailsModalOpen(false); };
+  const openProductModelsModal = (product) => { setSelectedProductForModels(product); setIsProductModelsModalOpen(true); };
+  const closeProductModelsModal = () => { setSelectedProductForModels(null); setIsProductModelsModalOpen(false); };
 
-  const openProductDetailsModal = (product) => {
-    setSelectedProductForDetails(product);
-    setIsProductDetailsModalOpen(true);
-  };
-  const closeProductDetailsModal = () => {
-    setSelectedProductForDetails(null);
-    setIsProductDetailsModalOpen(false);
-  };
-
-  const openProductModelsModal = (product) => {
-    setSelectedProductForModels(product);
-    setIsProductModelsModalOpen(true);
-  };
-  const closeProductModelsModal = () => {
-    setSelectedProductForModels(null);
-    setIsProductModelsModalOpen(false);
-  };
-
-  // Función para determinar si el stock está bajo
-  const isLowStock = (stockActual, stockUmbral) => {
-    return stockActual <= stockUmbral;
-  };
-
-  // Función para determinar si un producto tiene precio desactualizado
+  // ── Helpers de display ────────────────────────────────────────────────────
+  const isLowStock = (stockActual, stockUmbral) => stockActual <= stockUmbral;
   const needsPriceUpdate = (producto) => {
-    // Lógica para determinar si el precio podría estar desactualizado
-    // Por ejemplo, si no se ha actualizado en los últimos 30 días
     const lastUpdate = producto.updatedAt?.toDate() || new Date(0);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     return lastUpdate < thirtyDaysAgo;
   };
 
-  // Lógica de paginación
+  // ── Paginación ────────────────────────────────────────────────────────────
   const indexOfLastProduct = currentPage * productsPerPage;
   const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
   const currentProducts = filteredProductos.slice(indexOfFirstProduct, indexOfLastProduct);
 
-  const goToPrevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
-    }
-  };
-
-  const goToNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
-    }
-  };
-
-
-  // Agrega estos estados adicionales en el componente ProductosPage
-const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-const [importFile, setImportFile] = useState(null);
-const [isImporting, setIsImporting] = useState(false);
-const [importResults, setImportResults] = useState(null);
-const [previewData, setPreviewData] = useState([]);
-
-// Función para procesar el archivo Excel
-const handleFileSelect = (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  setImportFile(file);
-  
-  // Leer y previsualizar el archivo
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-      
-      // Mostrar solo los primeros 5 registros para previsualización
-      setPreviewData(jsonData.slice(0, 5));
-    } catch (error) {
-      console.error('Error al leer el archivo:', error);
-      setAlertMessage('Error al leer el archivo Excel. Verifique que el formato sea correcto.');
-      setIsAlertModalOpen(true);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-};
-
-// Función para validar los datos del Excel
-const validateExcelData = (data) => {
-  const errors = [];
-  // Campos que NO pueden estar vacíos (pero sí pueden ser 0)
-  const requiredTextFields = ['nombre', 'marca'];
-  // Campos que deben estar presentes y ser números (pueden ser 0)
-  const requiredNumericFields = ['precioCompraDefault', 'precioVentaDefault', 'precioVentaMinimo', 'stockActual'];
-  
-  data.forEach((row, index) => {
-    const rowNumber = index + 1;
-    
-    // Validar campos de texto obligatorios
-    requiredTextFields.forEach(field => {
-      if (!row[field] || row[field].toString().trim() === '') {
-        errors.push(`Fila ${rowNumber}: El campo '${field}' es obligatorio`);
-      }
-    });
-    
-    // Validar campos numéricos obligatorios (pueden ser 0 pero no vacíos)
-    requiredNumericFields.forEach(field => {
-      if (row[field] === undefined || row[field] === null || row[field] === '') {
-        errors.push(`Fila ${rowNumber}: El campo '${field}' es obligatorio`);
-      } else if (isNaN(parseFloat(row[field]))) {
-        errors.push(`Fila ${rowNumber}: El campo '${field}' debe ser un número válido`);
-      } else if (parseFloat(row[field]) < 0) {
-        errors.push(`Fila ${rowNumber}: El campo '${field}' no puede ser negativo`);
-      }
-    });
-    
-    // Validar campos numéricos opcionales
-    const optionalNumericFields = ['stockReferencialUmbral'];
-    optionalNumericFields.forEach(field => {
-      if (row[field] && row[field] !== '' && isNaN(parseFloat(row[field]))) {
-        errors.push(`Fila ${rowNumber}: El campo '${field}' debe ser un número válido`);
-      }
-      if (row[field] && parseFloat(row[field]) < 0) {
-        errors.push(`Fila ${rowNumber}: El campo '${field}' no puede ser negativo`);
-      }
-    });
-    
-    // Validar que el precio mínimo no sea mayor al precio de venta (solo si ambos son > 0)
-    const precioVenta = parseFloat(row.precioVentaDefault || 0);
-    const precioMinimo = parseFloat(row.precioVentaMinimo || 0);
-    if (precioVenta > 0 && precioMinimo > precioVenta) {
-      errors.push(`Fila ${rowNumber}: El precio de venta mínimo no puede ser mayor al precio de venta default`);
-    }
-    
-    // Validar URLs de imágenes
-    if (row.imageUrls && row.imageUrls.toString().trim() !== '') {
-      const urls = row.imageUrls.toString().split(',').map(url => url.trim()).filter(url => url);
-      if (urls.length > 3) {
-        errors.push(`Fila ${rowNumber}: Máximo 3 URLs de imágenes permitidas`);
-      }
-    }
-  });
-  
-  return errors;
-};
-
-// Función para procesar e importar los datos
-const processExcelImport = async () => {
-  if (!importFile) return;
-  
-  setIsImporting(true);
-  
-  try {
+  // ── Import Excel ──────────────────────────────────────────────────────────
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setImportFile(file);
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
-        
-        // Validar datos
-        const validationErrors = validateExcelData(jsonData);
-        if (validationErrors.length > 0) {
-          setAlertMessage(`Errores de validación:\n${validationErrors.slice(0, 10).join('\n')}${validationErrors.length > 10 ? '\n... y más errores.' : ''}`);
+        setPreviewData(jsonData.slice(0, 5));
+      } catch (error) {
+        setAlertMessage('Error al leer el archivo Excel. Verifique el formato.');
+        setIsAlertModalOpen(true);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const validateExcelData = (data) => {
+    const errors = [];
+    const requiredTextFields = ['nombre', 'marca'];
+    const requiredNumericFields = ['precioCompraDefault', 'precioVentaDefault', 'precioVentaMinimo', 'stockActual'];
+    data.forEach((row, index) => {
+      const rowNumber = index + 1;
+      requiredTextFields.forEach(field => {
+        if (!row[field] || row[field].toString().trim() === '') errors.push(`Fila ${rowNumber}: '${field}' es obligatorio`);
+      });
+      requiredNumericFields.forEach(field => {
+        if (row[field] === undefined || row[field] === null || row[field] === '') errors.push(`Fila ${rowNumber}: '${field}' es obligatorio`);
+        else if (isNaN(parseFloat(row[field]))) errors.push(`Fila ${rowNumber}: '${field}' debe ser número`);
+        else if (parseFloat(row[field]) < 0) errors.push(`Fila ${rowNumber}: '${field}' no puede ser negativo`);
+      });
+      const pv = parseFloat(row.precioVentaDefault || 0);
+      const pm = parseFloat(row.precioVentaMinimo || 0);
+      if (pv > 0 && pm > pv) errors.push(`Fila ${rowNumber}: precio mínimo no puede superar al precio de venta`);
+      if (row.imageUrls && row.imageUrls.toString().split(',').filter(u => u.trim()).length > 3)
+        errors.push(`Fila ${rowNumber}: máximo 3 imágenes`);
+    });
+    return errors;
+  };
+
+  const processExcelImport = async () => {
+    if (!importFile) return;
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        const errors = validateExcelData(jsonData);
+        if (errors.length > 0) {
+          setAlertMessage(`Errores:\n${errors.slice(0, 10).join('\n')}`);
           setIsAlertModalOpen(true);
           setIsImporting(false);
           return;
         }
-        
-        let successCount = 0;
-        let errorCount = 0;
+        let successCount = 0, errorCount = 0;
         const errorDetails = [];
-        
-        // Procesar cada producto
         for (const [index, row] of jsonData.entries()) {
           try {
-            // Procesar URLs de imágenes
-            const imageUrls = row.imageUrls 
-              ? row.imageUrls.split(',').map(url => url.trim()).filter(url => url)
-              : [];
-            
-            const productData = {
+            const imageUrls = row.imageUrls ? row.imageUrls.split(',').map(u => u.trim()).filter(u => u) : [];
+            await addDoc(collection(db, 'productos'), {
               nombre: row.nombre?.toString().trim(),
               descripcion: row.descripcionPuntos?.toString().trim() || '',
               descripcionPuntos: row.descripcionPuntos?.toString().trim() || '',
@@ -742,368 +680,266 @@ const processExcelImport = async () => {
               stockActual: parseInt(row.stockActual || 0),
               stockReferencialUmbral: parseInt(row.stockReferencialUmbral || 4),
               ubicacion: row.ubicacion?.toString().trim() || '',
-              imageUrls: imageUrls,
-              imageUrl: imageUrls.length > 0 ? imageUrls[0] : '', // Compatibilidad con campo anterior
+              imageUrls,
+              imageUrl: imageUrls[0] || '',
               modelosCompatiblesTexto: row.modelosCompatiblesTexto?.toString().trim() || '',
               modelosCompatiblesIds: [],
               color: row.color?.toString().trim() || '',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
-            };
-            
-            await addDoc(collection(db, 'productos'), productData);
+            });
             successCount++;
-          } catch (error) {
+          } catch (err) {
             errorCount++;
-            errorDetails.push(`Fila ${index + 1}: ${error.message}`);
-            console.error(`Error al importar fila ${index + 1}:`, error);
+            errorDetails.push(`Fila ${index + 1}: ${err.message}`);
           }
         }
-        
-        // Actualizar lista de productos
-        await fetchProductos();
-        
-        // Mostrar resultados
-        const resultMessage = `Importación completada:\n✅ ${successCount} productos importados exitosamente\n${errorCount > 0 ? `❌ ${errorCount} errores` : ''}${errorDetails.length > 0 ? '\n\nPrimeros errores:\n' + errorDetails.slice(0, 5).join('\n') : ''}`;
-        
-        setImportResults({
-          success: successCount,
-          errors: errorCount,
-          details: errorDetails
-        });
-        
-        setAlertMessage(resultMessage);
+        // Invalidar cache y recargar tras importar
+        invalidateCache('productos');
+        filtersChanged.current = true;
+        await fetchProductos(true);
+        setAlertMessage(`Importación completa:\n✅ ${successCount} importados${errorCount > 0 ? `\n❌ ${errorCount} errores` : ''}`);
         setIsAlertModalOpen(true);
         setIsImportModalOpen(false);
-        
-      } catch (error) {
-        console.error('Error al procesar el archivo:', error);
-        setAlertMessage('Error al procesar el archivo Excel. Verifique que el formato sea correcto.');
+      } catch (err) {
+        setAlertMessage('Error al procesar el archivo Excel.');
         setIsAlertModalOpen(true);
       } finally {
         setIsImporting(false);
       }
     };
     reader.readAsArrayBuffer(importFile);
-    
-  } catch (error) {
-    console.error('Error en la importación:', error);
-    setAlertMessage('Error durante la importación. Intente de nuevo.');
-    setIsAlertModalOpen(true);
-    setIsImporting(false);
-  }
-};
+  };
 
-// Función para descargar la plantilla Excel
-const downloadExcelTemplate = () => {
-  const templateData = [
-    {
+  const downloadExcelTemplate = () => {
+    const templateData = [{
       nombre: 'Ejemplo Producto 1',
-      descripcionPuntos: '- Característica 1\n- Característica 2\n- Característica 3',
-      medida: '1.2m',
-      marca: 'YAMAHA',
-      codigoTienda: 'PROD001',
-      codigoProveedor: 'YAM-001',
-      precioCompraDefault: 25.50,
-      precioVentaDefault: 45.00,
-      precioVentaMinimo: 35.00,
-      stockActual: 50,
-      stockReferencialUmbral: 5,
-      ubicacion: 'A-1-3',
-      imageUrls: 'https://ejemplo.com/img1.jpg,https://ejemplo.com/img2.jpg',
-      modelosCompatiblesTexto: 'YBR 125, FZ-16, XTZ 125',
-      color: 'Negro'
-    }
-  ];
+      descripcionPuntos: '- Característica 1\n- Característica 2',
+      medida: '1.2m', marca: 'YAMAHA',
+      codigoTienda: 'PROD001', codigoProveedor: 'YAM-001',
+      precioCompraDefault: 25.50, precioVentaDefault: 45.00, precioVentaMinimo: 35.00,
+      stockActual: 50, stockReferencialUmbral: 5,
+      ubicacion: 'A-1-3', imageUrls: 'https://ejemplo.com/img1.jpg',
+      modelosCompatiblesTexto: 'YBR 125, FZ-16', color: 'Negro'
+    }];
+    const emptyTemplate = [{ nombre: '', descripcionPuntos: '', medida: '', marca: '', codigoTienda: '', codigoProveedor: '', precioCompraDefault: '', precioVentaDefault: '', precioVentaMinimo: '', stockActual: '', stockReferencialUmbral: '', ubicacion: '', imageUrls: '', modelosCompatiblesTexto: '', color: '' }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(emptyTemplate), 'Plantilla');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(templateData), 'Ejemplos');
+    XLSX.writeFile(wb, 'plantilla_productos.xlsx');
+  };
 
-  // Crear plantilla vacía
-  const emptyTemplate = [{
-    nombre: '',
-    descripcionPuntos: '',
-    medida: '',
-    marca: '',
-    codigoTienda: '',
-    codigoProveedor: '',
-    precioCompraDefault: '',
-    precioVentaDefault: '',
-    precioVentaMinimo: '',
-    stockActual: '',
-    stockReferencialUmbral: '',
-    ubicacion: '',
-    imageUrls: '',
-    modelosCompatiblesTexto: '',
-    color: ''
-  }];
-
-  const wb = XLSX.utils.book_new();
-  
-  // Hoja para llenar
-  const ws1 = XLSX.utils.json_to_sheet(emptyTemplate);
-  XLSX.utils.book_append_sheet(wb, ws1, 'Plantilla');
-  
-  // Hoja de ejemplos
-  const ws2 = XLSX.utils.json_to_sheet(templateData);
-  XLSX.utils.book_append_sheet(wb, ws2, 'Ejemplos');
-
-  XLSX.writeFile(wb, 'plantilla_productos.xlsx');
-};
-
+  // ── ImportExcelModal ──────────────────────────────────────────────────────
   const ImportExcelModal = ({ isOpen, onClose }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-      <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-        <div className="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-            <div className="sm:flex sm:items-start">
-              <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">
-                  Importar Productos desde Excel
-                </h3>
-                
-                <div className="space-y-4">
-                  {/* Botón para descargar plantilla */}
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-blue-900 mb-2">Paso 1: Descargar Plantilla</h4>
-                    <p className="text-blue-700 mb-3">Primero descarga la plantilla Excel con el formato correcto:</p>
-                    <button
-                      onClick={downloadExcelTemplate}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      📥 Descargar Plantilla Excel
-                    </button>
-                  </div>
-
-                  {/* Seleccionar archivo */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-2">Paso 2: Seleccionar Archivo</h4>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={handleFileSelect}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                  </div>
-
-                  {/* Previsualización */}
-                  {previewData.length > 0 && (
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <h4 className="font-semibold text-green-900 mb-2">Vista Previa (primeros 5 registros):</h4>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-xs">
-                          <thead>
-                            <tr className="bg-gray-200">
-                              <th className="px-2 py-1 text-left">Nombre</th>
-                              <th className="px-2 py-1 text-left">Marca</th>
-                              <th className="px-2 py-1 text-left">Precio Compra</th>
-                              <th className="px-2 py-1 text-left">Precio Venta</th>
-                              <th className="px-2 py-1 text-left">Stock</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewData.map((row, index) => (
-                              <tr key={index} className="border-b">
-                                <td className="px-2 py-1">{row.nombre || 'N/A'}</td>
-                                <td className="px-2 py-1">{row.marca || 'N/A'}</td>
-                                <td className="px-2 py-1">{row.precioCompraDefault || 'N/A'}</td>
-                                <td className="px-2 py-1">{row.precioVentaDefault || 'N/A'}</td>
-                                <td className="px-2 py-1">{row.stockActual || 'N/A'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="text-green-700 text-sm mt-2">
-                        Se encontraron {previewData.length} registros. ¿Los datos se ven correctos?
-                      </p>
+    if (!isOpen) return null;
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          <div className="fixed inset-0 bg-gray-500 bg-opacity-75" />
+          <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+          <div className="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+            <div className="bg-white px-6 py-5">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Importar Productos desde Excel</h3>
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 mb-2">Paso 1: Descargar Plantilla</h4>
+                  <button onClick={downloadExcelTemplate} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">
+                    📥 Descargar Plantilla Excel
+                  </button>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-gray-900 mb-2">Paso 2: Seleccionar Archivo</h4>
+                  <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                </div>
+                {previewData.length > 0 && (
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-green-900 mb-2">Vista Previa (primeros 5 registros):</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs">
+                        <thead><tr className="bg-gray-200">
+                          <th className="px-2 py-1 text-left">Nombre</th>
+                          <th className="px-2 py-1 text-left">Marca</th>
+                          <th className="px-2 py-1 text-left">P. Compra</th>
+                          <th className="px-2 py-1 text-left">P. Venta</th>
+                          <th className="px-2 py-1 text-left">Stock</th>
+                        </tr></thead>
+                        <tbody>{previewData.map((row, i) => (
+                          <tr key={i} className="border-b">
+                            <td className="px-2 py-1">{row.nombre || 'N/A'}</td>
+                            <td className="px-2 py-1">{row.marca || 'N/A'}</td>
+                            <td className="px-2 py-1">{row.precioCompraDefault || 'N/A'}</td>
+                            <td className="px-2 py-1">{row.precioVentaDefault || 'N/A'}</td>
+                            <td className="px-2 py-1">{row.stockActual || 'N/A'}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
                     </div>
-                  )}
-
-                  {/* Instrucciones */}
-                  <div className="bg-yellow-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-yellow-900 mb-2">Instrucciones importantes:</h4>
-                    <ul className="text-yellow-800 text-sm space-y-1">
-                      <li>• Los campos obligatorios son: nombre, marca, precioCompraDefault, precioVentaDefault, precioVentaMinimo, stockActual</li>
-                      <li>• Los precios deben ser números decimales (ej: 25.50)</li>
-                      <li>• El stock debe ser un número entero</li>
-                      <li>• Para múltiples imágenes, separe las URLs con comas (máximo 3)</li>
-                      <li>• El precio mínimo no puede ser mayor al precio de venta</li>
-                      <li>• Esta operación no se puede deshacer</li>
-                    </ul>
                   </div>
+                )}
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-yellow-900 mb-2">Instrucciones:</h4>
+                  <ul className="text-yellow-800 text-sm space-y-1">
+                    <li>• Obligatorios: nombre, marca, precioCompraDefault, precioVentaDefault, precioVentaMinimo, stockActual</li>
+                    <li>• Los precios deben ser decimales (ej: 25.50), el stock entero</li>
+                    <li>• Máximo 3 URLs de imágenes separadas por comas</li>
+                    <li>• El precio mínimo no puede superar el precio de venta</li>
+                  </ul>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-            <button
-              type="button"
-              className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
-              onClick={processExcelImport}
-              disabled={!importFile || isImporting}
-            >
-              {isImporting ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Importando...
-                </>
-              ) : (
-                'Importar Productos'
-              )}
-            </button>
-            <button
-              type="button"
-              className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-              onClick={onClose}
-              disabled={isImporting}
-            >
-              Cancelar
-            </button>
+            <div className="bg-gray-50 px-6 py-3 flex flex-row-reverse gap-2">
+              <button onClick={processExcelImport} disabled={!importFile || isImporting}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2">
+                {isImporting && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
+                {isImporting ? 'Importando...' : 'Importar Productos'}
+              </button>
+              <button onClick={onClose} disabled={isImporting}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50">
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <Layout title="Gestión de Productos">
       <div className="flex flex-col mx-4 py-4">
         <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-              <span className="block sm:inline">{error}</span>
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
             </div>
           )}
 
-{/* Sección de Filtros y Botones */}
-<div className="mb-4 border border-gray-200 rounded-lg p-3 bg-gray-50 flex-shrink-0">
-  
-  {/* Fila 1: Filtros */}
-  <div className="flex flex-wrap items-end gap-3 mb-3">
-    <div className="flex-grow min-w-[160px]">
-      <label className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
-      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterNombre} onChange={(e) => setFilterNombre(e.target.value)} placeholder="Nombre..." />
-    </div>
-    <div className="w-32">
-      <label className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
-      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterCodigoTienda} onChange={(e) => setFilterCodigoTienda(e.target.value)} placeholder="Cód. Tienda..." />
-    </div>
-    <div className="w-36">
-      <label className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
-      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterCodigoProveedor} onChange={(e) => setFilterCodigoProveedor(e.target.value)} placeholder="Cód. Proveedor..." />
-    </div>
-    <div className="w-28">
-      <label className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
-      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterMarca} onChange={(e) => setFilterMarca(e.target.value)} placeholder="Marca..." />
-    </div>
-    <div className="w-36">
-      <label className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
-      <input type="text" className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={filterModelosCompatibles} onChange={(e) => setFilterModelosCompatibles(e.target.value)} placeholder="Ej: Yamaha..." />
-    </div>
-    <div className="w-24">
-      <label className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR</label>
-      <select className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-        value={productsPerPage} onChange={(e) => { setProductsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
-        <option value={10}>10</option>
-        <option value={20}>20</option>
-        <option value={50}>50</option>
-        <option value={100}>100</option>
-      </select>
-    </div>
-    <button onClick={handleClearFilters}
-      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 self-end">
-      <ArrowPathIcon className="h-4 w-4 mr-1" /> Limpiar
-    </button>
-  </div>
+          {/* ── Filtros y botones ── */}
+          <div className="mb-4 border border-gray-200 rounded-lg p-3 bg-gray-50 flex-shrink-0">
 
-  {/* Fila 2: Botones */}
-  <div className="flex flex-wrap items-center gap-2">
-    {isAdmin && (
-      <button onClick={() => router.push('/productos/nuevo')}
-        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-        <PlusIcon className="h-4 w-4 mr-1" /> Agregar Producto
-      </button>
-    )}
-    <button onClick={actualizarTodosLosPrecios} disabled={updatingPrices}
-      className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
-      {updatingPrices
-        ? <svg className="animate-spin h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
-        : <CurrencyDollarIcon className="h-4 w-4 mr-1" />}
-      {updatingPrices ? 'Actualizando...' : 'Act. Precios'}
-    </button>
-    {isAdmin && (
-      <button onClick={() => setIsImportModalOpen(true)} title="Importar productos desde Excel"
-        className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700">
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        Importar Excel
-      </button>
-    )}
-  </div>
+            {/* Fila 1: Filtros */}
+            <div className="flex flex-wrap items-end gap-3 mb-3">
+              <div className="flex-grow min-w-[160px]">
+                <label className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
+                <input type="text"
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filterNombre} onChange={e => setFilterNombre(e.target.value)} placeholder="Nombre..." />
+              </div>
+              <div className="w-32">
+                <label className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
+                <input type="text"
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filterCodigoTienda} onChange={e => setFilterCodigoTienda(e.target.value)} placeholder="Cód. Tienda..." />
+              </div>
+              <div className="w-36">
+                <label className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
+                <input type="text"
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filterCodigoProveedor} onChange={e => setFilterCodigoProveedor(e.target.value)} placeholder="Cód. Proveedor..." />
+              </div>
+              <div className="w-28">
+                <label className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
+                <input type="text"
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filterMarca} onChange={e => setFilterMarca(e.target.value)} placeholder="Marca..." />
+              </div>
+              <div className="w-36">
+                <label className="block text-xs font-medium text-gray-700 mb-1">M COMPATIBLES</label>
+                <input type="text"
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filterModelosCompatibles} onChange={e => setFilterModelosCompatibles(e.target.value)} placeholder="Ej: Yamaha..." />
+              </div>
+              <div className="w-24">
+                <label className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR</label>
+                <select
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={productsPerPage}
+                  onChange={e => { setProductsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+              <button onClick={handleClearFilters}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 self-end">
+                <ArrowPathIcon className="h-4 w-4 mr-1" /> Limpiar
+              </button>
+            </div>
 
-</div>
+            {/* Fila 2: Botones de acción */}
+            <div className="flex flex-wrap items-center gap-2">
+              {isAdmin && (
+                <button onClick={() => router.push('/productos/nuevo')}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                  <PlusIcon className="h-4 w-4 mr-1" /> Agregar Producto
+                </button>
+              )}
+              <button onClick={actualizarTodosLosPrecios} disabled={updatingPrices}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                {updatingPrices
+                  ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1" />Actualizando...</>
+                  : <><CurrencyDollarIcon className="h-4 w-4 mr-1" />Act. Precios</>}
+              </button>
+              {isAdmin && (
+                <button onClick={() => setIsImportModalOpen(true)}
+                  className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700">
+                  <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Importar Excel
+                </button>
+              )}
+              {/* Indicador total en cache */}
+              {totalProductos > 0 && (
+                <span className="text-xs text-gray-400 ml-auto">
+                  {totalProductos} productos cargados
+                  {filteredProductos.length !== totalProductos && ` · ${filteredProductos.length} filtrados`}
+                </span>
+              )}
+            </div>
+          </div>
 
-          {/* Tabla de Productos */}
+          {/* ── Tabla ── */}
           {loading ? (
-            <div className="flex justify-center items-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="flex flex-col justify-center items-center h-64 gap-3">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+              <p className="text-sm text-gray-500">Cargando productos...</p>
             </div>
           ) : filteredProductos.length === 0 ? (
-            <p className="p-4 text-center text-gray-500">No se encontraron productos que coincidan con los filtros aplicados.</p>
+            <p className="p-4 text-center text-gray-500">No se encontraron productos que coincidan con los filtros.</p>
           ) : (
             <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto max-h-[65vh]">
               <table className="min-w-full border-collapse">
                 <thead className="sticky top-0 z-10 bg-gray-100">
                   <tr>
-                    <th 
-                      scope="col" 
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
                       onClick={() => handleSort('codigoTienda')}>
-                      C. TIENDA
-                      {getSortIcon('codigoTienda')}
+                      C. TIENDA {getSortIcon('codigoTienda')}
                     </th>
-                    <th 
-                      scope="col" 
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
                       onClick={() => handleSort('nombre')}>
-                      NOMBRE
-                      {getSortIcon('nombre')}
+                      NOMBRE {getSortIcon('nombre')}
                     </th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MARCA</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">C. Proveedor</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MARCA</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">C. PROVEEDOR</th>
                     <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COLOR</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MEDIDA</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">UBICACION</th>
-                    <th 
-                      scope="col" 
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
-                      onClick={() => handleSort('stockActual')}
-                    >
-                      STOCK
-                      {getSortIcon('stockActual')}
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MEDIDA</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">UBICACION</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
+                      onClick={() => handleSort('stockActual')}>
+                      STOCK {getSortIcon('stockActual')}
                     </th>
-                    {isAdmin && (<> <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th></>)}
-                                        <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA (S/.)</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
+                    {isAdmin && (
+                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th>
+                    )}
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA (S/.)</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -1112,90 +948,65 @@ const downloadExcelTemplate = () => {
                     const rowBgClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                     const textColorClass = lowStock ? 'text-red-600 font-semibold' : 'text-black';
                     const priceNeedsUpdate = needsPriceUpdate(producto);
-                    
+
                     return (
                       <tr key={producto.id} className={rowBgClass}>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.codigoTienda}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-left ${textColorClass}`}>
-                          {producto.nombre}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.marca || 'N/A'}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.codigoProveedor}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.color || 'N/A'}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.medida || 'N/A'}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.ubicacion || 'N/A'}
-                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>{producto.codigoTienda}</td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-left ${textColorClass}`}>{producto.nombre}</td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>{producto.marca || 'N/A'}</td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>{producto.codigoProveedor}</td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>{producto.color || 'N/A'}</td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>{producto.medida || 'N/A'}</td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>{producto.ubicacion || 'N/A'}</td>
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-semibold text-center ${textColorClass}`}>
                           {producto.stockActual}
                           {lowStock && <span className="ml-1 text-red-500">⚠</span>}
                         </td>
-                        {isAdmin && (<> <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass} relative`}>
-                          <div className="flex items-center justify-center">
-                            <span>S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}</span>
-                            {priceNeedsUpdate && (
-                              <ExclamationTriangleIcon 
-                                className="h-4 w-4 ml-1 text-orange-500" 
-                                title="Precio podría estar desactualizado - Recalcular basado en lotes FIFO"
-                              />
-                            )}
-                          </div>
-                        </td></>)}
+                        {isAdmin && (
+                          <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
+                            <div className="flex items-center justify-center gap-1">
+                              S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
+                              {priceNeedsUpdate && (
+                                <ExclamationTriangleIcon className="h-4 w-4 text-orange-500" title="Precio podría estar desactualizado" />
+                              )}
+                            </div>
+                          </td>
+                        )}
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
                           S/. {parseFloat(producto.precioVentaMinimo || 0).toFixed(2)}
                         </td>
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
                           S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
                         </td>
-                        <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-left text-sm font-medium">
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium">
                           <div className="flex items-center space-x-1 justify-center">
-                            <button
-                              onClick={() => openImageModal(producto)}
+                            <button onClick={() => openImageModal(producto)}
                               className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100"
                               title="Ver Imágenes"
-                              disabled={!producto.imageUrl && (!producto.imageUrls || producto.imageUrls.length === 0)}
-                            >
+                              disabled={!producto.imageUrl && (!producto.imageUrls || producto.imageUrls.length === 0)}>
                               <PhotoIcon className="h-5 w-5" />
                             </button>
-                            <button
-                              onClick={() => openProductModelsModal(producto)}
+                            <button onClick={() => openProductModelsModal(producto)}
                               className="text-purple-600 hover:text-purple-900 p-1 rounded-full hover:bg-gray-100"
                               title="Ver Modelos Compatibles"
-                              disabled={!producto.modelosCompatiblesTexto || producto.modelosCompatiblesTexto.trim() === ''}
-                            >
+                              disabled={!producto.modelosCompatiblesTexto || producto.modelosCompatiblesTexto.trim() === ''}>
                               <ListBulletIcon className="h-5 w-5" />
                             </button>
-                            <button
-                              onClick={() => openProductDetailsModal(producto)}
+                            <button onClick={() => openProductDetailsModal(producto)}
                               className="text-emerald-600 hover:text-emerald-900 p-1 rounded-full hover:bg-gray-100"
-                              title="Ver Detalles Completos"
-                            >
+                              title="Ver Detalles">
                               <EyeIcon className="h-5 w-5" />
                             </button>
                             {isAdmin && (
                               <>
-                                <button
-                                  onClick={() => router.push(`/productos/${producto.id}`)}
+                                <button onClick={() => router.push(`/productos/${producto.id}`)}
                                   className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-gray-100"
-                                  title="Editar Producto"
-                                >
+                                  title="Editar">
                                   <PencilIcon className="h-5 w-5" />
                                 </button>
-                                <button
-                                  onClick={() => confirmDelete(producto.id)}
+                                <button onClick={() => confirmDelete(producto.id)}
                                   className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
-                                  title="Eliminar Producto"
-                                >
+                                  title="Eliminar">
                                   <TrashIcon className="h-5 w-5" />
                                 </button>
                               </>
@@ -1210,29 +1021,22 @@ const downloadExcelTemplate = () => {
             </div>
           )}
 
-
-          {/* Controles de paginación */}
+          {/* ── Paginación ── */}
           {filteredProductos.length > productsPerPage && (
             <div className="flex justify-between items-center mt-4">
               <p className="text-sm text-gray-700">
-                Mostrando <span className="font-medium">{indexOfFirstProduct + 1}</span> a <span className="font-medium">{Math.min(indexOfLastProduct, filteredProductos.length)}</span> de <span className="font-medium">{filteredProductos.length}</span> resultados
+                Mostrando <span className="font-medium">{indexOfFirstProduct + 1}</span> a{' '}
+                <span className="font-medium">{Math.min(indexOfLastProduct, filteredProductos.length)}</span> de{' '}
+                <span className="font-medium">{filteredProductos.length}</span> resultados
               </p>
               <div className="flex space-x-2">
-                <button
-                  onClick={goToPrevPage}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
                   <ChevronLeftIcon className="h-5 w-5" />
                 </button>
-                <span className="px-3 py-1 text-sm text-gray-700">
-                      Página {currentPage} de {totalPages}
-                    </span>
-                <button
-                  onClick={goToNextPage}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                <span className="px-3 py-1 text-sm text-gray-700">Página {currentPage} de {totalPages}</span>
+                <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
                   <ChevronRightIcon className="h-5 w-5" />
                 </button>
               </div>
@@ -1241,22 +1045,18 @@ const downloadExcelTemplate = () => {
         </div>
       </div>
 
-      {/* Modales */}
+      {/* ── Modales ── */}
       {isImageModalOpen && (
-        <ImageModal 
-          imageUrl={selectedProductForDetails?.imageUrl} 
-          imageUrls={selectedProductForDetails?.imageUrls} 
-          onClose={closeImageModal} 
+        <ImageModal
+          imageUrl={selectedProductForDetails?.imageUrl}
+          imageUrls={selectedProductForDetails?.imageUrls}
+          onClose={closeImageModal}
         />
       )}
       {isAdmin && (
-        <ImportExcelModal 
-          isOpen={isImportModalOpen} 
-          onClose={() => {
-            setIsImportModalOpen(false);
-            setImportFile(null);
-            setPreviewData([]);
-          }} 
+        <ImportExcelModal
+          isOpen={isImportModalOpen}
+          onClose={() => { setIsImportModalOpen(false); setImportFile(null); setPreviewData([]); }}
         />
       )}
       <ProductDetailsModal isOpen={isProductDetailsModalOpen} onClose={closeProductDetailsModal} product={selectedProductForDetails} />
