@@ -1,351 +1,274 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
-import { collection, query, where, onSnapshot, doc, getDocs, orderBy } from 'firebase/firestore';
-import { ArrowLeftIcon, ShoppingBagIcon, ChevronDownIcon, ChevronUpIcon, ChevronLeftIcon, ChevronRightIcon, CalendarIcon, ArrowTrendingDownIcon, ExclamationTriangleIcon, MinusCircleIcon } from '@heroicons/react/24/outline';
+import { collection, query, where, onSnapshot, doc, getDocs } from 'firebase/firestore';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { Calendar } from '../../../components/ui/calendar';
+import {
+  ArrowLeftIcon, ShoppingBagIcon, ChevronDownIcon, ChevronUpIcon,
+  ChevronLeftIcon, ChevronRightIcon, CalendarIcon, ExclamationTriangleIcon,
+  XMarkIcon, CreditCardIcon, BanknotesIcon
+} from '@heroicons/react/24/outline';
 
 const ComprasPage = () => {
   const router = useRouter();
   const { id } = router.query;
   const { user } = useAuth();
+
   const [cliente, setCliente] = useState(null);
   const [ventas, setVentas] = useState([]);
-  const [devoluciones, setDevoluciones] = useState([]); // NUEVO: Estado para devoluciones
+  const [devoluciones, setDevoluciones] = useState([]);
   const [ventasFiltradas, setVentasFiltradas] = useState([]);
-  const [devolucionesFiltradas, setDevolucionesFiltradas] = useState([]); // NUEVO
+  const [devolucionesFiltradas, setDevolucionesFiltradas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // Estados para filtros de tiempo
-  const [filterPeriod, setFilterPeriod] = useState('all');
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
-  const [totalPeriodo, setTotalPeriodo] = useState(0);
-  const [totalDevoluciones, setTotalDevoluciones] = useState(0); // NUEVO
-  const [totalReal, setTotalReal] = useState(0); // NUEVO: Total real (ventas - devoluciones)
-  
-  // Estado para controlar qué venta está expandida para ver los detalles de los productos
-  const [expandedVentaId, setExpandedVentaId] = useState(null);
-  
-  // Estados para la paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const [limitPerPage, setLimitPerPage] = useState(10);
 
-  // Redirigir si el usuario no está autenticado
+  const [filterPeriod, setFilterPeriod] = useState('all');
+  const [dateRange, setDateRange] = useState({ start: null, end: null });
+  const [totalPeriodo, setTotalPeriodo] = useState(0);
+  const [totalDevoluciones, setTotalDevoluciones] = useState(0);
+  const [totalReal, setTotalReal] = useState(0);
+
+  const [expandedVentaId, setExpandedVentaId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [limitPerPage, setLimitPerPage] = useState(20);
+
+  // ── DatePickerPopover (igual que index ventas) ──────────
+  const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
+    const [open, setOpen] = useState(false);
+    const [month, setMonth] = useState(selected || new Date());
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handler = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handler);
+      return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 6 }, (_, i) => currentYear - 3 + i);
+
+    return (
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen(prev => !prev)}
+          className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg bg-white text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 whitespace-nowrap shadow-sm"
+        >
+          <CalendarIcon className="h-4 w-4 text-gray-400" />
+          {selected
+            ? format(selected, 'dd/MM/yyyy', { locale: es })
+            : <span className="text-gray-400">{placeholder}</span>
+          }
+        </button>
+
+        {open && (
+          <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl">
+            <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
+              <button
+                onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                <select
+                  value={month.getMonth()}
+                  onChange={(e) => setMonth(m => new Date(m.getFullYear(), parseInt(e.target.value), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {meses.map((mes, i) => <option key={i} value={i}>{mes}</option>)}
+                </select>
+                <select
+                  value={month.getFullYear()}
+                  onChange={(e) => setMonth(m => new Date(parseInt(e.target.value), m.getMonth(), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <button
+                onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <Calendar
+              mode="single"
+              selected={selected}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={(date) => { if (date) { onChange(date); setOpen(false); } }}
+              disabled={minDate ? { before: minDate } : undefined}
+              captionLayout="label"
+              classNames={{ month_caption: "hidden", nav: "hidden" }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
   useEffect(() => {
-    if (!user) {
-      router.push('/auth');
-    }
+    if (!user) { router.push('/auth'); return; }
   }, [user, router]);
 
-  // Función para obtener fechas de rango según el período
+  // ── Filtrado ─────────────────────────────────────────────
   const getDateRange = (period) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
     switch (period) {
-      case 'day':
-        return {
-          start: today,
-          end: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
-        };
-      case 'week':
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - today.getDay());
-        const endOfWeek = new Date(startOfWeek);
-        endOfWeek.setDate(startOfWeek.getDate() + 6);
-        endOfWeek.setHours(23, 59, 59, 999);
-        return { start: startOfWeek, end: endOfWeek };
-      case 'month':
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        endOfMonth.setHours(23, 59, 59, 999);
-        return { start: startOfMonth, end: endOfMonth };
-      case 'year':
-        const startOfYear = new Date(now.getFullYear(), 0, 1);
-        const endOfYear = new Date(now.getFullYear(), 11, 31);
-        endOfYear.setHours(23, 59, 59, 999);
-        return { start: startOfYear, end: endOfYear };
-      case 'custom':
-        return {
-          start: startDate || new Date(2000, 0, 1),
-          end: endDate || new Date()
-        };
-      default:
-        return null;
+      case 'day': return { start: today, end: new Date(today.getTime() + 86400000 - 1) };
+      case 'week': {
+        const s = new Date(today); s.setDate(today.getDate() - today.getDay());
+        const e = new Date(s); e.setDate(s.getDate() + 6); e.setHours(23,59,59,999);
+        return { start: s, end: e };
+      }
+      case 'month': {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1);
+        const e = new Date(now.getFullYear(), now.getMonth() + 1, 0); e.setHours(23,59,59,999);
+        return { start: s, end: e };
+      }
+      case 'year': {
+        const s = new Date(now.getFullYear(), 0, 1);
+        const e = new Date(now.getFullYear(), 11, 31); e.setHours(23,59,59,999);
+        return { start: s, end: e };
+      }
+      case 'custom': return { start: dateRange.start, end: dateRange.end };
+      default: return null;
     }
   };
 
-  // FUNCIÓN ACTUALIZADA: Filtrar ventas y devoluciones por período
-  const filterVentasByPeriod = () => {
-    if (filterPeriod === 'all') {
-      setVentasFiltradas(ventas);
-      setDevolucionesFiltradas(devoluciones);
-      
-      const totalVentas = ventas.reduce((sum, venta) => sum + parseFloat(venta.totalVenta || 0), 0);
-      const totalDevs = devoluciones.reduce((sum, dev) => sum + parseFloat(dev.montoADevolver || 0), 0);
-      
-      setTotalPeriodo(totalVentas);
-      setTotalDevoluciones(totalDevs);
-      setTotalReal(totalVentas - totalDevs);
-      return;
-    }
-
-    const dateRange = getDateRange(filterPeriod);
-    if (!dateRange) {
-      setVentasFiltradas(ventas);
-      setDevolucionesFiltradas(devoluciones);
-      
-      const totalVentas = ventas.reduce((sum, venta) => sum + parseFloat(venta.totalVenta || 0), 0);
-      const totalDevs = devoluciones.reduce((sum, dev) => sum + parseFloat(dev.montoADevolver || 0), 0);
-      
-      setTotalPeriodo(totalVentas);
-      setTotalDevoluciones(totalDevs);
-      setTotalReal(totalVentas - totalDevs);
-      return;
-    }
-
-    // Filtrar ventas
-    const filteredVentas = ventas.filter(venta => {
-      if (!venta.fechaVenta) return false;
-      const fechaVenta = venta.fechaVenta;
-      return fechaVenta >= dateRange.start && fechaVenta <= dateRange.end;
-    });
-
-    // Filtrar devoluciones
-    const filteredDevoluciones = devoluciones.filter(devolucion => {
-      if (!devolucion.fechaProcesamiento) return false;
-      const fechaDevolucion = devolucion.fechaProcesamiento;
-      return fechaDevolucion >= dateRange.start && fechaDevolucion <= dateRange.end;
-    });
-
-    setVentasFiltradas(filteredVentas);
-    setDevolucionesFiltradas(filteredDevoluciones);
-    
-    const totalVentas = filteredVentas.reduce((sum, venta) => sum + parseFloat(venta.totalVenta || 0), 0);
-    const totalDevs = filteredDevoluciones.reduce((sum, dev) => sum + parseFloat(dev.montoADevolver || 0), 0);
-    
-    setTotalPeriodo(totalVentas);
-    setTotalDevoluciones(totalDevs);
-    setTotalReal(totalVentas - totalDevs);
-  };
-
-  // FUNCIÓN NUEVA: Obtener devoluciones de una venta específica
-  const getDevolucionesDeVenta = (numeroVenta) => {
-    return devolucionesFiltradas.filter(dev => dev.numeroVenta === numeroVenta && dev.estado === 'aprobada');
-  };
-
-  // FUNCIÓN NUEVA: Calcular total real de una venta (después de devoluciones)
-  const getTotalRealVenta = (venta) => {
-    const devolucionesVenta = getDevolucionesDeVenta(venta.numeroVenta);
-    const totalDevoluciones = devolucionesVenta.reduce((sum, dev) => sum + parseFloat(dev.montoADevolver || 0), 0);
-    return parseFloat(venta.totalVenta || 0) - totalDevoluciones;
-  };
-
-  // FUNCIÓN NUEVA: Verificar si una venta tiene devoluciones
-  const ventaTieneDevoluciones = (numeroVenta) => {
-    return getDevolucionesDeVenta(numeroVenta).length > 0;
-  };
-
-  // Aplicar filtros cuando cambien las ventas, devoluciones o el período
   useEffect(() => {
-    filterVentasByPeriod();
+    let fv = [...ventas];
+    let fd = [...devoluciones];
+
+    if (filterPeriod !== 'all') {
+      const range = getDateRange(filterPeriod);
+      if (range?.start && range?.end) {
+        fv = fv.filter(v => v.fechaVenta && v.fechaVenta >= range.start && v.fechaVenta <= range.end);
+        fd = fd.filter(d => d.fechaProcesamiento && d.fechaProcesamiento >= range.start && d.fechaProcesamiento <= range.end);
+      }
+    }
+
+    setVentasFiltradas(fv);
+    setDevolucionesFiltradas(fd);
+    const tv = fv.reduce((s, v) => s + parseFloat(v.totalVenta || 0), 0);
+    const td = fd.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
+    setTotalPeriodo(tv);
+    setTotalDevoluciones(td);
+    setTotalReal(tv - td);
     setCurrentPage(1);
     setExpandedVentaId(null);
-  }, [ventas, devoluciones, filterPeriod, startDate, endDate]);
+  }, [ventas, devoluciones, filterPeriod, dateRange]);
 
-  // Manejador para cambio de período
-  const handleFilterChange = (period) => {
-    setFilterPeriod(period);
-    if (period !== 'custom') {
-      setStartDate(null);
-      setEndDate(null);
-    }
+  // ── Listeners ────────────────────────────────────────────
+  useEffect(() => {
+    if (!id || !user) return;
+    setLoading(true);
+
+    const unsubCliente = onSnapshot(doc(db, 'cliente', id), (snap) => {
+      if (snap.exists()) setCliente({ id: snap.id, ...snap.data() });
+      else { setError('Cliente no encontrado.'); setCliente(null); }
+    });
+
+    const unsubVentas = onSnapshot(
+      query(collection(db, 'ventas'), where('clienteId', '==', id)),
+      async (snap) => {
+        const lista = await Promise.all(snap.docs.map(async (d) => {
+          const items = (await getDocs(collection(d.ref, 'itemsVenta'))).docs.map(i => ({ id: i.id, ...i.data() }));
+          return { id: d.id, ...d.data(), fechaVenta: d.data().fechaVenta?.toDate() || null, items };
+        }));
+        lista.sort((a, b) => b.fechaVenta - a.fechaVenta);
+        setVentas(lista);
+        setLoading(false);
+      },
+      (err) => { setError('Error al cargar ventas: ' + err.message); setLoading(false); }
+    );
+
+    const unsubDev = onSnapshot(
+      query(collection(db, 'devoluciones'), where('clienteId', '==', id)),
+      (snap) => {
+        const lista = snap.docs.map(d => ({
+          id: d.id, ...d.data(),
+          fechaProcesamiento: d.data().fechaProcesamiento?.toDate() || null,
+        })).sort((a, b) => (b.fechaProcesamiento || 0) - (a.fechaProcesamiento || 0));
+        setDevoluciones(lista);
+      }
+    );
+
+    return () => { unsubCliente(); unsubVentas(); unsubDev(); };
+  }, [id, user]);
+
+  // ── Helpers ──────────────────────────────────────────────
+  const getDevolucionesDeVenta = (numeroVenta) =>
+    devolucionesFiltradas.filter(d => d.numeroVenta === numeroVenta && d.estado === 'aprobada');
+
+  const getTotalRealVenta = (venta) => {
+    const devs = getDevolucionesDeVenta(venta.numeroVenta);
+    return parseFloat(venta.totalVenta || 0) - devs.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
   };
 
-  // Función para obtener el texto del período actual
+  const formatCurrency = (amount) =>
+    new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(amount || 0);
+
   const getPeriodText = () => {
     switch (filterPeriod) {
       case 'day': return 'hoy';
       case 'week': return 'esta semana';
       case 'month': return 'este mes';
       case 'year': return 'este año';
-      case 'custom': 
-        if (startDate && endDate) {
-          return `del ${startDate.toLocaleDateString('es-ES')} al ${endDate.toLocaleDateString('es-ES')}`;
-        } else if (startDate) {
-          return `desde el ${startDate.toLocaleDateString('es-ES')}`;
-        } else if (endDate) {
-          return `hasta el ${endDate.toLocaleDateString('es-ES')}`;
-        }
+      case 'custom':
+        if (dateRange.start && dateRange.end)
+          return `${format(dateRange.start,'dd/MM/yyyy',{locale:es})} – ${format(dateRange.end,'dd/MM/yyyy',{locale:es})}`;
         return 'período personalizado';
       default: return 'todas las fechas';
     }
   };
 
-  // Manejador para expandir/colapsar los detalles de una venta
-  const handleToggleExpand = (ventaId) => {
-    setExpandedVentaId(expandedVentaId === ventaId ? null : ventaId);
+  // ── Paginación ───────────────────────────────────────────
+  const totalPages = Math.ceil(ventasFiltradas.length / limitPerPage);
+  const indexOfLast = currentPage * limitPerPage;
+  const indexOfFirst = indexOfLast - limitPerPage;
+  const ventasPaginadas = ventasFiltradas.slice(indexOfFirst, indexOfLast);
+
+  const handleFilterChange = (period) => {
+    setFilterPeriod(period);
+    if (period !== 'custom') setDateRange({ start: null, end: null });
   };
 
-  // EFECTO ACTUALIZADO: Cargar datos del cliente, ventas Y devoluciones
-  useEffect(() => {
-    if (!id || !user) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setExpandedVentaId(null);
-    setCurrentPage(1);
-
-    // Listener para los datos del cliente
-    const clienteRef = doc(db, 'cliente', id);
-    const unsubscribeCliente = onSnapshot(clienteRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setCliente({ id: docSnap.id, ...docSnap.data() });
-      } else {
-        console.error("Cliente no encontrado.");
-        setError("Cliente no encontrado.");
-        setCliente(null);
-      }
-    }, (err) => {
-      console.error("Error al escuchar el cliente:", err);
-      setError("Error al cargar la información del cliente. " + err.message);
-    });
-
-    // Listener para las ventas del cliente
-    const qVentas = query(collection(db, 'ventas'), where('clienteId', '==', id));
-    const unsubscribeVentas = onSnapshot(qVentas, async (querySnapshot) => {
-      const ventasWithItemsPromises = querySnapshot.docs.map(async (docVenta) => {
-        const ventaData = {
-          id: docVenta.id,
-          ...docVenta.data(),
-          fechaVenta: docVenta.data().fechaVenta?.toDate() || null,
-        };
-
-        const itemsVentaSnapshot = await getDocs(collection(docVenta.ref, 'itemsVenta'));
-        const items = itemsVentaSnapshot.docs.map(docItem => ({
-          id: docItem.id,
-          ...docItem.data()
-        }));
-
-        return { ...ventaData, items };
-      });
-
-      const ventasList = await Promise.all(ventasWithItemsPromises);
-      ventasList.sort((a, b) => b.fechaVenta - a.fechaVenta);
-      
-      setVentas(ventasList);
-      
-      // Solo marcar loading como false cuando ambas consultas estén completas
-      if (ventasList.length > 0) {
-        // Las devoluciones se cargan por separado
-      } else {
-        setLoading(false);
-      }
-    }, (err) => {
-      console.error("Error al escuchar las ventas:", err);
-      setError("Error al cargar las ventas del cliente. " + err.message);
-      setVentas([]);
-      setLoading(false);
-    });
-
-    // NUEVO: Listener para las devoluciones del cliente
-    const unsubscribeDevoluciones = onSnapshot(
-      query(collection(db, 'devoluciones'), where('clienteId', '==', id)),
-      (querySnapshot) => {
-        const devolucionesList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          fechaProcesamiento: doc.data().fechaProcesamiento?.toDate() || null,
-        }));
-
-        devolucionesList.sort((a, b) => (b.fechaProcesamiento || new Date(0)) - (a.fechaProcesamiento || new Date(0)));
-        
-        setDevoluciones(devolucionesList);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error al escuchar las devoluciones:", err);
-        // No marcar como error crítico, las devoluciones son opcionales
-        setDevoluciones([]);
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      unsubscribeCliente();
-      unsubscribeVentas();
-      unsubscribeDevoluciones(); // NUEVO
-    };
-
-  }, [id, user]);
-
-  // Resetear a la primera página cuando cambie el límite por página
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [limitPerPage]);
-
-  // Calcular datos de paginación usando ventas filtradas
-  const totalVentas = ventasFiltradas.length;
-  const totalPages = Math.ceil(totalVentas / limitPerPage);
-  const startIndex = (currentPage - 1) * limitPerPage;
-  const endIndex = startIndex + limitPerPage;
-  const ventasPaginadas = ventasFiltradas.slice(startIndex, endIndex);
-
-  // Funciones de navegación de páginas
-  const goToPage = (page) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-      setExpandedVentaId(null);
-    }
-  };
-
-  const goToPreviousPage = () => {
-    if (currentPage > 1) {
-      goToPage(currentPage - 1);
-    }
-  };
-
-  const goToNextPage = () => {
-    if (currentPage < totalPages) {
-      goToPage(currentPage + 1);
-    }
-  };
-
-  // FUNCIÓN NUEVA: Formatear moneda
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('es-PE', {
-      style: 'currency',
-      currency: 'PEN'
-    }).format(amount || 0);
-  };
-
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <Layout title={`Compras de ${cliente?.nombre || 'Cliente'}`}>
       <div className="flex flex-col mx-4 py-4">
-        <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
-          {/* Encabezado de la página */}
-          <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
-            <div className="flex items-center">
-              <ShoppingBagIcon className="h-8 w-8 text-indigo-600 mr-2" />
-              <h1 className="text-xl font-bold text-gray-700">
-                Historial de Compras de {cliente ? `${cliente.nombre} ${cliente.apellido}` : '...'}
-              </h1>
+        <div className="w-full p-6 bg-white rounded-lg shadow-md flex flex-col">
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-100 p-2 rounded-xl">
+                <ShoppingBagIcon className="h-7 w-7 text-indigo-600" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-800">
+                  {cliente ? `${cliente.nombre} ${cliente.apellido}` : '...'}
+                </h1>
+                <p className="text-sm text-gray-500">Historial de compras</p>
+              </div>
             </div>
             <button
               onClick={() => router.push('/clientes')}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition"
             >
-              <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
-              Volver a Clientes
+              <ArrowLeftIcon className="-ml-1 mr-2 h-4 w-4" />
+              Volver
             </button>
           </div>
 
@@ -356,348 +279,282 @@ const ComprasPage = () => {
           )}
 
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-              <span className="block sm:inline">{error}</span>
+            <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg mb-4">
+              {error}
             </div>
           )}
 
           {!loading && !error && (
             <>
-              {/* Filtros de tiempo */}
-              <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                  <div className="flex items-center space-x-4 flex-wrap">
-                    {/* Botones de período */}
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleFilterChange('all')}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          filterPeriod === 'all'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      >
-                        Todas
-                      </button>
-                      <button
-                        onClick={() => handleFilterChange('day')}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          filterPeriod === 'day'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      >
-                        Hoy
-                      </button>
-                      <button
-                        onClick={() => handleFilterChange('week')}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          filterPeriod === 'week'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      >
-                        Esta Semana
-                      </button>
-                      <button
-                        onClick={() => handleFilterChange('month')}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          filterPeriod === 'month'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      >
-                        Este Mes
-                      </button>
-                      <button
-                        onClick={() => handleFilterChange('year')}
-                        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                          filterPeriod === 'year'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                      >
-                        Este Año
-                      </button>
-                    </div>
+              {/* Panel de filtros */}
+              <div className="mb-6 border border-gray-200 rounded-xl p-4 bg-gray-50">
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  {/* Botones período */}
+                  {[
+                    { key: 'all', label: 'Todas' },
+                    { key: 'day',  label: 'Hoy' },
+                    { key: 'week', label: 'Esta Semana' },
+                    { key: 'month',label: 'Este Mes' },
+                    { key: 'year', label: 'Este Año' },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => handleFilterChange(key)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${
+                        filterPeriod === key
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
 
-                    {/* Selectores de fecha personalizados */}
-                    <div className="flex space-x-2 items-center">
-                      <CalendarIcon className="h-4 w-4 text-gray-500" />
-                      <input
-                        type="date"
-                        value={startDate ? startDate.toISOString().split('T')[0] : ''}
-                        onChange={(e) => {
-                          setStartDate(e.target.value ? new Date(e.target.value) : null);
-                          setFilterPeriod('custom');
-                        }}
-                        className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        placeholder="Fecha inicio"
-                      />
-                      <span className="text-gray-500">-</span>
-                      <input
-                        type="date"
-                        value={endDate ? endDate.toISOString().split('T')[0] : ''}
-                        onChange={(e) => {
-                          setEndDate(e.target.value ? new Date(e.target.value) : null);
-                          setFilterPeriod('custom');
-                        }}
-                        className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        placeholder="Fecha fin"
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Limitador por página */}
-                  <select
-                    className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                    value={limitPerPage}
-                    onChange={(e) => setLimitPerPage(Number(e.target.value))}
+                  {/* Date pickers */}
+                  <DatePickerPopover
+                    selected={dateRange.start}
+                    onChange={(date) => {
+                      const d = new Date(date); d.setHours(0,0,0,0);
+                      setDateRange(prev => ({ ...prev, start: d }));
+                      setFilterPeriod('custom');
+                    }}
+                    placeholder="Fecha inicio"
+                  />
+                  <DatePickerPopover
+                    selected={dateRange.end}
+                    onChange={(date) => {
+                      const d = new Date(date); d.setHours(23,59,59,999);
+                      setDateRange(prev => ({ ...prev, end: d }));
+                      setFilterPeriod('custom');
+                    }}
+                    placeholder="Fecha fin"
+                    minDate={dateRange.start}
+                  />
+
+                  {/* Limpiar */}
+                  <button
+                    onClick={() => { handleFilterChange('all'); }}
+                    className="inline-flex items-center px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 border border-red-200 transition"
                   >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
+                    <XMarkIcon className="h-4 w-4 mr-1" />
+                    Limpiar
+                  </button>
+
+                  {/* Límite */}
+                  <div className="ml-auto">
+                    <select
+                      className="px-3 py-1.5 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                      value={limitPerPage}
+                      onChange={(e) => { setLimitPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* RESUMEN ACTUALIZADO del período con devoluciones */}
-                {totalVentas > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
-                      <p className="text-sm text-gray-600">
-                        Mostrando <span className="font-medium">{totalVentas}</span> compras {getPeriodText()}
-                        {devolucionesFiltradas.length > 0 && (
-                          <span className="text-orange-600 ml-2">
-                            • <span className="font-medium">{devolucionesFiltradas.length}</span> devoluciones
-                          </span>
-                        )}
-                      </p>
-                      <div className="flex items-center space-x-4">
-
-                        {/* Total real */}
-                        <div className="bg-green-100 px-3 py-1 rounded-full">
-                          <p className="text-sm font-bold text-green-800">
-                            Total real {getPeriodText()}: <span className="text-lg">{formatCurrency(totalReal)}</span>
-                          </p>
-                        </div>
+                {/* Tarjetas de resumen */}
+                {ventasFiltradas.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-200">
+                    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-col">
+                      <span className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Compras</span>
+                      <span className="text-2xl font-bold text-gray-800">{ventasFiltradas.length}</span>
+                      <span className="text-xs text-gray-400 mt-0.5">{getPeriodText()}</span>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex flex-col">
+                      <span className="text-xs text-blue-600 font-medium uppercase tracking-wide mb-1">Total Compras</span>
+                      <span className="text-xl font-bold text-blue-800">{formatCurrency(totalPeriodo)}</span>
+                      <span className="text-xs text-blue-400 mt-0.5">bruto</span>
+                    </div>
+                    {totalDevoluciones > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex flex-col">
+                        <span className="text-xs text-red-600 font-medium uppercase tracking-wide mb-1">Devoluciones</span>
+                        <span className="text-xl font-bold text-red-700">-{formatCurrency(totalDevoluciones)}</span>
+                        <span className="text-xs text-red-400 mt-0.5">{devolucionesFiltradas.length} devoluciones</span>
                       </div>
+                    )}
+                    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex flex-col">
+                      <span className="text-xs text-green-600 font-medium uppercase tracking-wide mb-1">Total Real</span>
+                      <span className="text-xl font-bold text-green-700">{formatCurrency(totalReal)}</span>
+                      <span className="text-xs text-green-400 mt-0.5">neto</span>
                     </div>
                   </div>
                 )}
               </div>
-                
 
               {ventasFiltradas.length === 0 ? (
-                <p className="p-4 text-center text-gray-500">
-                  {filterPeriod === 'all' 
-                    ? 'Este cliente aún no ha realizado compras.' 
-                    : `No hay compras registradas ${getPeriodText()}.`
-                  }
-                </p>
+                <div className="text-center py-16 text-gray-400">
+                  <ShoppingBagIcon className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                  <p className="text-lg font-medium">
+                    {filterPeriod === 'all' ? 'Este cliente aún no ha realizado compras.' : `No hay compras ${getPeriodText()}.`}
+                  </p>
+                </div>
               ) : (
                 <>
-                  <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
+                  {/* Indicador */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2 flex items-center gap-2">
+                      <span className="text-sm text-indigo-600 font-medium">Mostrando:</span>
+                      <span className="text-lg font-bold text-indigo-800">{ventasFiltradas.length} compras</span>
+                    </div>
+                  </div>
+
+                  {/* Tabla */}
+                  <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-xl overflow-y-auto max-h-[60vh]">
                     <table className="min-w-full border-collapse">
                       <thead className="bg-gray-50 sticky top-0 z-10">
                         <tr>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"></th>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE VENTA</th>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL ORIGINAL</th>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">DEVUELTO</th>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL REAL</th>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MÉTODO DE PAGO</th>
-                          <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center w-10"></th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° VENTA</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL ORIGINAL</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">DEVUELTO</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL REAL</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MÉTODO PAGO</th>
+                          <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white">
                         {ventasPaginadas.map((venta, index) => {
                           const devolucionesVenta = getDevolucionesDeVenta(venta.numeroVenta);
-                          const totalDevolucionesVenta = devolucionesVenta.reduce((sum, dev) => sum + parseFloat(dev.montoADevolver || 0), 0);
+                          const totalDevsVenta = devolucionesVenta.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
                           const totalRealVenta = getTotalRealVenta(venta);
-                          const tieneDevolucion = ventaTieneDevoluciones(venta.numeroVenta);
-                          
+                          const tieneDevolucion = devolucionesVenta.length > 0;
+                          const isExpanded = expandedVentaId === venta.id;
+
                           return (
                             <>
-                              <tr 
-                                key={venta.id} 
-                                className={`
-                                  ${expandedVentaId === venta.id 
-                                    ? 'bg-blue-50 border-2 border-blue-200' 
-                                    : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                                  } 
-                                  ${tieneDevolucion ? 'border-l-4 border-l-red-400' : ''}
-                                  hover:bg-gray-100 transition-colors
-                                `}
+                              <tr
+                                key={venta.id}
+                                className={`${
+                                  isExpanded ? 'bg-indigo-50 border-l-4 border-l-indigo-400' :
+                                  tieneDevolucion ? 'border-l-4 border-l-red-400 ' + (index % 2 === 0 ? 'bg-white' : 'bg-gray-50') :
+                                  index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                } hover:bg-indigo-50 transition-colors`}
                               >
-                                {/* Celda para el botón de expansión */}
-                                <td className="border border-gray-300 w-10 px-1 py-2 text-sm text-black text-center">
+                                <td className="border border-gray-300 px-2 py-2 text-center">
                                   {venta.items?.length > 0 && (
-                                    <button 
-                                      onClick={() => handleToggleExpand(venta.id)} 
-                                      className={`focus:outline-none p-1 rounded ${expandedVentaId === venta.id ? 'bg-blue-200' : ''}`}
+                                    <button
+                                      onClick={() => setExpandedVentaId(isExpanded ? null : venta.id)}
+                                      className={`p-1 rounded-lg transition ${isExpanded ? 'bg-indigo-200 text-indigo-700' : 'text-gray-400 hover:bg-gray-100'}`}
                                     >
-                                      {expandedVentaId === venta.id ? (
-                                        <ChevronUpIcon className="h-5 w-5 text-blue-600" />
-                                      ) : (
-                                        <ChevronDownIcon className="h-5 w-5 text-gray-500" />
-                                      )}
+                                      {isExpanded
+                                        ? <ChevronUpIcon className="h-4 w-4" />
+                                        : <ChevronDownIcon className="h-4 w-4" />
+                                      }
                                     </button>
                                   )}
                                 </td>
-                                
-                                {/* Fecha de venta */}
-                                <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center ${expandedVentaId === venta.id ? 'font-bold' : ''}`}>
-                                  {venta.fechaVenta ? venta.fechaVenta.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A'}
+                                <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-center">
+                                  {venta.fechaVenta
+                                    ? format(venta.fechaVenta, 'dd/MM/yyyy HH:mm', { locale: es })
+                                    : 'N/A'}
                                 </td>
-                                
-                                {/* Total original */}
-                                <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center font-bold ${tieneDevolucion ? 'line-through text-gray-500' : ''}`}>
+                                <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-mono text-gray-700 text-center">
+                                  {venta.numeroVenta || 'N/A'}
+                                </td>
+                                <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center font-semibold ${tieneDevolucion ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                                   {formatCurrency(venta.totalVenta)}
                                 </td>
-                                
-                                {/* Monto devuelto */}
                                 <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
-                                  {tieneDevolucion ? (
-                                    <span className="text-red-600 font-bold">
-                                      -{formatCurrency(totalDevolucionesVenta)}
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-400">-</span>
-                                  )}
+                                  {tieneDevolucion
+                                    ? <span className="text-red-600 font-bold">-{formatCurrency(totalDevsVenta)}</span>
+                                    : <span className="text-gray-300">—</span>
+                                  }
                                 </td>
-                                
-                                {/* Total real */}
-                                <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center font-bold ${
-                                  tieneDevolucion ? 'text-green-600' : 'text-black'
-                                }`}>
+                                <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center font-bold ${tieneDevolucion ? 'text-green-600' : 'text-gray-800'}`}>
                                   {formatCurrency(totalRealVenta)}
                                 </td>
-                                
-                                {/* Método de pago */}
-                                <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center ${expandedVentaId === venta.id ? 'font-semibold' : ''}`}>
-                                  {venta.metodoPago || 'N/A'}
+                                <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                    {venta.metodoPago?.toUpperCase() || 'N/A'}
+                                  </span>
                                 </td>
-                                
-                                {/* Estado */}
                                 <td className="border border-gray-300 px-3 py-2 text-center">
-                                  {tieneDevolucion ? (
-                                    <div className="flex flex-col items-center space-y-1">
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                        CON DEVOLUCIÓN
-                                      </span>
-                                      {devolucionesVenta.map((dev, idx) => (
-                                        <span key={idx} className="inline-flex items-center px-1 py-0.5 rounded text-xs bg-red-100 text-red-700">
-                                          {formatCurrency(dev.montoADevolver)}
-                                        </span>
-                                      ))}
-                                    </div>
+                                  {venta.estado === 'anulada' ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">ANULADA</span>
+                                  ) : tieneDevolucion ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">CON DEVOLUCIÓN</span>
                                   ) : (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      COMPLETA
-                                    </span>
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">COMPLETA</span>
                                   )}
                                 </td>
                               </tr>
-                              
-                              {/* Fila expandible para mostrar los detalles de la compra */}
-                              {expandedVentaId === venta.id && venta.items && (
-                                <tr>
-                                  <td colSpan="7" className="border-0 p-0">
-                                    <div className="bg-gradient-to-r from-blue-100 via-blue-50 to-blue-100 border-l-4 border-blue-400 mx-2 mb-2 rounded-lg shadow-inner">
-                                      <div className="p-4">
-                                        {/* Header con información de la venta seleccionada */}
-                                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-blue-200">
-                                          <h4 className="text-sm font-bold text-blue-800">
-                                            Productos comprados el {venta.fechaVenta ? venta.fechaVenta.toLocaleDateString('es-ES', { 
-                                              weekday: 'long',
-                                              day: '2-digit', 
-                                              month: 'long', 
-                                              year: 'numeric' 
-                                            }) : 'N/A'}
+
+                              {/* Fila expandida */}
+                              {isExpanded && venta.items && (
+                                <tr key={`${venta.id}-expanded`}>
+                                  <td colSpan="8" className="border-0 p-0">
+                                    <div className="bg-gradient-to-r from-indigo-50 via-white to-indigo-50 border-l-4 border-indigo-400 mx-2 mb-2 mt-0 rounded-b-xl shadow-inner">
+                                      <div className="p-5">
+                                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-indigo-200">
+                                          <h4 className="text-sm font-bold text-indigo-800">
+                                            Productos — {venta.fechaVenta ? format(venta.fechaVenta, "EEEE d 'de' MMMM yyyy", { locale: es }) : 'N/A'}
                                           </h4>
-                                          
-                                          {/* Mostrar información de devoluciones en el detalle */}
                                           {tieneDevolucion && (
-                                            <div className="bg-red-100 px-3 py-1 rounded-full border border-red-300">
-                                              <p className="text-xs font-bold text-red-800">
-                                                Devuelto: {formatCurrency(totalDevolucionesVenta)}
-                                              </p>
-                                            </div>
+                                            <span className="bg-red-100 border border-red-300 text-red-800 text-xs font-bold px-3 py-1 rounded-full">
+                                              Devuelto: {formatCurrency(totalDevsVenta)}
+                                            </span>
                                           )}
                                         </div>
-                                        
-                                        {/* Información adicional de devoluciones */}
+
+                                        {/* Devoluciones detalle */}
                                         {tieneDevolucion && (
                                           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                            <h5 className="text-xs font-bold text-red-800 mb-2 flex items-center">
-                                              <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
-                                              Devoluciones Aplicadas ({devolucionesVenta.length})
+                                            <h5 className="text-xs font-bold text-red-800 mb-2 flex items-center gap-1">
+                                              <ExclamationTriangleIcon className="h-4 w-4" />
+                                              Devoluciones ({devolucionesVenta.length})
                                             </h5>
                                             <div className="space-y-1">
-                                              {devolucionesVenta.map((devolucion, devIdx) => (
-                                                <div key={devIdx} className="flex items-center justify-between text-xs">
+                                              {devolucionesVenta.map((dev, i) => (
+                                                <div key={i} className="flex justify-between text-xs">
                                                   <span className="text-red-700">
-                                                    {devolucion.fechaProcesamiento?.toLocaleDateString('es-PE')} - {devolucion.metodoPagoOriginal?.toUpperCase()}
+                                                    {dev.fechaProcesamiento ? format(dev.fechaProcesamiento, 'dd/MM/yyyy', { locale: es }) : ''} — {dev.metodoPagoOriginal?.toUpperCase()}
                                                   </span>
-                                                  <span className="font-bold text-red-800">
-                                                    -{formatCurrency(devolucion.montoADevolver)}
-                                                  </span>
+                                                  <span className="font-bold text-red-800">-{formatCurrency(dev.montoADevolver)}</span>
                                                 </div>
                                               ))}
                                             </div>
                                           </div>
                                         )}
-                                        
-                                        {/* Tabla de productos */}
+
+                                        {/* Tabla de items */}
                                         <div className="overflow-x-auto rounded-lg">
                                           <table className="min-w-full border-collapse bg-white shadow-sm rounded-lg overflow-hidden">
-                                            <thead className="bg-blue-200">
+                                            <thead className="bg-indigo-100">
                                               <tr>
-                                                <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-left">Producto</th>
-                                                <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-center">Cantidad</th>
-                                                <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-center">Precio Unitario</th>
-                                                <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-center">Subtotal</th>
+                                                <th className="border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 text-left">Producto</th>
+                                                <th className="border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 text-center">Cant.</th>
+                                                <th className="border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 text-center">P. Unitario</th>
+                                                <th className="border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 text-center">Subtotal</th>
                                               </tr>
                                             </thead>
                                             <tbody>
-                                              {venta.items.map((item, itemIndex) => (
-                                                <tr key={itemIndex} className={itemIndex % 2 === 0 ? 'bg-white' : 'bg-blue-25'}>
-                                                  <td className="border border-blue-200 px-3 py-2 text-sm text-gray-800 font-medium">{item.nombreProducto}</td>
-                                                  <td className="border border-blue-200 px-3 py-2 text-sm text-gray-700 text-center">{item.cantidad}</td>
-                                                  <td className="border border-blue-200 px-3 py-2 text-sm text-gray-700 text-center">{formatCurrency(item.precioVentaUnitario || 0)}</td>
-                                                  <td className="border border-blue-200 px-3 py-2 text-sm text-gray-800 text-center font-semibold">{formatCurrency((parseFloat(item.cantidad) * parseFloat(item.precioVentaUnitario)))}</td>
+                                              {venta.items.map((item, i) => (
+                                                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-indigo-50/30'}>
+                                                  <td className="border border-indigo-100 px-3 py-2 text-sm text-gray-800 font-medium">{item.nombreProducto}</td>
+                                                  <td className="border border-indigo-100 px-3 py-2 text-sm text-gray-700 text-center">{item.cantidad}</td>
+                                                  <td className="border border-indigo-100 px-3 py-2 text-sm text-gray-700 text-center">{formatCurrency(item.precioVentaUnitario || 0)}</td>
+                                                  <td className="border border-indigo-100 px-3 py-2 text-sm font-semibold text-gray-800 text-center">{formatCurrency(parseFloat(item.cantidad) * parseFloat(item.precioVentaUnitario || 0))}</td>
                                                 </tr>
                                               ))}
                                             </tbody>
-                                            
-                                            {/* Footer con totales */}
-                                            <tfoot className="bg-blue-100">
+                                            <tfoot className="bg-indigo-100">
                                               <tr>
-                                                <td colSpan="3" className="border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800 text-right">
-                                                  Total Original:
-                                                </td>
-                                                <td className="border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800 text-center">
-                                                  {formatCurrency(venta.totalVenta)}
-                                                </td>
+                                                <td colSpan="3" className="border border-indigo-200 px-3 py-2 text-sm font-bold text-indigo-800 text-right">Total Original:</td>
+                                                <td className="border border-indigo-200 px-3 py-2 text-sm font-bold text-indigo-800 text-center">{formatCurrency(venta.totalVenta)}</td>
                                               </tr>
                                               {tieneDevolucion && (
                                                 <>
                                                   <tr>
-                                                    <td colSpan="3" className="border border-blue-300 px-3 py-2 text-sm font-bold text-red-700 text-right">
-                                                      Total Devuelto:
-                                                    </td>
-                                                    <td className="border border-blue-300 px-3 py-2 text-sm font-bold text-red-700 text-center">
-                                                      -{formatCurrency(totalDevolucionesVenta)}
-                                                    </td>
+                                                    <td colSpan="3" className="border border-indigo-200 px-3 py-2 text-sm font-bold text-red-700 text-right">Total Devuelto:</td>
+                                                    <td className="border border-indigo-200 px-3 py-2 text-sm font-bold text-red-700 text-center">-{formatCurrency(totalDevsVenta)}</td>
                                                   </tr>
                                                   <tr>
-                                                    <td colSpan="3" className="border border-blue-300 px-3 py-2 text-sm font-bold text-green-700 text-right">
-                                                      Total Real:
-                                                    </td>
-                                                    <td className="border border-blue-300 px-3 py-2 text-sm font-bold text-green-700 text-center">
-                                                      {formatCurrency(totalRealVenta)}
-                                                    </td>
+                                                    <td colSpan="3" className="border border-indigo-200 px-3 py-2 text-sm font-bold text-green-700 text-right">Total Real:</td>
+                                                    <td className="border border-indigo-200 px-3 py-2 text-sm font-bold text-green-700 text-center">{formatCurrency(totalRealVenta)}</td>
                                                   </tr>
                                                 </>
                                               )}
@@ -716,68 +573,31 @@ const ComprasPage = () => {
                     </table>
                   </div>
 
-                  {/* Controles de paginación inferiores */}
-                  {totalPages > 1 && (
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg">
-                      <div className="text-sm text-gray-700">
-                        Página {currentPage} de {totalPages}
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
+                  {/* Paginación igual que ventas */}
+                  {ventasFiltradas.length > limitPerPage && (
+                    <div className="flex justify-between items-center mt-4">
+                      <p className="text-sm text-gray-700">
+                        Mostrando <span className="font-medium">{indexOfFirst + 1}</span> a{' '}
+                        <span className="font-medium">{Math.min(indexOfLast, ventasFiltradas.length)}</span> de{' '}
+                        <span className="font-medium">{ventasFiltradas.length}</span> resultados
+                      </p>
+                      <div className="flex space-x-2">
                         <button
-                          onClick={goToPreviousPage}
+                          onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                           disabled={currentPage === 1}
-                          className={`inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md ${
-                            currentPage === 1
-                              ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                              : 'text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                          }`}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <ChevronLeftIcon className="h-5 w-5 mr-1" />
-                          Anterior
+                          <ChevronLeftIcon className="h-5 w-5" />
                         </button>
-
-                        {/* Números de página */}
-                        <div className="flex gap-1">
-                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (totalPages <= 5) {
-                              pageNum = i + 1;
-                            } else if (currentPage <= 3) {
-                              pageNum = i + 1;
-                            } else if (currentPage >= totalPages - 2) {
-                              pageNum = totalPages - 4 + i;
-                            } else {
-                              pageNum = currentPage - 2 + i;
-                            }
-
-                            return (
-                              <button
-                                key={pageNum}
-                                onClick={() => goToPage(pageNum)}
-                                className={`px-3 py-2 text-sm font-medium rounded-md ${
-                                  currentPage === pageNum
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                                }`}
-                              >
-                                {pageNum}
-                              </button>
-                            );
-                          })}
-                        </div>
-
+                        <span className="px-3 py-1 text-sm text-gray-700">
+                          Página {currentPage} de {totalPages}
+                        </span>
                         <button
-                          onClick={goToNextPage}
+                          onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
                           disabled={currentPage === totalPages}
-                          className={`inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md ${
-                            currentPage === totalPages
-                              ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                              : 'text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                          }`}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Siguiente
-                          <ChevronRightIcon className="h-5 w-5 ml-1" />
+                          <ChevronRightIcon className="h-5 w-5" />
                         </button>
                       </div>
                     </div>
@@ -790,6 +610,6 @@ const ComprasPage = () => {
       </div>
     </Layout>
   );
-}
+};
 
 export default ComprasPage;
