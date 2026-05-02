@@ -780,6 +780,14 @@ const VentasIndexPage = () => {
     cargarDevoluciones();
   }, [user, dateRange, limitPerPage]); 
 
+  // Sincronizar totalVentasPeriodo con ventas en tiempo real
+  useEffect(() => {
+    if (ventas.length > 0) {
+      // Si el total en Firestore es menor que lo que tenemos cargado, actualizar
+      setTotalVentasPeriodo(prev => Math.max(prev, ventas.length));
+    }
+  }, [ventas]);
+
   // 1. Función para determinar el estado de devolución de una venta
   const getEstadoDevolucion = (venta) => {
     const numeroVenta = venta.numeroVenta || getDisplaySaleNumber(venta);
@@ -1009,7 +1017,13 @@ const VentasIndexPage = () => {
               
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => router.push('/ventas/nueva')}
+                  onClick={() => {
+                    // Limpiar searchTerm del caché antes de navegar
+                    // para que al volver no aparezca el nombre buscado
+                    setSearchTerm('');
+                    setFilteredVentas(ventas);
+                    router.push('/ventas/nueva');
+                  }}
                   className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
                 >
                   <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
@@ -1197,14 +1211,14 @@ const VentasIndexPage = () => {
           ) : (
             <>
             {/* Indicador de total de ventas en el período */}
-          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex items-center gap-2">
                 <span className="text-sm text-blue-600 font-medium">
                   Total en período:
                 </span>
                 <span className="text-lg font-bold text-blue-800">
-                  {totalVentasPeriodo} ventas
+                  {Math.max(totalVentasPeriodo, filteredVentas.length)} ventas
                 </span>
               </div>
             </div>

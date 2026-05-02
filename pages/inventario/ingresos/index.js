@@ -85,13 +85,16 @@ const IngresosPage = () => {
       return;
     }
 
-    // Si el cache es válido y los filtros no cambiaron, no re-fetchar
-    if (getCache('ingresos') && !filtersChanged.current) {
-      return;
-    }
+    // ── GUARD DE CACHE ──────────────────────────────────────
+    const hayCacheValido = getCache('ingresos') && !filtersChanged.current;
 
-    // Resetear la bandera
     filtersChanged.current = false;
+
+    // Si hay caché, no mostramos spinner pero igual nos suscribimos al onSnapshot
+    if (!hayCacheValido) {
+      setLoading(true);
+    }
+    setError(null);
 
     if (filterPeriod === 'custom' && (!dateRange.start || !dateRange.end)) return;
 
