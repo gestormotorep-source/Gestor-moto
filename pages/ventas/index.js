@@ -103,17 +103,14 @@ const VentasIndexPage = () => {
   if (!user) { router.push('/auth'); return; }
 
   // ── GUARD DE CACHE ──────────────────────────────────────
-  if (getCache('ventas') && !filtersChanged.current) {
-    // Solo saltamos el fetch si NO es un estado especial de devolución
-    if (selectedEstado !== 'devuelta' && selectedEstado !== 'parcial') {
-      setLoading(false);
-      return; // ← ESTE RETURN ES LO QUE FALTABA
-    }
-  }
-  // ────────────────────────────────────────────────────────
+  const hayCacheValido = getCache('ventas') && !filtersChanged.current
+  && selectedEstado !== 'devuelta' && selectedEstado !== 'parcial';
 
   filtersChanged.current = false;
-  setLoading(true);
+
+  if (!hayCacheValido) {
+    setLoading(true);
+  }
   setError(null);
 
     let constraints = [];
