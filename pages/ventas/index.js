@@ -59,17 +59,10 @@ const VentasIndexPage = () => {
   const [searchProducto, setSearchProducto] = useState('');
   const [isSearchingProducto, setIsSearchingProducto] = useState(false);
   const [productosEncontradosMap, setProductosEncontradosMap] = useState({});
-  const [searchPending, setSearchPending] = useState(() => {
-    const cachedTerm = cached?.filtros?.searchTerm;
-    const cachedFiltered = cached?.filtros?.filteredVentas;
-    // Si hay term Y ya hay resultados cacheados para él → no necesita rebuscar
-    if (cachedTerm && cachedFiltered && cachedFiltered.length > 0) return false;
-    // Si hay term pero no hay resultados cacheados → sí necesita buscar
-    return !!cachedTerm;
-  });
+  const [searchPending, setSearchPending] = useState(false);
 
   const [ventas, setVentas] = useState(cached?.data || []);
-  const [filteredVentas, setFilteredVentas] = useState(cached?.filtros?.filteredVentas || cached?.data || []);
+  const [filteredVentas, setFilteredVentas] = useState(cached?.data || []);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState(cached?.filtros?.searchTerm || '');
@@ -403,20 +396,11 @@ const VentasIndexPage = () => {
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
-      const currentCache = getCache('ventas');
-      if (currentCache) {
-        const cachedTerm = cached?.filtros?.searchTerm;
-        const cachedFiltered = cached?.filtros?.filteredVentas;
-
-        if (cachedTerm && cachedTerm === searchTerm && cachedFiltered?.length > 0) {
-          setFilteredVentas(cachedFiltered);
-          setSearchPending(false);
-          return;
-        }
-        if (!searchTerm.trim()) {
-          setSearchPending(false);
-          return;
-        }
+      // Ya no restauramos filteredVentas desde caché
+      // Se reconstruirá cuando llegue ventas del onSnapshot
+      if (!searchTerm.trim()) {
+        setSearchPending(false);
+        return;
       }
     }
 
@@ -607,7 +591,6 @@ const VentasIndexPage = () => {
     if (ventas.length > 0) {
       setCache('ventas', ventas, {
         searchTerm,
-        filteredVentas,
         filterPeriod,
         dateRange,
         limitPerPage,
