@@ -93,21 +93,23 @@ const VentasIndexPage = () => {
   const ventasPerPage = 20;
 
   useEffect(() => {
-  if (!user) { router.push('/auth'); return; }
+    if (!user) { router.push('/auth'); return; }
 
-  // ── GUARD DE CACHE ──────────────────────────────────────
-  const hayCacheValido = getCache('ventas') && !filtersChanged.current
-  && selectedEstado !== 'devuelta' && selectedEstado !== 'parcial';
+    const hayCacheValido = getCache('ventas') && !filtersChanged.current
+      && selectedEstado !== 'devuelta' && selectedEstado !== 'parcial';
 
-  filtersChanged.current = false;
-
-  if (!hayCacheValido) {
-    setLoading(true);
-  }
-  setError(null);
+    filtersChanged.current = false;
+    if (!hayCacheValido) setLoading(true);
+    setError(null);
 
     let constraints = [];
     const { start, end } = dateRange;
+
+    // ── CLAVE: solo aplicar limit cuando el período NO es "hoy" ──
+    // Para "hoy" no limitamos porque son pocas ventas y necesitamos
+    // que el onSnapshot capture TODAS las que lleguen en tiempo real
+    const esHoy = filterPeriod === 'day';
+    const limitActual = esHoy ? 500 : limitPerPage; // 500 es techo seguro para un día
 
     if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
       constraints = [
@@ -117,7 +119,7 @@ const VentasIndexPage = () => {
           where('fechaVenta', '<=', Timestamp.fromDate(end)),
         ] : []),
         orderBy('fechaVenta', 'desc'),
-        limit(limitPerPage)
+        limit(limitActual)
       ];
     } else if (start && end) {
       if (selectedEstado !== 'all') {
@@ -126,46 +128,54 @@ const VentasIndexPage = () => {
           where('fechaVenta', '>=', Timestamp.fromDate(start)),
           where('fechaVenta', '<=', Timestamp.fromDate(end)),
           orderBy('fechaVenta', 'desc'),
-          limit(limitPerPage)
+          limit(limitActual)
         ];
       } else {
         constraints = [
           where('fechaVenta', '>=', Timestamp.fromDate(start)),
           where('fechaVenta', '<=', Timestamp.fromDate(end)),
           orderBy('fechaVenta', 'desc'),
-          limit(limitPerPage)
+          limit(limitActual)
         ];
       }
     } else {
       constraints = selectedEstado !== 'all'
-        ? [where('estado', '==', selectedEstado), orderBy('fechaVenta', 'desc'), limit(limitPerPage)]
-        : [orderBy('fechaVenta', 'desc'), limit(limitPerPage)];
+        ? [where('estado', '==', selectedEstado), orderBy('fechaVenta', 'desc'), limit(limitActual)]
+        : [orderBy('fechaVenta', 'desc'), limit(limitActual)];
     }
 
     const q = query(collection(db, 'ventas'), ...constraints);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ventasList = [];
-      const ventasToUpdate = [];
+    const ventasList = [];
+    const ventasToUpdate = [];
 
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data();
-        const ventaData = {
-          id: docSnap.id,
-          ...data,
-          fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
-          fechaVentaFormatted: data.fechaVenta?.toDate
-            ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
-                year: 'numeric', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit'
-              })
-            : 'N/A',
-        };
-        if (!data.numeroVenta || data.numeroVenta === 'N/A' || data.numeroVenta.trim() === '') {
-          ventasToUpdate.push({ id: docSnap.id });
-        }
-        ventasList.push(ventaData);
-      });
+    snapshot.docs.forEach(docSnap => {
+      const data = docSnap.data();
+
+      // Si fechaVenta aún no se resolvió (null por serverTimestamp pendiente),
+      // usar la fecha actual como fallback temporal
+      const fechaVentaResuelta = data.fechaVenta?.toDate
+        ? data.fechaVenta.toDate()
+        : new Date(); // fallback mientras se resuelve el serverTimestamp
+
+      const ventaData = {
+        id: docSnap.id,
+        ...data,
+        fechaVenta: fechaVentaResuelta,
+        fechaVentaFormatted: data.fechaVenta?.toDate
+          ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
+              year: 'numeric', month: '2-digit', day: '2-digit',
+              hour: '2-digit', minute: '2-digit'
+            })
+          : '(procesando...)', // ← en vez de 'N/A' para distinguir
+      };
+
+      if (!data.numeroVenta || data.numeroVenta === 'N/A' || data.numeroVenta.trim() === '') {
+        ventasToUpdate.push({ id: docSnap.id });
+      }
+      ventasList.push(ventaData);
+    });
 
       if (ventasToUpdate.length > 0) {
         ventasToUpdate.forEach(async (venta, index) => {
@@ -186,7 +196,7 @@ const VentasIndexPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, router, dateRange, selectedEstado, limitPerPage]);
+  }, [user, router, dateRange, selectedEstado, limitPerPage, filterPeriod]);
 
   const getDisplaySaleNumber = (venta) => {
     if (venta.numeroVenta && venta.numeroVenta !== 'N/A' && venta.numeroVenta.trim() !== '') {
