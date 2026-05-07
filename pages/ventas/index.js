@@ -93,6 +93,14 @@ const VentasIndexPage = () => {
   const ventasPerPage = 20;
 
   useEffect(() => {
+    if (router.query.nueva === '1') {
+      invalidateCache('ventas');
+      filtersChanged.current = true;
+      router.replace('/ventas', undefined, { shallow: true });
+    }
+  }, [router.query.nueva]);
+  
+  useEffect(() => {
     if (!user) { router.push('/auth'); return; }
 
     const hayCacheValido = getCache('ventas') && !filtersChanged.current
@@ -146,18 +154,17 @@ const VentasIndexPage = () => {
 
     const q = query(collection(db, 'ventas'), ...constraints);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
     const ventasList = [];
     const ventasToUpdate = [];
 
     snapshot.docs.forEach(docSnap => {
       const data = docSnap.data();
+      const esPendiente = docSnap.metadata.hasPendingWrites;
 
-      // Si fechaVenta aún no se resolvió (null por serverTimestamp pendiente),
-      // usar la fecha actual como fallback temporal
       const fechaVentaResuelta = data.fechaVenta?.toDate
         ? data.fechaVenta.toDate()
-        : new Date(); // fallback mientras se resuelve el serverTimestamp
+        : new Date();
 
       const ventaData = {
         id: docSnap.id,
@@ -168,7 +175,7 @@ const VentasIndexPage = () => {
               year: 'numeric', month: '2-digit', day: '2-digit',
               hour: '2-digit', minute: '2-digit'
             })
-          : '(procesando...)', // ← en vez de 'N/A' para distinguir
+          : esPendiente ? '(guardando...)' : '(procesando...)',
       };
 
       if (!data.numeroVenta || data.numeroVenta === 'N/A' || data.numeroVenta.trim() === '') {
@@ -177,23 +184,23 @@ const VentasIndexPage = () => {
       ventasList.push(ventaData);
     });
 
-      if (ventasToUpdate.length > 0) {
-        ventasToUpdate.forEach(async (venta, index) => {
-          try {
-            await updateDoc(doc(db, 'ventas', venta.id), {
-              numeroVenta: generateSaleNumber() + `-${index}`,
-              updatedAt: serverTimestamp()
-            });
-          } catch (e) { console.error(e); }
-        });
-      }
+    if (ventasToUpdate.length > 0) {
+      ventasToUpdate.forEach(async (venta, index) => {
+        try {
+          await updateDoc(doc(db, 'ventas', venta.id), {
+            numeroVenta: generateSaleNumber() + `-${index}`,
+            updatedAt: serverTimestamp()
+          });
+        } catch (e) { console.error(e); }
+      });
+    }
 
-      setVentas(ventasList);
-      setLoading(false);
-    }, (err) => {
-      setError("Error al cargar las ventas: " + err.message);
-      setLoading(false);
-    });
+    setVentas(ventasList);
+    setLoading(false);
+  }, (err) => {
+    setError("Error al cargar las ventas: " + err.message);
+    setLoading(false);
+  });
 
     return () => unsubscribe();
   }, [user, router, dateRange, selectedEstado, limitPerPage, filterPeriod]);
@@ -597,6 +604,7 @@ const VentasIndexPage = () => {
 
   }, [user, dateRange, selectedEstado, filterPeriod]);
 
+  
   useEffect(() => {
     if (ventas.length > 0) {
       setCache('ventas', ventas, {

@@ -933,7 +933,7 @@ const handleSubmit = async (e) => {
 
     alert('Venta registrada con éxito. Productos separados automáticamente por lotes FIFO.');
     clearActiveSale();
-    router.push('/ventas');
+    router.push('/ventas?nueva=1');
 
   } catch (err) {
     console.error("Error al registrar venta:", err);
