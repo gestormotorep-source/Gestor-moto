@@ -186,83 +186,119 @@ const NuevaVentaPage = () => {
   }, [user, router.isReady, activeSale]);
 
   // Búsqueda de productos mejorada (estilo cotizaciones)
-const searchProducts = async (term) => {
-  if (!term.trim()) {
-    setFilteredProductos([]);
-    return;
-  }
- 
-  setIsSearching(true);
-  try {
-    const idsVistos  = new Set();
-    let   candidatos = [];
- 
-    const termUpper = term.trim().toUpperCase();
-    const palabras = termUpper.split(/[\s\-\/\.]+/).filter(p => p.length >= 1);
- 
-    if (palabras.length > 0) {
-      const queries = palabras.flatMap(palabra => [
-        // array-contains sobre palabrasClave
-        // Ahora incluye prefijos → "CEN" hace match con el prefijo "CEN" guardado
-        getDocs(query(
-          collection(db, 'productos'),
-          where('palabrasClave', 'array-contains', palabra),
-          limit(200)
-        )),
-        // range query sobre nombre (para cuando la búsqueda empieza igual que el nombre)
-        getDocs(query(
-          collection(db, 'productos'),
-          where('nombre', '>=', palabra),
-          where('nombre', '<=', palabra + '\uf8ff'),
-          limit(100)
-        )),
-      ]);
- 
-      // Códigos exactos y por prefijo
-      queries.push(
-        getDocs(query(collection(db, 'productos'), where('codigoTienda',    '==', termUpper), limit(5))),
-        getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(5))),
-        getDocs(query(collection(db, 'productos'), where('codigoTienda',    '>=', termUpper), where('codigoTienda',    '<=', termUpper + '\uf8ff'), limit(50))),
-        getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', termUpper), where('codigoProveedor', '<=', termUpper + '\uf8ff'), limit(50))),
-      );
- 
-      const resultados = await Promise.all(queries);
-      resultados.forEach(snap => {
-        snap.docs.forEach(d => {
-          if (!idsVistos.has(d.id)) {
-            idsVistos.add(d.id);
-            candidatos.push({ id: d.id, ...d.data() });
-          }
-        });
-      });
- 
-      // ─── FILTRO LOCAL ────────────────────────────────────────────────────
-      // Cambio clave: includes() en vez de startsWith()
-      // Esto valida que cada palabra del término aparezca en algún lado del producto
-      candidatos = candidatos.filter(p => {
-        const nombreUpper      = (p.nombre          || '').toUpperCase();
-        const claves           = (p.palabrasClave   || []);
-        const codigoTienda     = (p.codigoTienda    || '').toUpperCase();
-        const codigoProveedor  = (p.codigoProveedor || '').toUpperCase();
- 
-        return palabras.every(palabra =>
-          nombreUpper.includes(palabra)                    ||  // substring en nombre completo
-          claves.some(clave => clave.includes(palabra))   ||  // substring en cualquier clave
-          codigoTienda.includes(palabra)                  ||
-          codigoProveedor.includes(palabra)
-        );
-      });
-      // ─────────────────────────────────────────────────────────────────────
+  const searchProducts = async (term) => {
+    if (!term.trim()) {
+      setFilteredProductos([]);
+      return;
     }
- 
-    setFilteredProductos(candidatos);
-  } catch (err) {
-    console.error("Error al buscar productos:", err);
-    setError("Error al buscar productos");
-  } finally {
-    setIsSearching(false);
-  }
-};
+
+    setIsSearching(true);
+    try {
+      const idsVistos = new Set();
+      let candidatos = [];
+
+      const termUpper = term.trim().toUpperCase();
+      const palabras = termUpper.split(/[\s\-\/\.]+/).filter(p => p.length >= 1);
+
+      if (palabras.length > 0) {
+        const queries = palabras.flatMap(palabra => [
+          // palabrasClave exacta
+          getDocs(query(
+            collection(db, 'productos'),
+            where('palabrasClave', 'array-contains', palabra),
+            limit(200)
+          )),
+          // range sobre nombre
+          getDocs(query(
+            collection(db, 'productos'),
+            where('nombre', '>=', palabra),
+            where('nombre', '<=', palabra + '\uf8ff'),
+            limit(100)
+          )),
+        ]);
+
+        // Búsqueda por código exacto
+        queries.push(
+          getDocs(query(collection(db, 'productos'), where('codigoTienda',    '==', termUpper), limit(10))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(10))),
+        );
+
+        // ── CLAVE: prefijo sobre codigoTienda y codigoProveedor ──────────────
+        // Esto captura "PA401405" y "JL401405" cuando buscas "401405"
+        // porque Firestore range query trae todos los que empiezan con termUpper
+        // El filtro local luego hace includes() para subcadenas
+        queries.push(
+          getDocs(query(collection(db, 'productos'),
+            where('codigoTienda', '>=', termUpper),
+            where('codigoTienda', '<=', termUpper + '\uf8ff'),
+            limit(100)
+          )),
+          getDocs(query(collection(db, 'productos'),
+            where('codigoProveedor', '>=', termUpper),
+            where('codigoProveedor', '<=', termUpper + '\uf8ff'),
+            limit(100)
+          )),
+        );
+
+        // ── NUEVO: traer TODOS los productos y filtrar localmente ─────────────
+        // Firestore no puede hacer "contains" (subcadena), solo prefijo.
+        // Para "401405" dentro de "PA401405" necesitamos traer candidatos
+        // por rango amplio y luego filtrar localmente.
+        // Estrategia: buscar desde el primer char del número hacia adelante
+        // con prefijos de letras comunes (A-Z + vacío)
+        const prefijos = ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+                          'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+        
+        prefijos.forEach(prefijo => {
+          const busqueda = prefijo + termUpper;
+          queries.push(
+            getDocs(query(collection(db, 'productos'),
+              where('codigoTienda', '>=', busqueda),
+              where('codigoTienda', '<=', busqueda + '\uf8ff'),
+              limit(20)
+            )),
+            getDocs(query(collection(db, 'productos'),
+              where('codigoProveedor', '>=', busqueda),
+              where('codigoProveedor', '<=', busqueda + '\uf8ff'),
+              limit(20)
+            )),
+          );
+        });
+
+        const resultados = await Promise.all(queries);
+        resultados.forEach(snap => {
+          snap.docs.forEach(d => {
+            if (!idsVistos.has(d.id)) {
+              idsVistos.add(d.id);
+              candidatos.push({ id: d.id, ...d.data() });
+            }
+          });
+        });
+
+        // Filtro local — includes() para subcadenas en todos los campos
+        candidatos = candidatos.filter(p => {
+          const nombreUpper     = (p.nombre          || '').toUpperCase();
+          const claves          = (p.palabrasClave   || []);
+          const codigoTienda    = (p.codigoTienda    || '').toUpperCase();
+          const codigoProveedor = (p.codigoProveedor || '').toUpperCase();
+
+          return palabras.every(palabra =>
+            nombreUpper.includes(palabra)                   ||
+            claves.some(clave => clave.includes(palabra))  ||
+            codigoTienda.includes(palabra)                 ||
+            codigoProveedor.includes(palabra)
+          );
+        });
+      }
+
+      setFilteredProductos(candidatos);
+    } catch (err) {
+      console.error("Error al buscar productos:", err);
+      setError("Error al buscar productos");
+    } finally {
+      setIsSearching(false);
+    }
+  };
   // Función corregida para obtener el precio de compra FIFO real
   const obtenerPrecioCompraFIFO = async (productoId) => {
     try {
@@ -778,6 +814,7 @@ const handleSubmit = async (e) => {
         totalVenta: parseFloat(totalVenta.toFixed(2)),
         gananciaTotalVenta: parseFloat(gananciaTotalVenta.toFixed(2)),
         fechaVenta: serverTimestamp(),
+        fechaVentaCliente: new Date(),
         empleadoId: user.email || user.uid,
         estado: 'completada',
         tipoVenta: 'ventaDirecta',

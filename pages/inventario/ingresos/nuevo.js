@@ -110,7 +110,24 @@ const NuevoIngresoPage = () => {
         const totalIngresos = ingresosSnap.size + 1;
         const numPedido = `N°-${String(totalIngresos).padStart(7, '0')}`;
         setNumeroPedido(numPedido);
-
+  
+        // ── NUEVO: leer draft precargado desde faltantes.js ──────────────
+        // Debe ir AQUÍ dentro del try, DESPUÉS de cargar proveedores/pedido
+        if (router.query.from === 'faltantes') {
+          try {
+            const raw = localStorage.getItem('ingreso_draft');
+            if (raw) {
+              const draft = JSON.parse(raw);
+              if (Array.isArray(draft) && draft.length > 0) {
+                setItemsIngreso(draft);
+              }
+            }
+          } catch (e) {
+            console.error('Error leyendo draft de ingreso:', e);
+          }
+        }
+        // ─────────────────────────────────────────────────────────────────
+  
       } catch (err) {
         console.error("Error al cargar datos:", err);
         setError("Error al cargar los datos: " + err.message);
@@ -118,7 +135,7 @@ const NuevoIngresoPage = () => {
         setLoadingData(false);
       }
     };
-
+  
     if (router.isReady) {
       fetchData();
     }
@@ -580,7 +597,7 @@ const handleEditItem = (item) => {
       console.log('Proceso completado exitosamente');
 
       alert(`Ingreso registrado exitosamente!\n\n${itemsIngreso.length} lotes creados\n${productosAActualizar.length} productos procesados\nTotal: S/. ${costoTotalIngreso.toFixed(2)}`);
-      
+      try { localStorage.removeItem('ingreso_draft'); } catch (e) {}
       router.push('/inventario/ingresos');
 
     } catch (err) {

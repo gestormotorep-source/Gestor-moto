@@ -110,81 +110,74 @@ const VentasIndexPage = () => {
     if (!hayCacheValido) setLoading(true);
     setError(null);
 
-    let constraints = [];
     const { start, end } = dateRange;
-
-    // ── CLAVE: solo aplicar limit cuando el período NO es "hoy" ──
-    // Para "hoy" no limitamos porque son pocas ventas y necesitamos
-    // que el onSnapshot capture TODAS las que lleguen en tiempo real
     const esHoy = filterPeriod === 'day';
-    const limitActual = esHoy ? 500 : limitPerPage; // 500 es techo seguro para un día
+    const limitActual = esHoy ? 500 : limitPerPage;
 
-    if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
-      constraints = [
-        where('estadoDevolucion', '==', selectedEstado),
-        ...(start && end ? [
-          where('fechaVenta', '>=', Timestamp.fromDate(start)),
-          where('fechaVenta', '<=', Timestamp.fromDate(end)),
-        ] : []),
-        orderBy('fechaVenta', 'desc'),
-        limit(limitActual)
-      ];
-    } else if (start && end) {
-      if (selectedEstado !== 'all') {
-        constraints = [
-          where('estado', '==', selectedEstado),
-          where('fechaVenta', '>=', Timestamp.fromDate(start)),
-          where('fechaVenta', '<=', Timestamp.fromDate(end)),
-          orderBy('fechaVenta', 'desc'),
+    // ── Builder de constraints reutilizable ──────────────────
+    const buildConstraints = (dateField) => {
+      if (selectedEstado === 'devuelta' || selectedEstado === 'parcial') {
+        return [
+          where('estadoDevolucion', '==', selectedEstado),
+          ...(start && end ? [
+            where(dateField, '>=', Timestamp.fromDate(start)),
+            where(dateField, '<=', Timestamp.fromDate(end)),
+          ] : []),
+          orderBy(dateField, 'desc'),
           limit(limitActual)
         ];
-      } else {
-        constraints = [
-          where('fechaVenta', '>=', Timestamp.fromDate(start)),
-          where('fechaVenta', '<=', Timestamp.fromDate(end)),
-          orderBy('fechaVenta', 'desc'),
+      } else if (start && end) {
+        if (selectedEstado !== 'all') {
+          return [
+            where('estado', '==', selectedEstado),
+            where(dateField, '>=', Timestamp.fromDate(start)),
+            where(dateField, '<=', Timestamp.fromDate(end)),
+            orderBy(dateField, 'desc'),
+            limit(limitActual)
+          ];
+        }
+        return [
+          where(dateField, '>=', Timestamp.fromDate(start)),
+          where(dateField, '<=', Timestamp.fromDate(end)),
+          orderBy(dateField, 'desc'),
           limit(limitActual)
         ];
       }
-    } else {
-      constraints = selectedEstado !== 'all'
-        ? [where('estado', '==', selectedEstado), orderBy('fechaVenta', 'desc'), limit(limitActual)]
-        : [orderBy('fechaVenta', 'desc'), limit(limitActual)];
-    }
+      return selectedEstado !== 'all'
+        ? [where('estado', '==', selectedEstado), orderBy(dateField, 'desc'), limit(limitActual)]
+        : [orderBy(dateField, 'desc'), limit(limitActual)];
+    };
 
-    const q = query(collection(db, 'ventas'), ...constraints);
+    // ── Mapa compartido para merge de ambos listeners ────────
+    const ventasMap = new Map();
 
-    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-    const ventasList = [];
-    const ventasToUpdate = [];
+    const procesarSnapshot = (snapshot) => {
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const esPendiente = docSnap.metadata.hasPendingWrites;
+        const fechaVentaResuelta = data.fechaVenta?.toDate
+          ? data.fechaVenta.toDate()
+          : data.fechaVentaCliente?.toDate
+            ? data.fechaVentaCliente.toDate()
+            : new Date();
 
-    snapshot.docs.forEach(docSnap => {
-      const data = docSnap.data();
-      const esPendiente = docSnap.metadata.hasPendingWrites;
+        ventasMap.set(docSnap.id, {
+          id: docSnap.id,
+          ...data,
+          fechaVenta: fechaVentaResuelta,
+          fechaVentaFormatted: data.fechaVenta?.toDate
+            ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit'
+              })
+            : esPendiente ? '(guardando...)' : '(procesando...)',
+        });
+      });
 
-      const fechaVentaResuelta = data.fechaVenta?.toDate
-        ? data.fechaVenta.toDate()
-        : new Date();
+      const ventasList = [...ventasMap.values()].sort((a, b) => b.fechaVenta - a.fechaVenta);
 
-      const ventaData = {
-        id: docSnap.id,
-        ...data,
-        fechaVenta: fechaVentaResuelta,
-        fechaVentaFormatted: data.fechaVenta?.toDate
-          ? data.fechaVenta.toDate().toLocaleDateString('es-ES', {
-              year: 'numeric', month: '2-digit', day: '2-digit',
-              hour: '2-digit', minute: '2-digit'
-            })
-          : esPendiente ? '(guardando...)' : '(procesando...)',
-      };
-
-      if (!data.numeroVenta || data.numeroVenta === 'N/A' || data.numeroVenta.trim() === '') {
-        ventasToUpdate.push({ id: docSnap.id });
-      }
-      ventasList.push(ventaData);
-    });
-
-    if (ventasToUpdate.length > 0) {
+      // Auto-asignar número si falta
+      const ventasToUpdate = ventasList.filter(v => !v.numeroVenta || v.numeroVenta === 'N/A' || v.numeroVenta.trim() === '');
       ventasToUpdate.forEach(async (venta, index) => {
         try {
           await updateDoc(doc(db, 'ventas', venta.id), {
@@ -193,16 +186,36 @@ const VentasIndexPage = () => {
           });
         } catch (e) { console.error(e); }
       });
+
+      setVentas(ventasList);
+      setLoading(false);
+    };
+
+    // Listener 1: por fechaVenta (ventas con timestamp ya resuelto)
+    const q1 = query(collection(db, 'ventas'), ...buildConstraints('fechaVenta'));
+    const unsub1 = onSnapshot(q1, { includeMetadataChanges: true }, procesarSnapshot, (err) => {
+      setError("Error al cargar las ventas: " + err.message);
+      setLoading(false);
+    });
+
+    // Listener 2: por fechaVentaCliente (captura ventas recién creadas antes de que serverTimestamp resuelva)
+    // Solo activo cuando hay rango de fecha (hoy/semana/mes/custom)
+    let unsub2 = () => {};
+    if (start && end) {
+      try {
+        const q2 = query(collection(db, 'ventas'), ...buildConstraints('fechaVentaCliente'));
+        unsub2 = onSnapshot(q2, { includeMetadataChanges: true }, procesarSnapshot, () => {
+          // Silencioso — puede fallar si no hay índice aún
+        });
+      } catch (e) {
+        // Si falla (índice no creado), ignorar silenciosamente
+      }
     }
 
-    setVentas(ventasList);
-    setLoading(false);
-  }, (err) => {
-    setError("Error al cargar las ventas: " + err.message);
-    setLoading(false);
-  });
-
-    return () => unsubscribe();
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [user, router, dateRange, selectedEstado, limitPerPage, filterPeriod]);
 
   const getDisplaySaleNumber = (venta) => {
