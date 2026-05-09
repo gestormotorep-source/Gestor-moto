@@ -73,6 +73,13 @@ const NuevoIngresoPage = () => {
   const [editPrecio, setEditPrecio] = useState(0);
   const [editNumeroLote, setEditNumeroLote] = useState('');
 
+  // Estados para edición de umbral en modal de edición
+  const [editPrecioVenta, setEditPrecioVenta] = useState(0);
+  const [editPrecioVentaMinimo, setEditPrecioVentaMinimo] = useState(0);
+  const [editLotesAnteriores, setEditLotesAnteriores] = useState([]);
+  const [showEditUmbralEdit, setShowEditUmbralEdit] = useState(false);
+  const [editNuevoUmbral, setEditNuevoUmbral] = useState(0);
+
   // Estados para mostrar precios en la búsqueda
   const [precioVenta, setPrecioVenta] = useState(0);
   const [precioVentaMinimo, setPrecioVentaMinimo] = useState(0);
@@ -283,13 +290,19 @@ const NuevoIngresoPage = () => {
   };
 
   // Abrir modal de edición
-const handleEditItem = (item) => {
-  setEditingItem(item);
-  setEditQuantity(Number(item.cantidad)); // Asegurar que sea número
-  setEditPrecio(Number(item.precioCompraUnitario)); // Asegurar que sea número
-  setEditNumeroLote(item.numeroLote);
-  setShowEditItemModal(true);
-};
+  const handleEditItem = (item) => {
+    setEditingItem(item);
+    setEditQuantity(Number(item.cantidad));
+    setEditPrecio(Number(item.precioCompraUnitario));
+    setEditNumeroLote(item.numeroLote);
+    setEditPrecioVenta(Number(item.precioVentaUnitario || 0));
+    setEditPrecioVentaMinimo(Number(item.precioVentaMinimoUnitario || 0));
+    setEditNuevoUmbral(item.nuevoUmbral || 4);
+    setShowEditUmbralEdit(false);
+    setEditLotesAnteriores([]);
+    obtenerLotesAnteriores(item.productoId).then(lotes => setEditLotesAnteriores(lotes));
+    setShowEditItemModal(true);
+  };
 
 
   // Actualizar item con validación de lote
@@ -329,6 +342,9 @@ const handleEditItem = (item) => {
         numeroLote: editNumeroLote.trim(),
         cantidad: Number(editQuantity),
         precioCompraUnitario: Number(editPrecio).toFixed(2),
+        precioVentaUnitario: Number(editPrecioVenta).toFixed(2),
+        precioVentaMinimoUnitario: Number(editPrecioVentaMinimo).toFixed(2),
+        nuevoUmbral: showEditUmbralEdit ? editNuevoUmbral : item.nuevoUmbral,
         stockRestanteLote: Number(editQuantity), // Actualizar stock del lote
         subtotal: (Number(editQuantity) * Number(editPrecio)).toFixed(2),
       };
@@ -1155,132 +1171,162 @@ const handleEditItem = (item) => {
 )}
 
       {/* Modal de Edición de Lote */}
-      {showEditItemModal && (
+      {showEditItemModal && editingItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div className="flex min-h-full items-center justify-center p-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditItemModal(false)}></div>
-            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl sm:p-6">
-              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                <button
-                  type="button"
-                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  onClick={() => setShowEditItemModal(false)}
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
+            <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-7xl p-10">
 
-              <div className="sm:flex sm:items-start">
-                <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
-                  <PencilIcon className="h-6 w-6 text-yellow-600" />
-                </div>
-                <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                  <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                    Editar Lote
-                  </h3>
-                  
-                  {editingItem && (
-                    <div className="mt-4">
-                      <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                        <h4 className="font-semibold text-lg text-gray-900 mb-2">
-                          {editingItem.nombreProducto}
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-700">Código: </span>
-                            <span className="text-gray-600">{editingItem.codigoTienda}</span>
+              {/* X cerrar */}
+              <button type="button" onClick={() => setShowEditItemModal(false)}
+                className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                <PencilIcon className="h-7 w-7 text-yellow-500" />
+                Editar Lote
+              </h3>
+
+              <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                {/* COLUMNA IZQUIERDA */}
+                <div className="flex flex-col gap-4 h-full">
+                  <div className="bg-gray-50 p-5 rounded-lg border-2 border-yellow-200">
+                    <h4 className="font-bold text-xl text-gray-900 mb-1">{editingItem.nombreProducto}</h4>
+                    {editingItem.codigoProveedor && (
+                      <div className="mb-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-blue-100 text-blue-800 font-mono">
+                          C. Proveedor: {editingItem.codigoProveedor}
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{editingItem.codigoTienda || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{editingItem.marca || 'Sin marca'}</span></div>
+                      <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{editingItem.medida || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{editingItem.color || 'N/A'}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Lotes anteriores del mismo producto */}
+                  {editLotesAnteriores.length > 0 ? (
+                    <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                      <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Lotes anteriores de este producto</span>
+                      </div>
+                      <div className="divide-y divide-amber-100 overflow-y-auto max-h-64">
+                        {editLotesAnteriores.map((lote, i) => (
+                          <div key={i} className="flex items-center justify-between px-4 py-3">
+                            <div>
+                              <span className="text-sm font-mono text-gray-700">{lote.numeroLote}</span>
+                              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {lote.estado}
+                              </span>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                              </p>
+                            </div>
+                            <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
                           </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Marca: </span>
-                            <span className="text-gray-600">{editingItem.marca}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Número de Lote en edición */}
-                      <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-3">
-                          <HashtagIcon className="h-4 w-4 inline mr-1" />
-                          Número de Lote
-                        </label>
-                        <div className="flex">
-                          <input
-                            type="text"
-                            value={editNumeroLote}
-                            onChange={(e) => setEditNumeroLote(e.target.value)}
-                            className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
-                            placeholder="Ej: L240915-ABC1"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setEditNumeroLote(generateLoteNumber())}
-                            className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 transition-colors text-sm"
-                            title="Generar nuevo número"
-                          >
-                            🎲
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Debe ser único entre todos los lotes del ingreso.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Cantidad
-                          </label>
-                          <input
-                            type="number"
-                            value={editQuantity}
-                            onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
-                            min="1"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Precio de Compra
-                          </label>
-                          <input
-                            type="number"
-                            value={editPrecio}
-                            onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
-                            min="0"
-                            step="0.01"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg border border-yellow-200 mt-6">
-                        <div className="flex justify-between items-center">
-                          <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
-                          <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
-                        </div>
+                        ))}
                       </div>
                     </div>
+                  ) : (
+                    <div className="flex-1 border border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm">
+                      Sin lotes anteriores
+                    </div>
                   )}
-                </div>
-              </div>
 
-              <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
-                <button
-                  type="button"
-                  className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                  onClick={handleUpdateItem}
-                  disabled={editQuantity <= 0 || editPrecio < 0 || !editNumeroLote.trim()}
-                >
-                  Actualizar Lote
-                </button>
-                <button
-                  type="button"
-                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
-                  onClick={() => setShowEditItemModal(false)}
-                >
-                  Cancelar
-                </button>
+                  {/* Umbral */}
+                  <div>
+                    {!showEditUmbralEdit ? (
+                      <button type="button" onClick={() => setShowEditUmbralEdit(true)}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                        ✏️ Editar stock mínimo
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                        <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Stock mínimo (actual: {editNuevoUmbral}):</label>
+                        <input type="number" value={editNuevoUmbral} onChange={(e) => setEditNuevoUmbral(parseInt(e.target.value) || 0)}
+                          min="0" onWheel={(e) => e.target.blur()}
+                          className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
+                        <button type="button" onClick={() => setShowEditUmbralEdit(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* COLUMNA DERECHA */}
+                <div className="flex flex-col gap-5 h-full">
+                  {/* Número de lote */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <HashtagIcon className="h-4 w-4 inline mr-1" />
+                      Número de Lote
+                    </label>
+                    <div className="flex">
+                      <input type="text" value={editNumeroLote} onChange={(e) => setEditNumeroLote(e.target.value)}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-yellow-500 text-base font-mono"
+                        placeholder="Ej: L240915-ABC1" />
+                      <button type="button" onClick={() => setEditNumeroLote(generateLoteNumber())}
+                        className="px-4 py-3 bg-yellow-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-yellow-200 text-base">
+                        🎲
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Debe ser único entre todos los lotes del ingreso.</p>
+                  </div>
+
+                  {/* 4 campos 2x2 */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                      <input type="number" value={editQuantity} onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                        min="1" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Compra (S/.)</label>
+                      <input type="number" value={editPrecio} onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                      <input type="number" value={editPrecioVenta} onChange={(e) => setEditPrecioVenta(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio Venta Mínimo (S/.)</label>
+                      <input type="number" value={editPrecioVentaMinimo} onChange={(e) => setEditPrecioVentaMinimo(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                  </div>
+
+                  {/* Subtotal + botones al fondo */}
+                  <div className="mt-auto flex flex-col gap-4">
+                    <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-5 rounded-lg border border-yellow-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
+                        <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <button type="button" onClick={() => setShowEditItemModal(false)}
+                        className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                        Cancelar
+                      </button>
+                      <button type="button" onClick={handleUpdateItem}
+                        disabled={editQuantity <= 0 || editPrecio < 0 || !editNumeroLote.trim()}
+                        className="px-6 py-3 rounded-lg bg-yellow-500 text-white font-semibold text-base hover:bg-yellow-400 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        Actualizar Lote
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
               </div>
             </div>
           </div>
