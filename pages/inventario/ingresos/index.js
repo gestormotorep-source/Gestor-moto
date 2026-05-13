@@ -218,7 +218,11 @@ const IngresosPage = () => {
       ingreso.proveedorNombre?.toLowerCase().includes(lower) ||
       ingreso.observaciones?.toLowerCase().includes(lower)  ||
       ingreso.estado?.toLowerCase().includes(lower)
-    );
+      ).sort((a, b) => {                                          // ← AGREGAR
+      const dateA = a.fechaIngresoOriginal?.toDate?.() || new Date(0);
+      const dateB = b.fechaIngresoOriginal?.toDate?.() || new Date(0);
+      return dateB - dateA;
+    });
 
     // Si no encontró nada localmente → buscar en Firestore
     if (filtered.length === 0 && searchTerm.length >= 3) {
@@ -277,6 +281,12 @@ const IngresosPage = () => {
               });
             }
           }
+
+          resultados.sort((a, b) => {
+            const dateA = a.fechaIngresoOriginal?.toDate?.() || new Date(0);
+            const dateB = b.fechaIngresoOriginal?.toDate?.() || new Date(0);
+            return dateB - dateA;
+          });
 
           if (resultados.length > 0) {
             setFilteredIngresos(resultados);
