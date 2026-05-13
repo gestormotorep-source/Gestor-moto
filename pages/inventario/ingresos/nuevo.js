@@ -1141,7 +1141,7 @@ const NuevoIngresoPage = () => {
                 </div>
               </div>
 
-              {/* Subtotal + botones al fondo */}
+              {/* Subtotal + botones al fondos */}
               <div className="mt-auto flex flex-col gap-4">
                 <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-5 rounded-lg border border-blue-200">
                   <div className="flex justify-between items-center">
