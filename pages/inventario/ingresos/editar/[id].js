@@ -353,7 +353,7 @@ const EditarIngresoPage = () => {
   };
 
   // Editar lote EXISTENTE (ya en Firestore)
-  const handleEditLoteExistente = (lote) => {
+  const handleEditLoteExistente = async (lote) => {  // ← agregar async
     setEditingLote(lote);
     setEditLoteQuantity(Number(lote.cantidad));
     setEditLotePrecio(Number(lote.precioCompraUnitario));
@@ -361,9 +361,20 @@ const EditarIngresoPage = () => {
     setEditLotePrecioVenta(Number(lote.precioVentaUnitario || 0));
     setEditLotePrecioVentaMinimo(Number(lote.precioVentaMinimoUnitario || 0));
     setShowUmbralEditLote(false);
-    setNuevoUmbralLote(0);
     setLotesAnterioresEdit([]);
     obtenerLotesAnteriores(lote.productoId).then(lotes => setLotesAnterioresEdit(lotes));
+
+    // ← NUEVO: leer umbral real desde Firestore en lugar de hardcodear 0
+    try {
+      const prodSnap = await getDoc(doc(db, 'productos', lote.productoId));
+      if (prodSnap.exists()) {
+        setNuevoUmbralLote(prodSnap.data().stockReferencialUmbral ?? 0);
+      }
+    } catch (err) {
+      console.error('Error leyendo umbral:', err);
+      setNuevoUmbralLote(0);
+    }
+
     setShowEditLoteModal(true);
   };
 
@@ -1064,7 +1075,9 @@ const EditarIngresoPage = () => {
                         </button>
                       ) : (
                         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                          <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Stock mínimo (actual: {nuevoUmbral}):</label>
+                          <label className="text-sm font-medium text-blue-700 whitespace-nowrap">
+                            Stock mínimo (actual: {nuevoUmbralLote}):
+                          </label>
                           <input type="number" value={nuevoUmbral} onChange={(e) => setNuevoUmbral(parseInt(e.target.value) || 0)}
                             min="0" onWheel={(e) => e.target.blur()}
                             className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
