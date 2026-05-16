@@ -16,6 +16,10 @@ const sortLotesFIFO = (lotes) =>
     return fa - fb;
   });
 
+// ─── Un lote es editable si es 'activo' O 'agotado' (o no tiene estado) ──────
+const esEditable = (lote) =>
+  lote.estado === 'activo' || lote.estado === 'agotado' || !lote.estado;
+
 export default function EditarPreciosMasivo() {
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +35,6 @@ export default function EditarPreciosMasivo() {
   const [guardandoProd, setGuardandoProd] = useState(new Set());
 
   const [busqueda, setBusqueda] = useState('');
-  // soloAfectados NO se re-evalúa mientras escribes — se calcula al cargar
   const [soloAfectados, setSoloAfectados] = useState(true);
   const [progreso, setProgreso] = useState(null);
 
@@ -84,7 +87,6 @@ export default function EditarPreciosMasivo() {
 
       const nuevosConLotes = await Promise.all(nuevos.map(cargarLotesDeProducto));
 
-      // Inicializar inputs como strings
       const newInputs = {};
       nuevosConLotes.forEach(p => {
         Object.assign(newInputs, inicializarInputs(p._lotes || []));
@@ -102,11 +104,8 @@ export default function EditarPreciosMasivo() {
 
   useEffect(() => { cargarProductos(true); }, []);
 
-  // ─── Cambio de input — guarda string crudo, sin parseFloat ──
-  // type="number" devuelve e.target.value como string ("1", "1.", "1.5")
-  // No parseamos aquí para no perder dígitos intermedios al escribir
+  // ─── Cambio de input ─────────────────────────────────────────
   const handleInputChange = (loteId, campo, rawValue) => {
-    // rawValue ya es string del input number: "1", "15", "15.5", ""
     setInputValues(prev => ({
       ...prev,
       [loteId]: { ...prev[loteId], [campo]: rawValue },
@@ -114,6 +113,8 @@ export default function EditarPreciosMasivo() {
   };
 
   // ─── Recalcular producto FIFO ────────────────────────────────
+  // Si no hay stock activo, usa el último lote editable con precios para
+  // que el producto no quede con precio 0 cuando está agotado.
   const recalcularProductoFIFO = async (productoId) => {
     setGuardandoProd(prev => new Set(prev).add(productoId));
     try {
@@ -121,19 +122,37 @@ export default function EditarPreciosMasivo() {
         collection(db, 'lotes'),
         where('productoId', '==', productoId)
       ));
-      const lotesActivos = sortLotesFIFO(
-        snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(l => l.estado === 'activo' && (l.stockRestante || 0) > 0)
+      const todosLotes = sortLotesFIFO(
+        snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      );
+
+      // Primero: lotes activos con stock > 0 (FIFO normal)
+      const lotesConStock = todosLotes.filter(
+        l => l.estado === 'activo' && (l.stockRestante || 0) > 0
       );
 
       let precioCompra = 0, precioVenta = 0, precioMinimo = 0, stockTotal = 0;
-      if (lotesActivos.length > 0) {
-        const primer = lotesActivos[0];
+
+      if (lotesConStock.length > 0) {
+        const primer = lotesConStock[0];
         precioCompra = n(primer.precioCompraUnitario);
         precioVenta  = n(primer.precioVentaUnitario);
         precioMinimo = n(primer.precioVentaMinimoUnitario);
-        lotesActivos.forEach(l => { stockTotal += parseInt(l.stockRestante || 0); });
+        lotesConStock.forEach(l => { stockTotal += parseInt(l.stockRestante || 0); });
+      } else {
+        // Sin stock activo: buscar el lote editable más reciente con precios cargados
+        // (agotado o activo-vacío) para mantener los precios visibles en el producto
+        const editables = todosLotes.filter(esEditable);
+        const conPrecios = [...editables]
+          .reverse()  // el más reciente primero
+          .find(l => n(l.precioVentaUnitario) > 0);
+
+        if (conPrecios) {
+          precioCompra = n(conPrecios.precioCompraUnitario);
+          precioVenta  = n(conPrecios.precioVentaUnitario);
+          precioMinimo = n(conPrecios.precioVentaMinimoUnitario);
+        }
+        stockTotal = 0;
       }
 
       await updateDoc(doc(db, 'productos', productoId), {
@@ -179,7 +198,6 @@ export default function EditarPreciosMasivo() {
         updatedAt:                 serverTimestamp(),
       });
 
-      // Actualizar el lote en estado local
       setProductos(prev => prev.map(p =>
         p.id !== productoId ? p : {
           ...p,
@@ -210,7 +228,8 @@ export default function EditarPreciosMasivo() {
   const guardarTodo = async () => {
     const lotesParaGuardar = [];
     productosFiltrados.forEach(p => {
-      (p._lotes || []).filter(l => l.estado === 'activo').forEach(l => {
+      // Incluye agotados además de activos
+      (p._lotes || []).filter(l => esEditable(l)).forEach(l => {
         const vals = inputValues[l.id] || {};
         if (n(vals.venta) > 0) {
           lotesParaGuardar.push({ productoId: p.id, lote: l });
@@ -219,7 +238,7 @@ export default function EditarPreciosMasivo() {
     });
 
     if (!lotesParaGuardar.length) {
-      alert('No hay lotes activos con precio de venta > 0 para guardar.');
+      alert('No hay lotes editables con precio de venta > 0 para guardar.');
       return;
     }
     if (!window.confirm(`¿Guardar ${lotesParaGuardar.length} lotes y recalcular productos?`)) return;
@@ -242,20 +261,19 @@ export default function EditarPreciosMasivo() {
     ));
   };
 
-  // ─── Filtrado — busqueda no afecta soloAfectados ─────────────
-  // "afectado" se basa en los datos originales del producto, NO en los inputs actuales
+  // ─── "Afectado": producto o lote editable con precio 0 ───────
   const esAfectado = (p) => {
     const prodAfectado = n(p.precioVentaDefault) === 0 || n(p.precioVentaMinimo) === 0;
     const loteAfectado = (p._lotes || []).some(
-      l => l.estado === 'activo' && (l.stockRestante || 0) > 0 &&
+      l => esEditable(l) &&
            (n(l.precioVentaUnitario) === 0 || n(l.precioVentaMinimoUnitario) === 0)
     );
     return prodAfectado || loteAfectado;
   };
 
-  // Tiene al menos un lote activo con stock > 0
+  // Tiene al menos un lote editable (activo o agotado)
   const tieneStockActivo = (p) =>
-    (p._lotes || []).some(l => l.estado === 'activo' && (l.stockRestante || 0) > 0);
+    (p._lotes || []).some(l => esEditable(l));
 
   const productosFiltrados = productos.filter(p => {
     const coincide = !busqueda.trim() ||
@@ -263,9 +281,7 @@ export default function EditarPreciosMasivo() {
       (p.codigoTienda || '').toLowerCase().includes(busqueda.toLowerCase()) ||
       (p.marca || '').toLowerCase().includes(busqueda.toLowerCase());
     if (!coincide) return false;
-    // Con soloAfectados: solo productos con stock activo Y precio 0 pendiente
     if (soloAfectados) return tieneStockActivo(p) && esAfectado(p);
-    // Sin soloAfectados: todos aparecen
     return true;
   });
 
@@ -284,8 +300,9 @@ export default function EditarPreciosMasivo() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold">Edición Masiva de Precios por Lote</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Edita <strong>precio de venta</strong> y <strong>precio mínimo</strong> en cada lote.
-          Al guardar, el producto se actualiza con el primer lote activo (FIFO).
+          Edita <strong>precio de venta</strong> y <strong>precio mínimo</strong> en cada lote
+          (activos y agotados). Al guardar, el producto se actualiza con el primer lote activo con
+          stock (FIFO), o con el último lote con precios si no hay stock.
         </p>
       </div>
 
@@ -439,18 +456,33 @@ export default function EditarPreciosMasivo() {
                       </thead>
                       <tbody>
                         {producto._lotes.map((lote, idx) => {
+                          const editable = esEditable(lote);
                           const esActivo = lote.estado === 'activo';
+                          const esAgotado = lote.estado === 'agotado';
+
                           const esPrimeroActivo = idx === producto._lotes.findIndex(
                             l => l.estado === 'activo' && (l.stockRestante || 0) > 0
                           );
+                          // Si no hay ningún lote activo con stock, marcar el último
+                          // lote editable con precios como referencia FIFO
+                          const hayLoteConStock = producto._lotes.some(
+                            l => l.estado === 'activo' && (l.stockRestante || 0) > 0
+                          );
+                          const esFifoFallback = !hayLoteConStock && esAgotado && (() => {
+                            const editables = [...producto._lotes].filter(esEditable);
+                            const conPrecios = [...editables]
+                              .reverse()
+                              .find(l => n(l.precioVentaUnitario) > 0);
+                            return conPrecios?.id === lote.id;
+                          })();
+
                           const vals = inputValues[lote.id] || { venta: '0.00', minimo: '0.00' };
                           const ventaNum  = n(vals.venta);
                           const minimoNum = n(vals.minimo);
-                          const loteAfectado = esActivo && (ventaNum === 0 || minimoNum === 0);
+                          const loteAfectado = editable && (ventaNum === 0 || minimoNum === 0);
                           const estaGuardando = guardando.has(lote.id);
                           const fueGuardado   = guardados.has(lote.id);
 
-                          // Detectar cambios respecto a lo guardado en Firestore
                           const haysCambios =
                             ventaNum  !== n(lote.precioVentaUnitario) ||
                             minimoNum !== n(lote.precioVentaMinimoUnitario);
@@ -461,7 +493,7 @@ export default function EditarPreciosMasivo() {
                               className={
                                 fueGuardado    ? 'bg-green-50 border-t border-gray-100' :
                                 loteAfectado   ? 'bg-orange-50 border-t border-gray-100' :
-                                !esActivo      ? 'bg-gray-50 opacity-60 border-t border-gray-100' :
+                                !editable      ? 'bg-gray-50 opacity-60 border-t border-gray-100' :
                                 idx % 2 === 0  ? 'bg-white border-t border-gray-100'
                                                : 'bg-gray-50 border-t border-gray-100'
                               }
@@ -475,7 +507,11 @@ export default function EditarPreciosMasivo() {
 
                               <td className="px-4 py-2 text-center">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                  esActivo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'
+                                  esActivo
+                                    ? 'bg-green-100 text-green-700'
+                                    : esAgotado
+                                    ? 'bg-orange-100 text-orange-700'
+                                    : 'bg-gray-200 text-gray-500'
                                 }`}>
                                   {lote.estado || 'activo'}
                                 </span>
@@ -500,10 +536,10 @@ export default function EditarPreciosMasivo() {
                                     value={vals.venta}
                                     onChange={e => handleInputChange(lote.id, 'venta', e.target.value)}
                                     onFocus={e => e.target.select()}
-                                    disabled={!esActivo}
+                                    disabled={!editable}
                                     placeholder="0.00"
                                     className={`w-full px-2 py-1.5 border rounded text-sm text-right disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 ${
-                                      ventaNum === 0 && esActivo
+                                      ventaNum === 0 && editable
                                         ? 'border-red-400 bg-red-50 focus:ring-red-300'
                                         : haysCambios
                                         ? 'border-amber-400 bg-amber-50 focus:ring-amber-300'
@@ -524,10 +560,10 @@ export default function EditarPreciosMasivo() {
                                     value={vals.minimo}
                                     onChange={e => handleInputChange(lote.id, 'minimo', e.target.value)}
                                     onFocus={e => e.target.select()}
-                                    disabled={!esActivo}
+                                    disabled={!editable}
                                     placeholder="0.00"
                                     className={`w-full px-2 py-1.5 border rounded text-sm text-right disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 ${
-                                      minimoNum === 0 && esActivo
+                                      minimoNum === 0 && editable
                                         ? 'border-red-400 bg-red-50 focus:ring-red-300'
                                         : haysCambios
                                         ? 'border-amber-400 bg-amber-50 focus:ring-amber-300'
@@ -542,11 +578,15 @@ export default function EditarPreciosMasivo() {
                                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">
                                     FIFO
                                   </span>
+                                ) : esFifoFallback ? (
+                                  <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold" title="Referencia de precio mientras no hay stock">
+                                    REF
+                                  </span>
                                 ) : '—'}
                               </td>
 
                               <td className="px-2 py-1.5 text-center">
-                                {esActivo ? (
+                                {editable ? (
                                   <button
                                     onClick={() => guardarLote(producto.id, lote)}
                                     disabled={estaGuardando}
