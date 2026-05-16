@@ -455,31 +455,57 @@ const ProductosPage = () => {
   // ── FIFO helpers ──────────────────────────────────────────────────────────
   const recalcularPrecioCompraFIFO = async (productoId) => {
     try {
+      // ← Sin filtro de estado, traer todos los lotes
       const lotesQuery = query(
         collection(db, 'lotes'),
         where('productoId', '==', productoId),
-        where('stockRestante', '>', 0),
-        where('estado', '==', 'activo'),
         orderBy('fechaIngreso', 'asc')
       );
       const lotesSnapshot = await getDocs(lotesQuery);
+      const todosLotes = lotesSnapshot.docs.map(d => d.data());
+      
+      // Lotes con stock > 0 (independiente del estado)
+      const lotesActivos = todosLotes.filter(d => parseFloat(d.stockRestante || 0) > 0);
 
-      let nuevoPrecioCompra = 0, nuevoPrecioVenta = 0, nuevoPrecioVentaMinimo = 0, stockTotal = 0;
+      let nuevoPrecioCompra = 0, nuevoPrecioVenta = 0,
+          nuevoPrecioVentaMinimo = 0, stockTotal = 0;
 
-      if (!lotesSnapshot.empty) {
-        const primerLote = lotesSnapshot.docs[0].data();
+      if (lotesActivos.length > 0) {
+        const primerLote = lotesActivos[0];
         nuevoPrecioCompra = parseFloat(primerLote.precioCompraUnitario || 0);
-        nuevoPrecioVenta = parseFloat(primerLote.precioVentaUnitario || 0);
-        nuevoPrecioVentaMinimo = parseFloat(primerLote.precioVentaMinimoUnitario || 0);
-        lotesSnapshot.docs.forEach(d => { stockTotal += parseInt(d.data().stockRestante || 0); });
+        stockTotal = lotesActivos.reduce(
+          (s, l) => s + parseFloat(l.stockRestante || 0), 0
+        );
+        const loteConPrecios = lotesActivos.find(
+          l => parseFloat(l.precioVentaUnitario || 0) > 0
+        );
+        if (loteConPrecios) {
+          nuevoPrecioVenta       = parseFloat(loteConPrecios.precioVentaUnitario || 0);
+          nuevoPrecioVentaMinimo = parseFloat(loteConPrecios.precioVentaMinimoUnitario || 0);
+        }
+      } else if (todosLotes.length > 0) {
+        // Sin stock — buscar en el lote más reciente con precios
+        const lotesConPrecios = todosLotes.filter(
+          l => parseFloat(l.precioVentaUnitario || 0) > 0
+        );
+        if (lotesConPrecios.length > 0) {
+          const ultimoConPrecios = lotesConPrecios[lotesConPrecios.length - 1];
+          nuevoPrecioCompra      = parseFloat(ultimoConPrecios.precioCompraUnitario || 0);
+          nuevoPrecioVenta       = parseFloat(ultimoConPrecios.precioVentaUnitario || 0);
+          nuevoPrecioVentaMinimo = parseFloat(ultimoConPrecios.precioVentaMinimoUnitario || 0);
+        } else {
+          const ultimo = todosLotes[todosLotes.length - 1];
+          nuevoPrecioCompra = parseFloat(ultimo.precioCompraUnitario || 0);
+        }
+        stockTotal = 0;
       }
 
       await updateDoc(doc(db, 'productos', productoId), {
-        precioCompraDefault: nuevoPrecioCompra,
-        precioVentaDefault: nuevoPrecioVenta,
-        precioVentaMinimo: nuevoPrecioVentaMinimo,
-        stockActual: stockTotal,
-        updatedAt: serverTimestamp()
+        precioCompraDefault:  nuevoPrecioCompra,
+        precioVentaDefault:   nuevoPrecioVenta,
+        precioVentaMinimo:    nuevoPrecioVentaMinimo,
+        stockActual:          stockTotal,
+        updatedAt:            serverTimestamp()
       });
 
       return { nuevoPrecioCompra, nuevoPrecioVenta, nuevoPrecioVentaMinimo, stockTotal };
