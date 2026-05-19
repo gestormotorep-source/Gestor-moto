@@ -463,7 +463,7 @@ const NuevoIngresoPage = () => {
             proveedorNombre: proveedorSeleccionado.nombreEmpresa,
             fechaIngreso: serverTimestamp(),
             fechaVencimiento: item.fechaVencimiento || null,
-            estado: 'activo',
+            estado: 'pendiente',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -495,7 +495,7 @@ const NuevoIngresoPage = () => {
             proveedorNombre: proveedorSeleccionado.nombreEmpresa,
             fechaIngreso: serverTimestamp(),
             fechaVencimiento: item.fechaVencimiento || null,
-            estado: 'activo',
+            estado: 'pendiente',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });

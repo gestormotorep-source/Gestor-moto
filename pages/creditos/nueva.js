@@ -498,6 +498,9 @@ const NuevoCreditoPage = () => {
   const ejecutarRegistroCredito = async () => {
     setLoading(true);
     try {
+      let ventaId = null;
+      const numeroVenta = `VC-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
       await runTransaction(db, async (transaction) => {
         const creditoRef = doc(db, 'creditos', creditoActivo.id);
         const clienteRef = doc(db, 'cliente', selectedCliente.value);
@@ -519,9 +522,17 @@ const NuevoCreditoPage = () => {
         const todosMovimientos = [];
         for (const item of itemsCreditoActivo) {
           const movimientos = await consumirStockFIFO(item.productoId, parseFloat(item.cantidad), transaction);
-          todosMovimientos.push({ productoId: item.productoId, nombreProducto: item.nombreProducto, movimientos });
+          todosMovimientos.push({ 
+            item,
+            productoId: item.productoId, 
+            nombreProducto: item.nombreProducto, 
+            movimientos 
+          });
           const stockActual = productSnapshots[item.productoId].data().stockActual || 0;
-          transaction.update(doc(db, 'productos', item.productoId), { stockActual: stockActual - item.cantidad, updatedAt: serverTimestamp() });
+          transaction.update(doc(db, 'productos', item.productoId), { 
+            stockActual: stockActual - item.cantidad, 
+            updatedAt: serverTimestamp() 
+          });
           await recalcularPrecioCompraProducto(item.productoId, transaction);
         }
 
@@ -533,9 +544,11 @@ const NuevoCreditoPage = () => {
           fechaActivacion: serverTimestamp(),
           observaciones: observaciones || '',
           fechaVencimiento: fechaVencimiento ? new Date(fechaVencimiento) : null,
+          ventaId: null, // se asignará abajo
           updatedAt: serverTimestamp(),
         });
 
+        // ── Movimientos de lotes ────────────────────────────
         for (const pm of todosMovimientos) {
           for (const mov of pm.movimientos) {
             transaction.set(doc(collection(db, 'movimientosLotes')), {
@@ -555,9 +568,71 @@ const NuevoCreditoPage = () => {
             });
           }
         }
+
+        // ── Crear venta vinculada al crédito ────────────────
+        const clienteData = clienteSnap.data();
+        const ventaRef = doc(collection(db, 'ventas'));
+        ventaId = ventaRef.id;
+
+        const totalCredito = parseFloat(creditoActivo.totalCredito || 0);
+
+        transaction.set(ventaRef, {
+          numeroVenta,
+          creditoId: creditoActivo.id,
+          numeroCredito: creditoActivo.numeroCredito,
+          clienteId: selectedCliente.value,
+          clienteNombre: `${clienteData.nombre} ${clienteData.apellido || ''}`.trim(),
+          clienteDNI: clienteData.dni || null,
+          totalVenta: totalCredito,
+          tipoVenta: 'credito',
+          estado: 'pendiente',           // ← pendiente hasta que salde
+          estadoCredito: 'activo',
+          metodoPago: null,              // ← se define cuando abonen
+          observaciones: observaciones || null,
+          empleadoId: user.email || user.uid,
+          fechaVenta: serverTimestamp(),
+          fechaVentaCliente: new Date(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        // ── Items de la venta (con loteId del FIFO) ─────────
+        for (const pm of todosMovimientos) {
+          const { item } = pm;
+          // Un item puede haberse distribuido en varios lotes
+          for (const mov of pm.movimientos) {
+            const itemVentaRef = doc(collection(ventaRef, 'itemsVenta'));
+            transaction.set(itemVentaRef, {
+              productoId: item.productoId,
+              nombreProducto: item.nombreProducto,
+              marca: item.marca || '',
+              medida: item.medida || '',
+              codigoProveedor: item.codigoProveedor || '',
+              codigoTienda: item.codigoTienda || '',
+              color: item.color || '',
+              cantidad: mov.cantidadConsumida,
+              precioVentaUnitario: parseFloat(item.precioVentaUnitario || 0),
+              subtotal: parseFloat((mov.cantidadConsumida * parseFloat(item.precioVentaUnitario || 0)).toFixed(2)),
+              // Datos del lote para devoluciones
+              loteId: mov.loteId,
+              numeroLote: mov.numeroLote,
+              precioCompraUnitario: mov.precioCompraUnitario,
+              gananciaUnitaria: parseFloat(item.precioVentaUnitario || 0) - mov.precioCompraUnitario,
+              gananciaTotal: (parseFloat(item.precioVentaUnitario || 0) - mov.precioCompraUnitario) * mov.cantidadConsumida,
+              // Referencia al crédito
+              creditoId: creditoActivo.id,
+              numeroCredito: creditoActivo.numeroCredito,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+
+        // ── Actualizar crédito con ventaId ──────────────────
+        transaction.update(creditoRef, { ventaId: ventaRef.id });
       });
 
-      alert(`¡Crédito registrado exitosamente!\n\nTotal: S/. ${parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}\nCliente: ${selectedCliente.label}`);
+      alert(`¡Crédito registrado exitosamente!\n\nTotal: S/. ${parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}\nCliente: ${selectedCliente.label}\nN° Venta generada: ${numeroVenta}`);
       setCreditoActivo(null);
       setItemsCreditoActivo([]);
       setSelectedCliente(null);

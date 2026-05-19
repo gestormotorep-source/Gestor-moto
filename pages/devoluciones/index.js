@@ -29,6 +29,7 @@ import {
   XCircleIcon,
   ClockIcon,
   XMarkIcon,
+  CreditCardIcon,
   ExclamationTriangleIcon,
   ChevronLeftIcon,
   ChevronRightIcon
@@ -554,13 +555,22 @@ const DevolucionesIndexPage = () => {
                   <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
                 </div>
               </div>
-              <button
-                onClick={() => router.push('/devoluciones/nueva')}
-                className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-orange-600 hover:bg-orange-700 transition-colors"
-              >
-                <PlusIcon className="-ml-1 mr-3 h-5 w-5" />
-                Nueva Devolución
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => router.push('/devoluciones/nueva')}
+                  className="inline-flex items-center px-5 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-orange-600 hover:bg-orange-700 transition-colors"
+                >
+                  <PlusIcon className="-ml-1 mr-2 h-5 w-5" />
+                  Nueva Devolución
+                </button>
+                <button
+                  onClick={() => router.push('/devoluciones/credito')}
+                  className="inline-flex items-center px-5 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-purple-600 hover:bg-purple-700 transition-colors"
+                >
+                  <CreditCardIcon className="-ml-1 mr-2 h-5 w-5" />
+                  Devolución de Crédito
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 justify-between">

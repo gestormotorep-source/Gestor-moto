@@ -204,199 +204,127 @@ const ClienteCreditoDetalle = () => {
   }, [abonos, currentPageAbonos, limitAbonosPerPage]);
 
   // Modificación en la función procesarAbono
-const procesarAbono = async () => {
-  const monto = parseFloat(montoAbono);
-  
-  if (!monto || monto <= 0) {
-    showAlert('Ingresa un monto válido para el abono');
-    return;
-  }
+  const procesarAbono = async () => {
+    const monto = parseFloat(montoAbono);
+    
+    if (!monto || monto <= 0) {
+      showAlert('Ingresa un monto válido para el abono');
+      return;
+    }
 
-  if (monto > cliente.montoCreditoActual) {
-    showAlert('El monto del abono no puede ser mayor al saldo que debe');
-    return;
-  }
+    if (monto > cliente.montoCreditoActual) {
+      showAlert('El monto del abono no puede ser mayor al saldo que debe');
+      return;
+    }
 
-  const confirmPayment = window.confirm(
-    `¿Confirmar abono de S/. ${monto.toFixed(2)} por ${metodoPago}?`
-  );
-  if (!confirmPayment) {
-    return;
-  }
+    const confirmPayment = window.confirm(
+      `¿Confirmar abono de S/. ${monto.toFixed(2)} por ${metodoPago}?`
+    );
+    if (!confirmPayment) return;
 
-  try {
-    // 1. Crear registro de abono CON ESTADO
-    const abonoData = {
-      clienteId: cliente.id,
-      clienteNombre: cliente.nombre,
-      clienteDNI: cliente.dni,
-      monto: monto,
-      metodoPago: metodoPago,
-      fecha: new Date(),
-      empleadoId: user.email || user.uid,
-      descripcion: 'Abono a cuenta de crédito',
-      estado: 'activo', // NUEVO CAMPO
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    try {
+      const nuevoSaldo = parseFloat((cliente.montoCreditoActual - monto).toFixed(2));
+      const estaSaldando = nuevoSaldo <= 0;
 
-    const abonoRef = await addDoc(collection(db, 'abonos'), abonoData);
-    console.log("Abono creado con ID:", abonoRef.id);
-
-      // 2. Preparar información de productos para la venta
-      let productosEnCredito = [];
-      let totalProductosCredito = 0;
-      
-      // Recopilar todos los productos de todos los créditos activos
-      creditosConItems.forEach(credito => {
-        credito.items.forEach(item => {
-          productosEnCredito.push({
-            nombreProducto: item.nombreProducto || 'Producto sin nombre',
-            cantidad: item.cantidad || 1,
-            precioVentaUnitario: item.precioVentaUnitario || 0,
-            subtotal: item.subtotal || 0,
-            creditoId: credito.id,
-            numeroCredito: credito.numeroCredito || 'N/A',
-            itemId: item.id,
-            productoId: item.productoId || item.id
-          });
-          totalProductosCredito += (item.subtotal || 0);
-        });
-      });
-
-      // Crear descripción detallada de productos
-      const descripcionProductos = productosEnCredito.map(producto => 
-        `${producto.nombreProducto} (Cant: ${producto.cantidad}, P.Unit: S/${producto.precioVentaUnitario?.toFixed(2)}, Subtotal: S/${producto.subtotal?.toFixed(2)})`
-      ).join(' | ');
-
-      // 3. Registrar venta de abono con detalle de productos
-      const ventaAbonoData = {
+      // 1. Registrar abono en colección abonos
+      const abonoData = {
         clienteId: cliente.id,
         clienteNombre: cliente.nombre,
         clienteDNI: cliente.dni,
-        metodoPago: metodoPago,
-        totalVenta: monto,
-        tipoVenta: 'abono',
-        estado: 'completada',
-        fechaVenta: new Date(),
-        observaciones: `Abono a crédito - Saldo anterior: S/. ${cliente.montoCreditoActual.toFixed(2)}`,
+        monto,
+        metodoPago,
+        fecha: new Date(),
         empleadoId: user.email || user.uid,
-        abonoId: abonoRef.id,
-        // Nuevos campos para mejor tracking
-        creditoInfo: {
-          totalCreditosAbonados: creditosConItems.length,
-          totalProductosEnCredito: productosEnCredito.length,
-          montoTotalCredito: totalProductosCredito,
-          productosDetalle: productosEnCredito
-        },
+        descripcion: 'Abono a cuenta de crédito',
+        estado: estaSaldando ? 'procesado' : 'activo',
         createdAt: new Date(),
         updatedAt: new Date()
       };
+      const abonoRef = await addDoc(collection(db, 'abonos'), abonoData);
 
-      // 4. Crear la venta y agregar productos en la subcolección
-      const ventaRef = await addDoc(collection(db, 'ventas'), ventaAbonoData);
-      console.log("Venta de abono registrada con ID:", ventaRef.id);
-      
-      // 5. Agregar cada producto como item individual en la subcolección itemsVenta
-      console.log("Agregando productos a subcolección itemsVenta...");
-      for (const producto of productosEnCredito) {
-        const itemVentaData = {
-          nombreProducto: producto.nombreProducto,
-          cantidad: producto.cantidad,
-          precioVentaUnitario: producto.precioVentaUnitario,
-          subtotal: producto.subtotal,
-          creditoId: producto.creditoId,
-          numeroCredito: producto.numeroCredito,
-          itemCreditoId: producto.itemId,
-          productoId: producto.productoId,
-          esAbono: true,
-          montoAbono: monto,
-          porcentajeAbono: totalProductosCredito > 0 ? ((producto.subtotal / totalProductosCredito) * 100).toFixed(2) : '0.00',
-          tipoOperacion: 'abono_credito',
-          estadoOriginal: 'credito',
-          fechaAbono: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-        
-        const itemRef = await addDoc(collection(db, 'ventas', ventaRef.id, 'itemsVenta'), itemVentaData);
-        console.log("Producto agregado a itemsVenta:", itemRef.id, "-", producto.nombreProducto);
-      }
-
-      // 6. Calcular el nuevo saldo
-      const nuevoSaldo = Math.max(0, cliente.montoCreditoActual - monto);
-      
-      // 7. Actualizar el saldo en la base de datos
+      // 2. Actualizar saldo del cliente
       await updateDoc(doc(db, 'cliente', cliente.id), {
-        montoCreditoActual: nuevoSaldo,
+        montoCreditoActual: Math.max(0, nuevoSaldo),
         updatedAt: new Date()
       });
-      
-      console.log(`Saldo anterior: S/. ${cliente.montoCreditoActual.toFixed(2)}, Abono: S/. ${monto.toFixed(2)}, Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
 
-      // 8. Si el saldo llega a 0, marcar todos los items como saldados Y PROCESAR ABONOS
-    if (nuevoSaldo === 0) {
-      console.log("Saldo llegó a 0, marcando productos como saldados y procesando abonos");
-      
-      // Marcar créditos y items como saldados
-      for (const credito of creditosConItems) {
-        if (credito.items.length > 0) {
-          // Actualizar estado del crédito
-          await updateDoc(doc(db, 'creditos', credito.id), {
-            estado: 'saldado',
+      // 3. Buscar la venta vinculada al crédito activo
+      // Tomamos el primer crédito activo que tenga ventaId
+      const creditoConVenta = creditosConItems.find(c => c.ventaId);
+
+      if (creditoConVenta?.ventaId) {
+        if (estaSaldando) {
+          // Saldo completo → venta pasa a completada
+          await updateDoc(doc(db, 'ventas', creditoConVenta.ventaId), {
+            estado: 'completada',
+            metodoPago,                    // método del último abono (o podría ser 'mixto' si hubo varios)
             fechaSaldado: new Date(),
             updatedAt: new Date()
           });
 
-          // Marcar todos los items como saldados
-          for (const item of credito.items) {
-            await updateDoc(doc(db, 'creditos', credito.id, 'itemsCredito', item.id), {
+          // Marcar créditos como saldados
+          for (const credito of creditosConItems) {
+            await updateDoc(doc(db, 'creditos', credito.id), {
               estado: 'saldado',
               fechaSaldado: new Date(),
               updatedAt: new Date()
             });
+            for (const item of credito.items) {
+              await updateDoc(
+                doc(db, 'creditos', credito.id, 'itemsCredito', item.id),
+                { estado: 'saldado', fechaSaldado: new Date(), updatedAt: new Date() }
+              );
+            }
           }
+
+          // Marcar abonos anteriores como procesados
+          const abonosActivosSnap = await getDocs(query(
+            collection(db, 'abonos'),
+            where('clienteId', '==', cliente.id),
+            where('estado', '==', 'activo')
+          ));
+          await Promise.all(abonosActivosSnap.docs.map(d =>
+            updateDoc(doc(db, 'abonos', d.id), {
+              estado: 'procesado',
+              fechaProcesado: new Date(),
+              updatedAt: new Date()
+            })
+          ));
+
+          showAlert(`¡Crédito saldado! Abono de S/. ${monto.toFixed(2)} registrado. Redirigiendo...`);
+          setTimeout(() => router.push('/creditos/activos'), 2000);
+
+        } else {
+          // Abono parcial → solo actualizamos el método de pago más reciente en la venta
+          await updateDoc(doc(db, 'ventas', creditoConVenta.ventaId), {
+            ultimoAbono: {
+              monto,
+              metodoPago,
+              fecha: new Date(),
+              abonoId: abonoRef.id,
+              saldoRestante: nuevoSaldo,
+            },
+            updatedAt: new Date()
+          });
+
+          setCliente(prev => ({ ...prev, montoCreditoActual: nuevoSaldo }));
+          setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
+          setMontoAbono('');
+          showAlert(`Abono de S/. ${monto.toFixed(2)} registrado. Saldo restante: S/. ${nuevoSaldo.toFixed(2)}`);
         }
+      } else {
+        // Crédito antiguo sin ventaId — flujo anterior sin cambios
+        setCliente(prev => ({ ...prev, montoCreditoActual: Math.max(0, nuevoSaldo) }));
+        setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
+        setMontoAbono('');
+        showAlert(`Abono de S/. ${monto.toFixed(2)} registrado. Saldo restante: S/. ${Math.max(0, nuevoSaldo).toFixed(2)}`);
       }
 
-      // NUEVO: Marcar todos los abonos de este cliente como procesados
-      console.log("Marcando todos los abonos como procesados...");
-      const todosLosAbonosQuery = query(
-        collection(db, 'abonos'),
-        where('clienteId', '==', cliente.id),
-        where('estado', '==', 'activo')
-      );
-      const todosLosAbonosSnapshot = await getDocs(todosLosAbonosQuery);
-      
-      const batchPromises = todosLosAbonosSnapshot.docs.map(async (abonoDoc) => {
-        return updateDoc(doc(db, 'abonos', abonoDoc.id), {
-          estado: 'procesado',
-          fechaProcesado: new Date(),
-          motivoProcesado: 'Crédito saldado completamente',
-          updatedAt: new Date()
-        });
-      });
-      
-      await Promise.all(batchPromises);
-      console.log(`${todosLosAbonosSnapshot.docs.length} abonos marcados como procesados`);
-
-      showAlert(`¡Crédito saldado completamente! Abono de S/. ${monto.toFixed(2)} procesado. Redirigiendo...`);
-      setTimeout(() => {
-        router.push('/creditos/activos');
-      }, 2000);
-    } else {
-      // Actualizar estados locales con el saldo correcto
-      setCliente(prev => ({ ...prev, montoCreditoActual: nuevoSaldo }));
-      setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
-      setMontoAbono('');
-      showAlert(`Abono de S/. ${monto.toFixed(2)} registrado exitosamente. Nuevo saldo que debe: S/. ${nuevoSaldo.toFixed(2)}`);
+    } catch (error) {
+      console.error('Error al procesar abono:', error);
+      showAlert('Error al procesar el abono. Inténtalo de nuevo.');
     }
-
-  } catch (error) {
-    console.error('Error al procesar abono:', error);
-    showAlert('Error al procesar el abono. Inténtalo de nuevo.');
-  }
-};
+  };
 
   // Funciones para paginación de abonos
   const totalPagesAbonos = Math.ceil(abonos.length / limitAbonosPerPage);
