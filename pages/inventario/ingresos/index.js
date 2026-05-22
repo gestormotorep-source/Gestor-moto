@@ -396,63 +396,80 @@ const IngresosPage = () => {
     setError(null);
     try {
       await runTransaction(db, async (transaction) => {
-        const ingresoRef  = doc(db, 'ingresos', ingresoId);
+        // 1. Verificar ingreso
+        const ingresoRef = doc(db, 'ingresos', ingresoId);
         const ingresoSnap = await transaction.get(ingresoRef);
-        if (!ingresoSnap.exists())              throw new Error('Boleta no encontrada.');
+        if (!ingresoSnap.exists()) throw new Error('Boleta no encontrada.');
         if (ingresoSnap.data().estado === 'recibido') throw new Error('Ya fue confirmada.');
 
-        const lotesIngresoRef   = collection(db, 'ingresos', ingresoId, 'lotes');
-        const lotesIngresoSnap  = await getDocs(lotesIngresoRef);
+        // 2. Leer lotes de la colección PRINCIPAL (estos son los que usa nueva.js)
         const lotesPrincipalesSnap = await getDocs(
           query(collection(db, 'lotes'), where('ingresoId', '==', ingresoId))
         );
+        if (lotesPrincipalesSnap.empty) throw new Error('No se encontraron lotes en colección principal.');
 
-        if (lotesIngresoSnap.empty && lotesPrincipalesSnap.empty)
-          throw new Error('No se encontraron lotes.');
-
-        const productoRefsAndData = [];
-
-        for (const loteDoc of lotesIngresoSnap.docs) {
-          const loteData    = loteDoc.data();
-          const productoRef = doc(db, 'productos', loteData.productoId);
-          const productoSnap = await transaction.get(productoRef);
-          if (productoSnap.exists()) {
-            productoRefsAndData.push({
-              loteDocRef: loteDoc.ref, loteData,
-              productoRef, currentProductoData: productoSnap.data(),
-            });
-          }
+        // 3. Leer todos los productos afectados
+        const productoIds = [...new Set(
+          lotesPrincipalesSnap.docs.map(d => d.data().productoId)
+        )];
+        const productosSnaps = {};
+        for (const pid of productoIds) {
+          const pRef = doc(db, 'productos', pid);
+          productosSnaps[pid] = { ref: pRef, snap: await transaction.get(pRef) };
         }
 
-        for (const loteDoc of lotesPrincipalesSnap.docs) {
-          const loteData = loteDoc.data();
-          const yaExiste = productoRefsAndData.some(i =>
-            i.loteData.productoId  === loteData.productoId &&
-            i.loteData.numeroLote  === loteData.numeroLote
-          );
-          if (!yaExiste) {
-            const productoRef  = doc(db, 'productos', loteData.productoId);
-            const productoSnap = await transaction.get(productoRef);
-            if (productoSnap.exists()) {
-              productoRefsAndData.push({
-                loteDocRef: loteDoc.ref, loteData,
-                productoRef, currentProductoData: productoSnap.data(),
-              });
-            }
-          }
-        }
-
-        const cantidadLotes      = productoRefsAndData.length;
-        const totalStockIngresado = productoRefsAndData.reduce(
-          (sum, { loteData }) => sum + (loteData.cantidad || 0), 0
+        // 4. También leer subcolección para actualizarla en paralelo
+        const lotesSubSnap = await getDocs(
+          collection(db, 'ingresos', ingresoId, 'lotes')
         );
 
-        for (const { loteDocRef, loteData, productoRef, currentProductoData } of productoRefsAndData) {
-          const newStock = (currentProductoData.stockActual || 0) + (loteData.cantidad || 0);
-          transaction.update(productoRef,  { stockActual: newStock, updatedAt: serverTimestamp() });
-          transaction.update(loteDocRef,   { stockRestante: loteData.cantidad, estado: 'activo', updatedAt: serverTimestamp() });
+        // ── WRITES ──────────────────────────────────────────────────────
+
+        let cantidadLotes = 0;
+        let totalStockIngresado = 0;
+
+        // 5. Activar lotes PRINCIPALES y actualizar productos
+        for (const loteDoc of lotesPrincipalesSnap.docs) {
+          const loteData = loteDoc.data();
+          const cantidad = parseFloat(loteData.cantidad || 0);
+
+          // ✅ Activar lote en colección principal
+          transaction.update(loteDoc.ref, {
+            stockRestante: cantidad,
+            estado: 'activo',
+            updatedAt: serverTimestamp(),
+          });
+
+          // ✅ Actualizar stockActual del producto
+          const { ref: pRef, snap: pSnap } = productosSnaps[loteData.productoId];
+          if (pSnap.exists()) {
+            const stockAnterior = pSnap.data().stockActual || 0;
+            transaction.update(pRef, {
+              stockActual: stockAnterior + cantidad,
+              updatedAt: serverTimestamp(),
+            });
+            // Actualizar el snap local para acumular si hay múltiples lotes del mismo producto
+            productosSnaps[loteData.productoId].snap = {
+              exists: () => true,
+              data: () => ({ ...pSnap.data(), stockActual: stockAnterior + cantidad }),
+            };
+          }
+
+          cantidadLotes++;
+          totalStockIngresado += cantidad;
         }
 
+        // 6. Activar lotes de SUBCOLECCIÓN también (para consistencia)
+        for (const loteDoc of lotesSubSnap.docs) {
+          const loteData = loteDoc.data();
+          transaction.update(loteDoc.ref, {
+            stockRestante: parseFloat(loteData.cantidad || 0),
+            estado: 'activo',
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        // 7. Actualizar ingreso a recibido
         transaction.update(ingresoRef, {
           estado: 'recibido',
           fechaConfirmacion: serverTimestamp(),
@@ -463,7 +480,6 @@ const IngresosPage = () => {
       });
 
       alert('Recepción confirmada y stock actualizado.');
-      // Invalidar cache para que el próximo fetch traiga datos frescos
       invalidateCache('ingresos');
       filtersChanged.current = true;
       setIngresos(prev => prev.map(ing =>
