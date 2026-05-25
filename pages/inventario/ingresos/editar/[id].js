@@ -75,6 +75,8 @@ const EditarIngresoPage = () => {
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
   const [editNumeroLote, setEditNumeroLote] = useState('');
+  const [showEditUmbralItem, setShowEditUmbralItem] = useState(false);
+  const [editUmbralItem, setEditUmbralItem] = useState(0);
 
   // Modal edición de lote existente
   const [showEditLoteModal, setShowEditLoteModal] = useState(false);
@@ -87,6 +89,9 @@ const EditarIngresoPage = () => {
   const [lotesAnterioresEdit, setLotesAnterioresEdit] = useState([]);
   const [showUmbralEditLote, setShowUmbralEditLote] = useState(false);
   const [nuevoUmbralLote, setNuevoUmbralLote] = useState(0);
+  const [editPrecioVenta, setEditPrecioVenta] = useState(0);
+  const [editPrecioVentaMinimo, setEditPrecioVentaMinimo] = useState(0);
+  const [editLotesAnteriores, setEditLotesAnteriores] = useState([]);
 
   const generateLoteNumber = () => {
     const fecha = new Date();
@@ -237,6 +242,8 @@ const EditarIngresoPage = () => {
       return snap.docs.map(d => ({
         numeroLote: d.data().numeroLote,
         precio: parseFloat(d.data().precioCompraUnitario || 0),
+        precioVenta: parseFloat(d.data().precioVentaUnitario || 0),
+        stockRestante: d.data().stockRestante ?? 0,
         fecha: d.data().fechaIngreso?.toDate?.() || null,
         estado: d.data().estado
       }));
@@ -299,6 +306,7 @@ const EditarIngresoPage = () => {
       color: selectedProduct.color || '',
       numeroLote: numeroLote.trim(),
       cantidad: quantity,
+      stockActual: selectedProduct.stockActual || 0,
       precioCompraUnitario: precioCompra.toFixed(2),
       stockRestanteLote: quantity,
       subtotal: (quantity * precioCompra).toFixed(2),
@@ -319,7 +327,12 @@ const EditarIngresoPage = () => {
     setEditQuantity(Number(item.cantidad));
     setEditPrecio(Number(item.precioCompraUnitario));
     setEditNumeroLote(item.numeroLote);
+    setEditPrecioVenta(Number(item.precioVentaUnitario || 0));
+    setEditPrecioVentaMinimo(Number(item.precioVentaMinimoUnitario || 0));
+    setEditLotesAnteriores([]);
+    obtenerLotesAnteriores(item.productoId).then(lotes => setEditLotesAnteriores(lotes));
     setShowEditItemModal(true);
+    setEditUmbralItem(0);
   };
 
   const handleUpdateItem = () => {
@@ -339,6 +352,9 @@ const EditarIngresoPage = () => {
         numeroLote: editNumeroLote.trim(),
         cantidad: Number(editQuantity),
         precioCompraUnitario: Number(editPrecio).toFixed(2),
+        precioVentaUnitario: Number(editPrecioVenta).toFixed(2),
+        precioVentaMinimoUnitario: Number(editPrecioVentaMinimo).toFixed(2),
+        nuevoUmbral: showEditUmbralItem ? editUmbralItem : item.nuevoUmbral, // ← AQUÍ
         stockRestanteLote: Number(editQuantity),
         subtotal: (Number(editQuantity) * Number(editPrecio)).toFixed(2),
       };
@@ -1051,11 +1067,26 @@ const EditarIngresoPage = () => {
                                 <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                   {lote.estado}
                                 </span>
+                                {/* Stock del lote */}
+                                <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                                  lote.stockRestante <= 0 
+                                    ? 'bg-red-100 text-red-700' 
+                                    : lote.stockRestante <= 5 
+                                      ? 'bg-amber-100 text-amber-700' 
+                                      : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  Stock: {lote.stockRestante}
+                                </span>
                                 <p className="text-xs text-gray-400 mt-0.5">
                                   {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
                                 </p>
                               </div>
-                              <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
+                              <div className="text-right">
+                                <div className="text-sm font-bold text-amber-800">C: S/. {lote.precio.toFixed(2)}</div>
+                                {lote.precioVenta > 0 && (
+                                  <div className="text-sm font-semibold text-green-700">V: S/. {lote.precioVenta.toFixed(2)}</div>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1168,56 +1199,151 @@ const EditarIngresoPage = () => {
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditItemModal(false)}></div>
-            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-8">
-              <button onClick={() => setShowEditItemModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-500">
+            <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-7xl p-10">
+
+              <button type="button" onClick={() => setShowEditItemModal(false)}
+                className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
                 <XMarkIcon className="h-6 w-6" />
               </button>
-              <h3 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                <PencilIcon className="h-5 w-5 text-yellow-600" /> Editar Lote Nuevo
+
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                <PencilIcon className="h-7 w-7 text-yellow-500" />
+                Editar Lote Nuevo
               </h3>
-              <div className="bg-gray-50 p-4 rounded-lg mb-5">
-                <p className="font-medium text-gray-900">{editingItem.nombreProducto}</p>
-                <p className="text-sm text-gray-600">Código: {editingItem.codigoTienda} | Marca: {editingItem.marca}</p>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Número de Lote</label>
-                  <div className="flex">
-                    <input type="text" value={editNumeroLote} onChange={(e) => setEditNumeroLote(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 font-mono" />
-                    <button type="button" onClick={() => setEditNumeroLote(generateLoteNumber())}
-                      className="px-3 py-2 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200">🎲</button>
+
+              <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                {/* COLUMNA IZQUIERDA */}
+                <div className="flex flex-col gap-4 h-full">
+                  <div className="bg-gray-50 p-5 rounded-lg border-2 border-yellow-200">
+                    <h4 className="font-bold text-xl text-gray-900 mb-1">{editingItem.nombreProducto}</h4>
+                    {editingItem.codigoProveedor && (
+                      <div className="mb-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-blue-100 text-blue-800 font-mono">
+                          C. Proveedor: {editingItem.codigoProveedor}
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{editingItem.codigoTienda || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{editingItem.marca || 'Sin marca'}</span></div>
+                      <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{editingItem.medida || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{editingItem.color || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Stock actual: </span><span className="font-bold text-gray-900">{editingItem.stockActual ?? 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">ID: </span><span className="text-gray-400 text-xs font-mono">{editingItem.productoId}</span></div>
+                    </div>
                   </div>
+
+                  {editLotesAnteriores.length > 0 ? (
+                    <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                      <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Lotes anteriores de este producto</span>
+                      </div>
+                      <div className="divide-y divide-amber-100 overflow-y-auto max-h-64">
+                        {editLotesAnteriores.map((lote, i) => (
+                          <div key={i} className="flex items-center justify-between px-4 py-3">
+                            <div>
+                              <span className="text-sm font-mono text-gray-700">{lote.numeroLote}</span>
+                              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {lote.estado}
+                              </span>
+                              {/* Stock del lote */}
+                              <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                                lote.stockRestante <= 0 
+                                  ? 'bg-red-100 text-red-700' 
+                                  : lote.stockRestante <= 5 
+                                    ? 'bg-amber-100 text-amber-700' 
+                                    : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                Stock: {lote.stockRestante}
+                              </span>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-amber-800">C: S/. {lote.precio.toFixed(2)}</div>
+                              {lote.precioVenta > 0 && (
+                                <div className="text-sm font-semibold text-green-700">V: S/. {lote.precioVenta.toFixed(2)}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 border border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm">
+                      Sin lotes anteriores
+                    </div>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+
+                {/* COLUMNA DERECHA */}
+                <div className="flex flex-col gap-5 h-full">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
-                    <input type="number" value={editQuantity} onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
-                      min="1" onWheel={(e) => e.target.blur()}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <HashtagIcon className="h-4 w-4 inline mr-1" />
+                      Número de Lote
+                    </label>
+                    <div className="flex">
+                      <input type="text" value={editNumeroLote} onChange={(e) => setEditNumeroLote(e.target.value)}
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-yellow-500 text-base font-mono"
+                        placeholder="Ej: L240915-ABC1" />
+                      <button type="button" onClick={() => setEditNumeroLote(generateLoteNumber())}
+                        className="px-4 py-3 bg-yellow-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-yellow-200 text-base">
+                        🎲
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Debe ser único entre todos los lotes del ingreso.</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Compra (S/.)</label>
-                    <input type="number" value={editPrecio} onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
-                      min="0" step="0.01" onWheel={(e) => e.target.blur()}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                      <input type="number" value={editQuantity} onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                        min="1" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Compra (S/.)</label>
+                      <input type="number" value={editPrecio} onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                      <input type="number" value={editPrecioVenta} onChange={(e) => setEditPrecioVenta(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio Venta Mínimo (S/.)</label>
+                      <input type="number" value={editPrecioVentaMinimo} onChange={(e) => setEditPrecioVentaMinimo(parseFloat(e.target.value) || 0)}
+                        min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-base" />
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex flex-col gap-4">
+                    <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-5 rounded-lg border border-yellow-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
+                        <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <button type="button" onClick={() => setShowEditItemModal(false)}
+                        className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                        Cancelar
+                      </button>
+                      <button type="button" onClick={handleUpdateItem}
+                        disabled={editQuantity <= 0 || editPrecio < 0 || !editNumeroLote.trim()}
+                        className="px-6 py-3 rounded-lg bg-yellow-500 text-white font-semibold text-base hover:bg-yellow-400 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        Actualizar Lote
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                  <div className="flex justify-between">
-                    <span className="font-medium text-gray-700">Subtotal:</span>
-                    <span className="font-bold text-yellow-800 text-xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={() => setShowEditItemModal(false)}
-                  className="px-5 py-2 rounded-lg bg-white ring-1 ring-gray-300 hover:bg-gray-50 font-semibold text-gray-900">Cancelar</button>
-                <button onClick={handleUpdateItem}
-                  disabled={editQuantity <= 0 || editPrecio < 0 || !editNumeroLote.trim()}
-                  className="px-5 py-2 rounded-lg bg-yellow-600 text-white font-semibold hover:bg-yellow-500 disabled:bg-gray-400">
-                  Actualizar
-                </button>
               </div>
             </div>
           </div>
@@ -1281,11 +1407,26 @@ const EditarIngresoPage = () => {
                               <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                 {lote.estado}
                               </span>
+                              {/* Stock del lote */}
+                              <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                                lote.stockRestante <= 0 
+                                  ? 'bg-red-100 text-red-700' 
+                                  : lote.stockRestante <= 5 
+                                    ? 'bg-amber-100 text-amber-700' 
+                                    : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                Stock: {lote.stockRestante}
+                              </span>
                               <p className="text-xs text-gray-400 mt-0.5">
                                 {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
                               </p>
                             </div>
-                            <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-amber-800">C: S/. {lote.precio.toFixed(2)}</div>
+                              {lote.precioVenta > 0 && (
+                                <div className="text-sm font-semibold text-green-700">V: S/. {lote.precioVenta.toFixed(2)}</div>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1298,18 +1439,18 @@ const EditarIngresoPage = () => {
 
                   {/* Umbral */}
                   <div>
-                    {!showUmbralEditLote ? (
-                      <button type="button" onClick={() => setShowUmbralEditLote(true)}
+                    {!showEditUmbralItem ? (
+                      <button type="button" onClick={() => setShowEditUmbralItem(true)}
                         className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
                         ✏️ Editar stock mínimo
                       </button>
                     ) : (
                       <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                        <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Nuevo stock mínimo:</label>
-                        <input type="number" value={nuevoUmbralLote} onChange={(e) => setNuevoUmbralLote(parseInt(e.target.value) || 0)}
+                        <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Stock mínimo:</label>
+                        <input type="number" value={editUmbralItem} onChange={(e) => setEditUmbralItem(parseInt(e.target.value) || 0)}
                           min="0" onWheel={(e) => e.target.blur()}
                           className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
-                        <button type="button" onClick={() => setShowUmbralEditLote(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
+                        <button type="button" onClick={() => setShowEditUmbralItem(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
                       </div>
                     )}
                   </div>

@@ -346,6 +346,7 @@ const NuevoIngresoPage = () => {
         precioVentaMinimoUnitario: Number(editPrecioVentaMinimo).toFixed(2),
         nuevoUmbral: showEditUmbralEdit ? editNuevoUmbral : item.nuevoUmbral,
         stockRestanteLote: Number(editQuantity), // Actualizar stock del lote
+        stockActual: selectedProduct.stockActual || 0,
         subtotal: (Number(editQuantity) * Number(editPrecio)).toFixed(2),
       };
     }
@@ -636,6 +637,8 @@ const NuevoIngresoPage = () => {
       return snap.docs.map(d => ({
         numeroLote: d.data().numeroLote,
         precio: parseFloat(d.data().precioCompraUnitario || 0),
+        precioVenta: parseFloat(d.data().precioVentaUnitario || 0),
+        stockRestante: d.data().stockRestante ?? 0,
         fecha: d.data().fechaIngreso?.toDate?.() || null,
         estado: d.data().estado
       }));
@@ -1059,11 +1062,26 @@ const NuevoIngresoPage = () => {
                           <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                             {lote.estado}
                           </span>
+                          {/* Stock del lote */}
+                          <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                            lote.stockRestante <= 0 
+                              ? 'bg-red-100 text-red-700' 
+                              : lote.stockRestante <= 5 
+                                ? 'bg-amber-100 text-amber-700' 
+                                : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            Stock: {lote.stockRestante}
+                          </span>
                           <p className="text-xs text-gray-400 mt-0.5">
                             {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
                           </p>
                         </div>
-                        <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-amber-800">C: S/. {lote.precio.toFixed(2)}</div>
+                          {lote.precioVenta > 0 && (
+                            <div className="text-sm font-semibold text-green-700">V: S/. {lote.precioVenta.toFixed(2)}</div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1223,11 +1241,26 @@ const NuevoIngresoPage = () => {
                               <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${lote.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                 {lote.estado}
                               </span>
+                              {/* Stock del lote */}
+                              <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                                lote.stockRestante <= 0 
+                                  ? 'bg-red-100 text-red-700' 
+                                  : lote.stockRestante <= 5 
+                                    ? 'bg-amber-100 text-amber-700' 
+                                    : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                Stock: {lote.stockRestante}
+                              </span>
                               <p className="text-xs text-gray-400 mt-0.5">
                                 {lote.fecha ? lote.fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
                               </p>
                             </div>
-                            <span className="text-base font-bold text-amber-800">S/. {lote.precio.toFixed(2)}</span>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-amber-800">C: S/. {lote.precio.toFixed(2)}</div>
+                              {lote.precioVenta > 0 && (
+                                <div className="text-sm font-semibold text-green-700">V: S/. {lote.precioVenta.toFixed(2)}</div>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
