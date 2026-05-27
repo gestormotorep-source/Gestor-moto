@@ -79,7 +79,6 @@ const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
 
       {open && (
         <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-xl">
-          {/* Header con flechas + dropdowns */}
           <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
             <button
               onClick={prevMonth}
@@ -142,10 +141,136 @@ const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
   );
 };
 
-// ── Modal Detalle Completo de Venta (rediseñado como ventas) ───────────────
+// ── Modal Detalle Completo de Venta ────────────────────────────────────────
 const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
   if (!show || !data) return null;
   const { venta, detalle } = data;
+
+  // ── Vista de Abono (diseño consistente con el modal principal) ────────────
+  if (venta.tipoVenta === 'abono') {
+    const getMetodoPagoIconAbono = (metodo) => {
+      switch (metodo?.toLowerCase()) {
+        case 'yape':        return '💜';
+        case 'plin':        return '💙';
+        case 'efectivo':    return '💵';
+        case 'tarjeta':
+        case 'tarjeta_credito':
+        case 'tarjeta_debito': return '💳';
+        case 'transferencia':  return '🏦';
+        default:            return '💰';
+      }
+    };
+    const getMetodoPagoLabelAbono = (metodo) => {
+      const m = {
+        efectivo: 'Efectivo', yape: 'Yape', plin: 'Plin',
+        tarjeta: 'Tarjeta', tarjeta_credito: 'T. Crédito',
+        tarjeta_debito: 'T. Débito', transferencia: 'Transferencia',
+      };
+      return m[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
+    };
+
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
+
+          {/* Panel — mismo ancho máximo y estructura que el modal principal */}
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
+
+            {/* ── Header ── */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <InformationCircleIcon className="h-6 w-6 text-blue-600" />
+                Detalle de Abono
+                <span className="text-blue-700 font-mono text-base">
+                  #{(venta.ventaId || venta.numeroVenta || '').slice(-8).toUpperCase() || 'N/A'}
+                </span>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                  CRÉDITO
+                </span>
+              </h2>
+              <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* ── Contenido ── */}
+            <div className="px-8 py-6 space-y-5">
+
+              {/* Datos generales — misma grilla que el modal de venta */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-50 rounded-lg p-5">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Cliente</label>
+                  <p className="mt-0.5 text-sm font-medium text-gray-900">{venta.clienteNombre || 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Fecha y Hora</label>
+                  <p className="mt-0.5 text-sm text-gray-900">
+                    {venta.fechaVenta instanceof Date
+                      ? venta.fechaVenta.toLocaleString('es-PE', {
+                          year: 'numeric', month: '2-digit', day: '2-digit',
+                          hour: '2-digit', minute: '2-digit'
+                        })
+                      : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Estado</label>
+                  <span className="mt-0.5 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Completado
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Método de Pago</label>
+                  <p className="mt-0.5 text-sm text-gray-900 flex items-center gap-1">
+                    <span>{getMetodoPagoIconAbono(venta.metodoPago)}</span>
+                    {getMetodoPagoLabelAbono(venta.metodoPago)}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Venta de Crédito asociada</label>
+                  <p className="mt-0.5 text-sm font-semibold text-blue-700 font-mono">
+                    {venta.ventaId || venta.numeroVenta || 'N/A'}
+                  </p>
+                </div>
+                {venta.observaciones && (
+                  <div className="col-span-full">
+                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Observaciones</label>
+                    <p className="mt-0.5 text-sm text-gray-900">{venta.observaciones}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Recuadro de monto — similar al análisis de ganancia del modal principal */}
+              <div className="bg-blue-50 rounded-lg p-5 border border-blue-100">
+                <h4 className="font-semibold text-gray-800 mb-3">Resumen del Abono</h4>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Monto Abonado:</span>
+                  <span className="text-2xl font-extrabold text-green-700">{formatCurrency(venta.totalVenta)}</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Este abono descuenta el saldo pendiente de la venta a crédito asociada.
+                  La ganancia de este movimiento se contabilizó en la venta original.
+                </p>
+              </div>
+
+            </div>
+
+            {/* ── Footer — igual al modal principal ── */}
+            <div className="flex justify-end px-6 py-4 border-t border-gray-200 shrink-0">
+              <button
+                onClick={onClose}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition"
+              >
+                Cerrar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const getEstadoClass = (estado) => {
     switch (estado) {
@@ -167,7 +292,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
 
   const items = detalle?.items || [];
 
-  // totales
   const totalCompra   = items.reduce((s, i) => s + parseFloat(i.precioCompraUnitario || i.precioCompra || 0) * parseInt(i.cantidad || 0), 0);
   const totalVentaRow = items.reduce((s, i) => s + parseFloat(i.subtotal || parseFloat(i.precioVentaUnitario || 0) * parseInt(i.cantidad || 0)), 0);
   const totalGanancia = items.reduce((s, i) => {
@@ -181,13 +305,10 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex min-h-full items-center justify-center p-4">
-        {/* Backdrop */}
         <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
 
-        {/* Panel */}
         <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh]">
 
-          {/* ── Header ── */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <InformationCircleIcon className="h-6 w-6 text-blue-600" />
@@ -204,10 +325,8 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
             </button>
           </div>
 
-          {/* ── Contenido scrollable ── */}
           <div className="overflow-y-auto flex-1 px-8 py-5 space-y-6">
 
-            {/* Datos generales de la venta */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 rounded-lg p-5">
               <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Cliente</label>
@@ -250,7 +369,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
               )}
             </div>
 
-            {/* ── Tabla de productos ── */}
             <div>
               <h3 className="text-base font-semibold text-gray-800 mb-2">
                 Productos Vendidos {items.length > 0 && <span className="text-gray-400 font-normal text-sm">({items.length})</span>}
@@ -321,7 +439,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
               )}
             </div>
 
-            {/* ── Análisis de ganancia ── */}
             {detalle && (
               <div className="bg-blue-50 rounded-lg p-5 border border-blue-100">
                 <h4 className="font-semibold text-gray-800 mb-3">Análisis de Ganancia</h4>
@@ -363,7 +480,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
               </div>
             )}
 
-            {/* ── Devoluciones asociadas ── */}
             {detalle?.tieneDevoluciones && detalle.devoluciones?.length > 0 && (
               <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
                 <h4 className="font-semibold text-orange-800 mb-3 flex items-center gap-1">
@@ -390,7 +506,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
               </div>
             )}
 
-            {/* ── Resumen final ── */}
             <div className="flex justify-end pt-2 border-t border-gray-100">
               <div className="text-right space-y-1">
                 {detalle?.tieneDevoluciones ? (
@@ -410,7 +525,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
             </div>
           </div>
 
-          {/* ── Footer ── */}
           <div className="flex justify-end px-6 py-4 border-t border-gray-200 shrink-0">
             <button
               onClick={onClose}
@@ -431,6 +545,7 @@ const CajaPage = () => {
   const { user } = useAuth();
   const router = useRouter();
 
+  // ── ventas = ventas completadas + abonos del día (merged) ──
   const [ventas, setVentas] = useState([]);
   const [retiros, setRetiros] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -477,7 +592,7 @@ const CajaPage = () => {
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(amount || 0);
 
-  // ── Helpers (sin cambios) ────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
   const cargarDineroInicial = async (fecha) => {
     try {
       const fechaString = fecha.toISOString().split('T')[0];
@@ -532,6 +647,10 @@ const CajaPage = () => {
         }
         return r;
       };
+      // Separar ventas reales de abonos para el resumen de cierre
+      const ventasReales = ventas.filter(v => v.tipoVenta !== 'abono');
+      const abonosDelDia = ventas.filter(v => v.tipoVenta === 'abono');
+
       const cierreData = limpiar({
         fecha: Timestamp.fromDate(selectedDate), fechaString,
         dineroInicial: dineroInicial || 0,
@@ -550,13 +669,20 @@ const CajaPage = () => {
           id: r.id || '', monto: r.monto || 0, tipo: r.tipo || 'efectivo',
           motivo: r.motivo || '', realizadoPor: r.realizadoPor || '',
         })),
-        ventas: ventas.map(v => limpiar({
+        ventas: ventasReales.map(v => limpiar({
           id: v.id || '', numeroVenta: v.numeroVenta || 'N/A',
           clienteNombre: v.clienteNombre || '', totalVenta: v.totalVenta || 0,
           metodoPago: v.metodoPago || 'efectivo',
         })),
+        abonos: abonosDelDia.map(a => limpiar({
+          id: a.id || '', ventaId: a.ventaId || a.numeroVenta || 'N/A',
+          clienteNombre: a.clienteNombre || '', monto: a.totalVenta || 0,
+          metodoPago: a.metodoPago || 'efectivo',
+        })),
         resumenFinal: {
-          totalVentas: ventas.length || 0, totalDevoluciones: devoluciones.length || 0,
+          totalVentas: ventasReales.length || 0,
+          totalAbonos: abonosDelDia.length || 0,
+          totalDevoluciones: devoluciones.length || 0,
           totalRetiros: retiros.length || 0, dineroInicial: dineroInicial || 0,
           efectivoFinal: Math.max(0, (dineroInicial || 0) + (totalesDelDia.efectivo || 0) - (dineroEnCaja.totalRetiros || 0)),
           digitalTotal: (totalesDelDia.yape || 0) + (totalesDelDia.plin || 0) + (totalesDelDia.tarjeta || 0),
@@ -585,6 +711,8 @@ const CajaPage = () => {
     } finally { setLoading(false); }
   };
 
+  // ── calcularTotalesConGananciaReal ────────────────────────────────────────
+  // Recibe la lista mezclada (ventas completadas + abonos)
   const calcularTotalesConGananciaReal = async (ventasList, devolucionesList = []) => {
     let efectivo = 0, yape = 0, plin = 0, tarjeta = 0, total = 0;
     let gananciaBruta = 0, gananciaReal = 0;
@@ -593,10 +721,15 @@ const CajaPage = () => {
       const totalVenta = parseFloat(venta.totalVenta || 0);
       total += totalVenta;
       gananciaBruta += totalVenta;
+
+      // Los abonos suman al total de caja pero ganancia = 0
+      // (la ganancia ya se contabilizó cuando se hizo la venta de crédito)
       if (venta.tipoVenta !== 'abono') {
         gananciaReal += venta.gananciaTotalVenta && typeof venta.gananciaTotalVenta === 'number'
           ? venta.gananciaTotalVenta : totalVenta * 0.4;
       }
+
+      // Sumar al método de pago correcto
       if (venta.paymentData?.paymentMethods) {
         venta.paymentData.paymentMethods.forEach(pm => {
           const a = parseFloat(pm.amount || 0);
@@ -618,7 +751,9 @@ const CajaPage = () => {
     });
 
     const ventasDelDiaMap = new Map();
-    ventasList.forEach(v => ventasDelDiaMap.set(v.numeroVenta, v));
+    ventasList.forEach(v => {
+      if (v.numeroVenta) ventasDelDiaMap.set(v.numeroVenta, v);
+    });
 
     let devEfectivo = 0, devYape = 0, devPlin = 0, devTarjeta = 0, totalDevuelto = 0, gananciaRealDescontada = 0;
     const delMismoDia = [], deDiasAnteriores = [];
@@ -676,6 +811,11 @@ const CajaPage = () => {
     try {
       const venta = ventas.find(v => v.id === ventaId);
       if (!venta) return { gananciaTotal: 0, metodoCalculo: 'error', items: [], error: 'Venta no encontrada' };
+
+      // Si es abono no tiene items de venta
+      if (venta.tipoVenta === 'abono') {
+        return { gananciaTotal: 0, metodoCalculo: 'abono', items: [], tieneDevoluciones: false };
+      }
 
       const itemsSnap = await getDocs(query(
         collection(db, 'ventas', ventaId, 'itemsVenta'), orderBy('createdAt', 'asc')
@@ -755,6 +895,7 @@ const CajaPage = () => {
   };
 
   const obtenerIndicadorEstadoVenta = (venta, devoluciones) => {
+    if (venta.tipoVenta === 'abono') return null;
     const devs = devoluciones.filter(d => d.numeroVenta === venta.numeroVenta && d.estado === 'aprobada');
     if (!devs.length) return null;
     const totalDev = devs.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
@@ -807,6 +948,10 @@ const CajaPage = () => {
   };
 
   // ── useEffect principal ──────────────────────────────────────────────────
+  // CAMBIO CLAVE: se agregan dos listeners en paralelo:
+  //   1. ventas completadas (como antes)
+  //   2. abonos del día (nuevos) — colección 'abonos'
+  // Ambos fusionan sus resultados en `ventasMap` y actualizan `ventas` juntos.
   useEffect(() => {
     if (!user) { router.push('/auth'); return; }
     setLoading(true); setError(null);
@@ -816,46 +961,120 @@ const CajaPage = () => {
     const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay   = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
 
-    let ventasList = [], devolucionesList = [];
+    // Mapa compartido para hacer merge de ventas + abonos sin duplicados
+    let ventasMap = new Map();       // id → registro normalizado
+    let devolucionesList = [];
 
+    // Helper: reconstruir lista ordenada por fecha desc y actualizar estado
+    const flushVentas = async (devs) => {
+      const merged = [...ventasMap.values()].sort((a, b) => b.fechaVenta - a.fechaVenta);
+      setVentas(merged);
+      await calcularTotalesConGananciaReal(merged, devs ?? devolucionesList);
+      setLoading(false);
+    };
+
+    // ── Listener 1: ventas completadas ──────────────────────────────────
     const unsubVentas = onSnapshot(
-      query(collection(db, 'ventas'),
+      query(
+        collection(db, 'ventas'),
         where('fechaVenta', '>=', Timestamp.fromDate(startOfDay)),
         where('fechaVenta', '<=', Timestamp.fromDate(endOfDay)),
-        where('estado', '==', 'completada'), orderBy('fechaVenta', 'desc')),
+        where('estado', '==', 'completada'),
+        orderBy('fechaVenta', 'desc')
+      ),
       async (snap) => {
-        ventasList = snap.docs.map(d => ({
-          id: d.id, ...d.data(),
-          fechaVenta: d.data().fechaVenta?.toDate ? d.data().fechaVenta.toDate() : new Date(),
-        }));
-        setVentas(ventasList);
-        await calcularTotalesConGananciaReal(ventasList, devolucionesList);
-        setLoading(false);
+        // Eliminar del mapa las ventas que ya no están en este snapshot
+        // (solo las que NO son abonos, para no borrar los del listener 2)
+        for (const [id, v] of ventasMap.entries()) {
+          if (v.tipoVenta !== 'abono') ventasMap.delete(id);
+        }
+        snap.docs.forEach(d => {
+          const data = d.data();
+          ventasMap.set(d.id, {
+            id: d.id, ...data,
+            fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
+          });
+        });
+        await flushVentas();
       },
       (err) => { setError('Error al cargar ventas: ' + err.message); setLoading(false); }
     );
 
+    // ── Listener 2: abonos del día ──────────────────────────────────────
+    // Ajusta el campo de fecha según tu colección 'abonos' real.
+    // Se asume que cada abono tiene: { fecha, monto, metodoPago, clienteNombre, ventaId }
+    let unsubAbonos = () => {};
+    try {
+      unsubAbonos = onSnapshot(
+        query(
+          collection(db, 'abonos'),
+          where('fecha', '>=', Timestamp.fromDate(startOfDay)),
+          where('fecha', '<=', Timestamp.fromDate(endOfDay)),
+          orderBy('fecha', 'desc')
+        ),
+        async (snap) => {
+          // Eliminar del mapa solo los abonos anteriores
+          for (const [id, v] of ventasMap.entries()) {
+            if (v.tipoVenta === 'abono') ventasMap.delete(id);
+          }
+          snap.docs.forEach(d => {
+            const data = d.data();
+            const fechaAbono = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+            ventasMap.set(d.id, {
+              id: d.id,
+              ...data,
+              // Normalizar campos para que el resto del componente los entienda
+              fechaVenta: fechaAbono,
+              totalVenta: parseFloat(data.monto || 0),
+              tipoVenta: 'abono',
+              estado: 'completada',
+              metodoPago: data.metodoPago || 'efectivo',
+              clienteNombre: data.clienteNombre || 'N/A',
+              numeroVenta: data.ventaId || `ABONO-${d.id.slice(-6).toUpperCase()}`,
+              gananciaTotalVenta: 0, // los abonos no tienen ganancia propia
+              // paymentData opcional para soporte de pagos mixtos en abonos
+              paymentData: data.paymentData || null,
+            });
+          });
+          await flushVentas();
+        },
+        (err) => {
+          // Silencioso: si no existe la colección 'abonos' o falta índice, no rompe
+          console.warn('Listener abonos (caja):', err.message);
+        }
+      );
+    } catch (e) {
+      console.warn('No se pudo iniciar listener de abonos:', e.message);
+    }
+
+    // ── Listener 3: devoluciones ─────────────────────────────────────────
     const unsubDevoluciones = onSnapshot(
-      query(collection(db, 'devoluciones'),
+      query(
+        collection(db, 'devoluciones'),
         where('fechaProcesamiento', '>=', Timestamp.fromDate(startOfDay)),
         where('fechaProcesamiento', '<=', Timestamp.fromDate(endOfDay)),
-        where('estado', 'in', ['aprobada', 'procesada']), orderBy('fechaProcesamiento', 'desc')),
+        where('estado', 'in', ['aprobada', 'procesada']),
+        orderBy('fechaProcesamiento', 'desc')
+      ),
       async (snap) => {
         devolucionesList = snap.docs.map(d => ({
           id: d.id, ...d.data(),
           fechaProcesamiento: d.data().fechaProcesamiento?.toDate ? d.data().fechaProcesamiento.toDate() : new Date(),
         }));
         setDevoluciones(devolucionesList);
-        await calcularTotalesConGananciaReal(ventasList, devolucionesList);
+        await flushVentas(devolucionesList);
       },
       (err) => { console.error('Error devoluciones:', err); }
     );
 
+    // ── Listener 4: retiros ──────────────────────────────────────────────
     const unsubRetiros = onSnapshot(
-      query(collection(db, 'retiros'),
+      query(
+        collection(db, 'retiros'),
         where('fecha', '>=', Timestamp.fromDate(startOfDay)),
         where('fecha', '<=', Timestamp.fromDate(endOfDay)),
-        orderBy('fecha', 'desc')),
+        orderBy('fecha', 'desc')
+      ),
       (snap) => {
         const list = snap.docs.map(d => ({
           id: d.id, ...d.data(),
@@ -867,13 +1086,18 @@ const CajaPage = () => {
       (err) => { console.error('Error retiros:', err); }
     );
 
-    return () => { unsubVentas(); unsubDevoluciones(); unsubRetiros(); };
+    return () => { unsubVentas(); unsubAbonos(); unsubDevoluciones(); unsubRetiros(); };
   }, [user, router, selectedDate]);
 
+  // ── Paginación ───────────────────────────────────────────────────────────
   const totalPagesVentas = Math.ceil(ventas.length / ventasPerPageCaja);
   const indexOfLastVenta  = currentPageVentas * ventasPerPageCaja;
   const indexOfFirstVenta = indexOfLastVenta - ventasPerPageCaja;
   const currentVentasCaja = ventas.slice(indexOfFirstVenta, indexOfLastVenta);
+
+  // ── Contadores separados para el encabezado de la tabla ─────────────────
+  const totalVentasReales = ventas.filter(v => v.tipoVenta !== 'abono').length;
+  const totalAbonosDia    = ventas.filter(v => v.tipoVenta === 'abono').length;
 
   // ── DevolucionesComponent ────────────────────────────────────────────────
   const DevolucionesDelDiaComponenteMejorado = () => {
@@ -954,7 +1178,7 @@ const CajaPage = () => {
     <Layout title="Caja">
       <div className="flex flex-col mx-4 py-4 space-y-6">
 
-        {/* ── Header con DatePickerPopover ── */}
+        {/* ── Header ── */}
         <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
           <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4">
             <div className="flex items-center space-x-3">
@@ -968,7 +1192,6 @@ const CajaPage = () => {
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              {/* ── DatePickerPopover ── */}
               <div className="flex items-center gap-2">
                 <DatePickerPopover
                   selected={selectedDate}
@@ -1025,7 +1248,7 @@ const CajaPage = () => {
           </div>
         )}
 
-        {/* Cards principales */}
+        {/* Cards de métodos de pago */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
@@ -1074,6 +1297,9 @@ const CajaPage = () => {
               <div>
                 <p className="text-gray-600 text-sm font-medium">Total del Día</p>
                 <p className="text-3xl font-bold text-indigo-600">{formatCurrency(totalesDelDia.total)}</p>
+                {totalAbonosDia > 0 && (
+                  <p className="text-xs text-blue-500 mt-1">Incluye {totalAbonosDia} abono(s) de crédito</p>
+                )}
               </div>
             </div>
           </div>
@@ -1129,11 +1355,24 @@ const CajaPage = () => {
 
         <DevolucionesDelDiaComponenteMejorado />
 
-        {/* ── Tabla de Ventas ── */}
+        {/* ── Tabla de Ventas + Abonos ── */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <EyeIcon className="h-6 w-6 text-blue-600 mr-2" /> Ventas del Día ({ventas.length})
+          <h3 className="text-lg font-semibold text-gray-900 mb-1 flex items-center">
+            <EyeIcon className="h-6 w-6 text-blue-600 mr-2" />
+            Movimientos del Día ({ventas.length})
           </h3>
+          {/* Leyenda de contadores */}
+          <div className="flex items-center gap-3 mb-4">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              {totalVentasReales} venta{totalVentasReales !== 1 ? 's' : ''}
+            </span>
+            {totalAbonosDia > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {totalAbonosDia} abono{totalAbonosDia !== 1 ? 's' : ''} de crédito
+              </span>
+            )}
+          </div>
+
           {ventas.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <ChartBarIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -1144,44 +1383,71 @@ const CajaPage = () => {
               <table className="w-full border-collapse border border-gray-300">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">N° Venta</th>
+                    <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">N° / Referencia</th>
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Cliente</th>
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Hora</th>
                     <th className="border border-gray-300 px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Método Pago</th>
                     <th className="border border-gray-300 px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
-                    <th className="border border-gray-300 px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Estado</th>
+                    <th className="border border-gray-300 px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Tipo / Estado</th>
                     <th className="border border-gray-300 px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentVentasCaja.map((venta, index) => {
                     const indicador = obtenerIndicadorEstadoVenta(venta, devoluciones);
+                    const esAbono = venta.tipoVenta === 'abono';
+
                     return (
-                      <tr key={venta.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <tr
+                        key={venta.id}
+                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${esAbono ? 'border-l-4 border-blue-400' : ''}`}
+                      >
+                        {/* N° / Referencia */}
                         <td className="border border-gray-300 px-3 py-2 text-sm font-medium">
-                          <div className="flex items-center gap-1">
-                            {venta.numeroVenta || 'N/A'}
-                            {indicador && <ArrowTrendingDownIcon className="h-4 w-4 text-red-400" />}
+                          <div className="flex flex-col">
+                            <span>{venta.numeroVenta || 'N/A'}</span>
+                            {esAbono && (
+                              <span className="text-xs text-blue-500">Abono → {venta.ventaId || 'crédito'}</span>
+                            )}
+                            {!esAbono && indicador && <ArrowTrendingDownIcon className="h-4 w-4 text-red-400 mt-0.5" />}
                           </div>
                         </td>
+
+                        {/* Cliente */}
                         <td className="border border-gray-300 px-3 py-2 text-sm">{venta.clienteNombre}</td>
+
+                        {/* Hora */}
                         <td className="border border-gray-300 px-3 py-2 text-sm">
                           {venta.fechaVenta?.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' })}
                         </td>
+
+                        {/* Método Pago */}
                         <td className="border border-gray-300 px-3 py-2 text-sm">
                           <div className="flex items-center gap-1">
                             {getPaymentMethodIcon(venta.metodoPago)}
                             <span className="text-xs">{venta.metodoPago?.toUpperCase() || 'N/A'}</span>
                           </div>
                         </td>
-                        <td className={`border border-gray-300 px-3 py-2 text-sm text-right font-medium ${indicador ? 'text-red-600' : ''}`}>
+
+                        {/* Total */}
+                        <td className={`border border-gray-300 px-3 py-2 text-sm text-right font-medium ${indicador ? 'text-red-600' : esAbono ? 'text-blue-700' : ''}`}>
                           {formatCurrency(venta.totalVenta)}
                         </td>
+
+                        {/* Tipo / Estado */}
                         <td className="border border-gray-300 px-3 py-2 text-center">
-                          {indicador || (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">COMPLETA</span>
+                          {esAbono ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              ABONO CRÉDITO
+                            </span>
+                          ) : indicador ? indicador : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              COMPLETA
+                            </span>
                           )}
                         </td>
+
+                        {/* Acciones */}
                         <td className="border border-gray-300 px-3 py-2 text-center">
                           <button
                             onClick={() => mostrarDetalleGanancia(venta)}
@@ -1199,7 +1465,7 @@ const CajaPage = () => {
               {ventas.length > ventasPerPageCaja && (
                 <div className="flex justify-between items-center mt-4">
                   <p className="text-sm text-gray-700">
-                    Mostrando {indexOfFirstVenta + 1} a {Math.min(indexOfLastVenta, ventas.length)} de {ventas.length} ventas
+                    Mostrando {indexOfFirstVenta + 1} a {Math.min(indexOfLastVenta, ventas.length)} de {ventas.length} movimientos
                   </p>
                   <div className="flex space-x-2">
                     <button onClick={() => setCurrentPageVentas(p => Math.max(p - 1, 1))} disabled={currentPageVentas === 1}
@@ -1319,7 +1585,8 @@ const CajaPage = () => {
               </div>
               <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600 space-y-1">
                 <p><strong>Dinero Inicial:</strong> {formatCurrency(dineroInicial)}</p>
-                <p><strong>Total Ventas:</strong> {ventas.length}</p>
+                <p><strong>Ventas:</strong> {totalVentasReales}</p>
+                {totalAbonosDia > 0 && <p><strong>Abonos de crédito:</strong> {totalAbonosDia}</p>}
                 <p><strong>Total Ingresos:</strong> {formatCurrency(totalesDelDia.total)}</p>
                 <p><strong>Total Retiros:</strong> {formatCurrency(dineroEnCaja.totalRetiros)}</p>
                 <p><strong>Efectivo Final:</strong> {formatCurrency(Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
@@ -1336,7 +1603,7 @@ const CajaPage = () => {
           </div>
         )}
 
-        {/* ── Modal Detalle Venta (nuevo) ── */}
+        {/* Modal Detalle Venta */}
         <ModalDetalleVenta
           show={showDetalleGanancia}
           onClose={() => setShowDetalleGanancia(false)}

@@ -273,8 +273,6 @@ const seleccionarCredito = async (credito) => {
     if (!creditoSeleccionado) { setError('Debe seleccionar un crédito'); setSaving(false); return; }
     if (itemsADevolver.length === 0) { setError('Debe seleccionar al menos un producto'); setSaving(false); return; }
     if (!devolucionData.motivo) { setError('Debe seleccionar un motivo'); setSaving(false); return; }
-
-    // Crédito saldado requiere monto > 0; crédito activo puede ser 0
     if (estadoCredito === 'saldado' && devolucionData.montoADevolver <= 0) {
       setError('El monto a devolver debe ser mayor a 0');
       setSaving(false);
@@ -283,89 +281,26 @@ const seleccionarCredito = async (credito) => {
 
     try {
       const gananciaRealAfectada = itemsADevolver.reduce((t, i) => t + (i.gananciaDevolucion || 0), 0);
+      const numeroDevolucion = generarNumeroDevolucion();
 
       await runTransaction(db, async (transaction) => {
-
-        // ── FASE 1: READS ──────────────────────────────
         const ventaRef = doc(db, 'ventas', creditoSeleccionado.ventaId);
         const ventaSnap = await transaction.get(ventaRef);
         if (!ventaSnap.exists()) throw new Error('Venta vinculada no encontrada');
 
-        // Leer lotes y productos para cada item a devolver
-        const lotesSnaps = {};
-        const productosSnaps = {};
-
-        for (const item of itemsADevolver) {
-          if (!item.loteId) throw new Error(`El producto ${item.nombreProducto} no tiene lote original`);
-
-          if (!lotesSnaps[item.loteId]) {
-            const loteRef = doc(db, 'lotes', item.loteId);
-            lotesSnaps[item.loteId] = {
-              ref: loteRef,
-              snap: await transaction.get(loteRef),
-              item
-            };
-          }
-
-          if (!productosSnaps[item.productoId]) {
-            const prodRef = doc(db, 'productos', item.productoId);
-            productosSnaps[item.productoId] = {
-              ref: prodRef,
-              snap: await transaction.get(prodRef)
-            };
-          }
-        }
-
-        // Leer crédito (para actualizar saldo si es activo)
-        const creditoRef = doc(db, 'creditos', creditoSeleccionado.id);
-        const creditoSnap = await transaction.get(creditoRef);
-
-        // Leer cliente (para reducir deuda si crédito activo)
-        let clienteSnap = null;
-        let clienteRef = null;
-        if (estadoCredito === 'activo' && creditoSeleccionado.clienteId) {
-          clienteRef = doc(db, 'cliente', creditoSeleccionado.clienteId);
-          clienteSnap = await transaction.get(clienteRef);
-        }
-
-        // ── FASE 2: VALIDACIONES ───────────────────────
-        for (const item of itemsADevolver) {
-          const loteInfo = lotesSnaps[item.loteId];
-          if (!loteInfo.snap.exists()) throw new Error(`Lote ${item.loteId} no encontrado`);
-
-          const loteData = loteInfo.snap.data();
-          const stockOriginal = parseInt(loteData.cantidad || 0);
-          const stockActual = parseInt(loteData.stockRestante || 0);
-          const espacioDisponible = stockOriginal - stockActual;
-
-          if (espacioDisponible < item.cantidadADevolver) {
-            throw new Error(
-              `Sin espacio en lote ${loteData.numeroLote}. Espacio: ${espacioDisponible}, Solicitado: ${item.cantidadADevolver}`
-            );
-          }
-        }
-
-        // ── FASE 3: WRITES ─────────────────────────────
-
-        // 1. Crear devolución
+        // Solo crear el documento de devolución y sus items
         const devolucionRef = doc(collection(db, 'devoluciones'));
-        const numeroDevolucion = generarNumeroDevolucion();
 
         transaction.set(devolucionRef, {
           numeroDevolucion,
-          // Referencia al crédito
           creditoId: creditoSeleccionado.id,
           numeroCredito: creditoSeleccionado.numeroCredito,
-          // Referencia a la venta vinculada
           ventaId: creditoSeleccionado.ventaId,
           numeroVenta: ventaSnap.data().numeroVenta,
-          // Cliente
           clienteId: creditoSeleccionado.clienteId,
           clienteNombre: creditoSeleccionado.clienteNombre,
           clienteDNI: creditoSeleccionado.clienteDNI || null,
-          // Tipo especial de devolución
           tipoDevolucion: estadoCredito === 'saldado' ? 'credito-saldado' : 'credito-activo',
-          // Si es activo → montoADevolver = 0 (no hay dinero)
           montoADevolver: devolucionData.montoADevolver,
           gananciaRealAfectada,
           motivo: devolucionData.motivo,
@@ -378,7 +313,6 @@ const seleccionarCredito = async (credito) => {
           updatedAt: serverTimestamp()
         });
 
-        // 2. Items de la devolución
         for (const item of itemsADevolver) {
           transaction.set(doc(collection(devolucionRef, 'itemsDevolucion')), {
             productoId: item.productoId,
@@ -401,122 +335,9 @@ const seleccionarCredito = async (credito) => {
             createdAt: serverTimestamp()
           });
         }
-
-        // 3. Devolver stock a lotes originales
-        for (const item of itemsADevolver) {
-          const loteInfo = lotesSnaps[item.loteId];
-          const loteData = loteInfo.snap.data();
-          const nuevoStock = parseInt(loteData.stockRestante || 0) + item.cantidadADevolver;
-
-          transaction.update(loteInfo.ref, {
-            stockRestante: nuevoStock,
-            estado: nuevoStock > 0 ? 'activo' : 'agotado',
-            updatedAt: serverTimestamp()
-          });
-
-          // Devolver stock al producto
-          const prodInfo = productosSnaps[item.productoId];
-          const stockActualProd = parseInt(prodInfo.snap.data().stockActual || 0);
-          transaction.update(prodInfo.ref, {
-            stockActual: stockActualProd + item.cantidadADevolver,
-            updatedAt: serverTimestamp()
-          });
-
-          // Movimiento de lote para auditoría
-          transaction.set(doc(collection(db, 'movimientosLotes')), {
-            devolucionId: devolucionRef.id,
-            numeroDevolucion,
-            creditoId: creditoSeleccionado.id,
-            numeroCredito: creditoSeleccionado.numeroCredito,
-            ventaId: creditoSeleccionado.ventaId,
-            productoId: item.productoId,
-            nombreProducto: item.nombreProducto,
-            loteId: item.loteId,
-            numeroLote: item.numeroLote || '',
-            cantidadDevuelta: item.cantidadADevolver,
-            stockAnteriorLote: loteData.stockRestante,
-            stockNuevoLote: nuevoStock,
-            precioCompraUnitario: parseFloat(loteData.precioCompraUnitario || 0),
-            tipoMovimiento: estadoCredito === 'saldado'
-              ? 'devolucion-credito-saldado'
-              : 'devolucion-credito-activo',
-            esLoteOriginal: true,
-            fechaMovimiento: serverTimestamp(),
-            empleadoId: user.email || user.uid,
-            createdAt: serverTimestamp()
-          });
-        }
-
-        // 4. Si crédito ACTIVO → reducir deuda del cliente y actualizar total del crédito
-        if (estadoCredito === 'activo') {
-          const montoDevuelto = itemsADevolver.reduce((s, i) => 
-            s + parseFloat(i.precioVentaUnitario * i.cantidadADevolver || 0), 0
-          );
-
-          // Reducir total del crédito
-          const totalActual = parseFloat(creditoSnap.data().totalCredito || 0);
-          const nuevoTotal = Math.max(0, totalActual - montoDevuelto);
-          transaction.update(creditoRef, {
-            totalCredito: parseFloat(nuevoTotal.toFixed(2)),
-            updatedAt: serverTimestamp()
-          });
-
-          // Reducir deuda del cliente
-          if (clienteSnap && clienteSnap.exists()) {
-            const deudaActual = parseFloat(clienteSnap.data().montoCreditoActual || 0);
-            const nuevaDeuda = Math.max(0, deudaActual - montoDevuelto);
-            transaction.update(clienteRef, {
-              montoCreditoActual: parseFloat(nuevaDeuda.toFixed(2)),
-              updatedAt: serverTimestamp()
-            });
-          }
-
-          // Actualizar item(s) en itemsCredito si corresponde
-          for (const item of itemsADevolver) {
-            const itemsCreditoSnap = await getDocs(
-              query(
-                collection(db, 'creditos', creditoSeleccionado.id, 'itemsCredito'),
-                where('productoId', '==', item.productoId)
-              )
-            );
-            for (const itemDoc of itemsCreditoSnap.docs) {
-              const cantidadActual = parseInt(itemDoc.data().cantidad || 0);
-              const nuevaCantidad = Math.max(0, cantidadActual - item.cantidadADevolver);
-              const nuevoSubtotal = nuevaCantidad * parseFloat(itemDoc.data().precioVentaUnitario || 0);
-              if (nuevaCantidad === 0) {
-                transaction.delete(itemDoc.ref);
-              } else {
-                transaction.update(itemDoc.ref, {
-                  cantidad: nuevaCantidad,
-                  subtotal: parseFloat(nuevoSubtotal.toFixed(2)),
-                  updatedAt: serverTimestamp()
-                });
-              }
-            }
-          }
-        }
-
-        // 5. Si crédito SALDADO → marcar estado en la venta (igual que devolución normal)
-        if (estadoCredito === 'saldado') {
-          const ventaData = ventaSnap.data();
-          const montoVenta = parseFloat(ventaData.totalVenta || 0);
-          const montoDevueltoAnterior = parseFloat(ventaData.montoDevuelto || 0);
-          const totalDevuelto = montoDevueltoAnterior + devolucionData.montoADevolver;
-          const porcentaje = montoVenta > 0 ? (totalDevuelto / montoVenta) * 100 : 0;
-
-          transaction.update(ventaRef, {
-            estadoDevolucion: porcentaje >= 99 ? 'devuelta' : 'parcial',
-            montoDevuelto: totalDevuelto,
-            updatedAt: serverTimestamp()
-          });
-        }
       });
 
-      const mensaje = estadoCredito === 'activo'
-        ? 'Devolución de crédito registrada. La deuda del cliente fue reducida y el stock reintegrado al lote original.'
-        : `Devolución de crédito saldado registrada. Monto a devolver al cliente: S/. ${devolucionData.montoADevolver.toFixed(2)}`;
-
-      alert(mensaje);
+      alert('Devolución solicitada. Pendiente de aprobación.');
       router.push('/devoluciones');
     } catch (err) {
       setError('Error al registrar la devolución: ' + err.message);

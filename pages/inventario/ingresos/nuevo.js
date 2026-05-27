@@ -445,6 +445,7 @@ const NuevoIngresoPage = () => {
       console.log('Creando lotes en colección principal...');
       const lotesPrincipalesPromises = itemsIngreso.map(async (item, index) => {
         try {
+          // lotesPrincipalesPromises
           const loteRef = await addDoc(collection(db, 'lotes'), {
             ingresoId: ingresoDocRef.id,
             productoId: item.productoId,
@@ -455,7 +456,7 @@ const NuevoIngresoPage = () => {
             numeroLote: item.numeroLote,
             cantidad: parseFloat(item.cantidad),
             cantidadInicial: parseFloat(item.cantidad),
-            stockRestante: parseFloat(item.cantidad),
+            stockRestante: 0,              // <-- FIX: 0 hasta confirmar
             precioCompraUnitario: parseFloat(item.precioCompraUnitario),
             precioVentaUnitario: parseFloat(item.precioVentaUnitario),
             precioVentaMinimoUnitario: parseFloat(item.precioVentaMinimoUnitario),
@@ -489,7 +490,7 @@ const NuevoIngresoPage = () => {
             numeroLote: item.numeroLote,
             cantidad: parseFloat(item.cantidad),
             cantidadInicial: parseFloat(item.cantidad),
-            stockRestante: parseFloat(item.cantidad),
+            stockRestante: 0,
             precioCompraUnitario: parseFloat(item.precioCompraUnitario),
             subtotal: parseFloat(item.subtotal),
             proveedorId: ingresoPrincipalData.proveedorId,

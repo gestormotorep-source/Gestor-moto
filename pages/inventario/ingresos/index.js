@@ -16,7 +16,8 @@ import {
   serverTimestamp,
   onSnapshot,
   limit,
-  Timestamp
+  Timestamp,
+  getDoc
 } from 'firebase/firestore';
 import { PlusIcon,
         ArrowDownTrayIcon, 
@@ -396,37 +397,31 @@ const IngresosPage = () => {
     setError(null);
 
     try {
-      // ── FASE 1: READS FUERA DE LA TRANSACTION ──────────────────────────
-      // getDocs NO puede ir dentro de runTransaction
-
       const ingresoRef = doc(db, 'ingresos', ingresoId);
-      const ingresoSnap = await getDocs(query(collection(db, 'ingresos'), where('__name__', '==', ingresoId)));
-      const ingresoData = ingresoSnap.docs[0]?.data();
-      if (!ingresoData) throw new Error('Boleta no encontrada.');
+
+      // ── FASE 1: READS FUERA DE LA TRANSACTION ──────────────────────────
+      const ingresoSnap = await getDoc(ingresoRef);  // <-- FIX BUG 1
+      if (!ingresoSnap.exists()) throw new Error('Boleta no encontrada.');
+      const ingresoData = ingresoSnap.data();
       if (ingresoData.estado === 'recibido') throw new Error('Ya fue confirmada.');
 
-      // Lotes colección principal
       const lotesPrincipalesSnap = await getDocs(
         query(collection(db, 'lotes'), where('ingresoId', '==', ingresoId))
       );
-      if (lotesPrincipalesSnap.empty) throw new Error('No se encontraron lotes en colección principal.');
+      if (lotesPrincipalesSnap.empty) throw new Error('No se encontraron lotes.');
 
-      // Lotes subcolección
       const lotesSubSnap = await getDocs(
         collection(db, 'ingresos', ingresoId, 'lotes')
       );
 
-      // IDs de productos únicos
       const productoIds = [...new Set(
         lotesPrincipalesSnap.docs
           .map(d => d.data().productoId)
           .filter(Boolean)
       )];
 
-      // ── FASE 2: TRANSACTION SOLO CON READS DE PRODUCTOS + WRITES ───────
+      // ── FASE 2: TRANSACTION ─────────────────────────────────────────────
       await runTransaction(db, async (transaction) => {
-
-        // Leer productos dentro de la transaction (estos sí deben ir aquí)
         const productosSnaps = {};
         for (const pid of productoIds) {
           const pRef = doc(db, 'productos', pid);
@@ -434,7 +429,6 @@ const IngresosPage = () => {
           productosSnaps[pid] = { ref: pRef, snap: pSnap };
         }
 
-        // Leer ingreso dentro de la transaction para validar
         const ingresoSnapTx = await transaction.get(ingresoRef);
         if (!ingresoSnapTx.exists()) throw new Error('Boleta no encontrada.');
         if (ingresoSnapTx.data().estado === 'recibido') throw new Error('Ya fue confirmada.');
@@ -442,37 +436,29 @@ const IngresosPage = () => {
         let cantidadLotes = 0;
         let totalStockIngresado = 0;
 
-        // ── WRITES ────────────────────────────────────────────────────────
-
-        // Activar lotes PRINCIPALES + actualizar productos
         for (const loteDoc of lotesPrincipalesSnap.docs) {
           const loteData = loteDoc.data();
           const cantidad = parseFloat(loteData.cantidad || 0);
 
-          // ✅ Activar lote principal: pendiente → activo
           transaction.update(loteDoc.ref, {
             stockRestante: cantidad,
             estado: 'activo',
             updatedAt: serverTimestamp(),
           });
 
-          // ✅ Actualizar producto si existe
           const productoInfo = productosSnaps[loteData.productoId];
           if (productoInfo && productoInfo.snap.exists()) {
             const productoData = productoInfo.snap.data();
-            const stockAnterior = productoData.stockActual || 0;
-            const nuevoStock = stockAnterior + cantidad;
+            const nuevoStock = (productoData.stockActual || 0) + cantidad;
 
             transaction.update(productoInfo.ref, {
               stockActual: nuevoStock,
-              // ✅ También actualizar precios desde el lote
               precioVentaDefault: parseFloat(loteData.precioVentaUnitario || productoData.precioVentaDefault || 0),
               precioVentaMinimo: parseFloat(loteData.precioVentaMinimoUnitario || productoData.precioVentaMinimo || 0),
               precioCompraDefault: parseFloat(loteData.precioCompraUnitario || productoData.precioCompraDefault || 0),
               updatedAt: serverTimestamp(),
             });
 
-            // Actualizar snap local para acumular múltiples lotes del mismo producto
             productosSnaps[loteData.productoId] = {
               ref: productoInfo.ref,
               snap: {
@@ -480,15 +466,12 @@ const IngresosPage = () => {
                 data: () => ({ ...productoData, stockActual: nuevoStock }),
               },
             };
-          } else {
-            console.warn(`⚠️ Producto ${loteData.productoId} no encontrado — lote activado sin actualizar stock.`);
           }
 
           cantidadLotes++;
           totalStockIngresado += cantidad;
         }
 
-        // Activar lotes SUBCOLECCIÓN (consistencia visual)
         for (const loteDoc of lotesSubSnap.docs) {
           const loteData = loteDoc.data();
           transaction.update(loteDoc.ref, {
@@ -498,7 +481,6 @@ const IngresosPage = () => {
           });
         }
 
-        // Marcar ingreso como recibido
         transaction.update(ingresoRef, {
           estado: 'recibido',
           fechaConfirmacion: serverTimestamp(),
@@ -508,12 +490,9 @@ const IngresosPage = () => {
         });
       });
 
+      // ── FIX BUG 2: no toques el estado local, deja que onSnapshot lo actualice ──
       alert('Recepción confirmada y stock actualizado.');
-      invalidateCache('ingresos');
-      filtersChanged.current = true;
-      setIngresos(prev => prev.map(ing =>
-        ing.id !== ingresoId ? ing : { ...ing, estado: 'recibido' }
-      ));
+
     } catch (err) {
       console.error('Error al confirmar recepción:', err);
       setError('Error: ' + err.message);

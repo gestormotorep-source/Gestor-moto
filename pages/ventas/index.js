@@ -41,7 +41,7 @@ import {
   FunnelIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  ArrowTrendingDownIcon
+  ArrowTrendingDownIcon,
 } from '@heroicons/react/24/outline';
 
 const VentasIndexPage = () => {
@@ -1325,6 +1325,22 @@ const VentasIndexPage = () => {
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                               <ArrowTrendingDownIcon className="h-4 w-4 mr-1" /> Parcial
                             </span>
+                          ) : venta.tipoVenta === 'credito' && venta.estado === 'pendiente' ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                <CreditCardIcon className="h-4 w-4 mr-1" /> Crédito
+                              </span>
+                              {(() => {
+                                const total = parseFloat(venta.totalVenta || 0);
+                                const saldoRestante = parseFloat(venta.ultimoAbono?.saldoRestante ?? total);
+                                const abonado = total - saldoRestante;
+                                return (
+                                  <span className="text-xs text-gray-500">
+                                    S/. {abonado.toFixed(2)} / S/. {total.toFixed(2)}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                           ) : (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               <CheckCircleIcon className="h-4 w-4 mr-1" /> Completada

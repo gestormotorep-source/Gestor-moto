@@ -367,8 +367,20 @@ const DevolucionesIndexPage = () => {
           }
         }
 
+        // ── Read crédito y cliente si es devolución de crédito activo ──
+        let creditoRef = null, creditoSnap = null;
+        let clienteRef = null, clienteSnap = null;
+
+        if (devolucionData.tipoDevolucion === 'credito-activo' && devolucionData.creditoId) {
+          creditoRef = doc(db, 'creditos', devolucionData.creditoId);
+          creditoSnap = await transaction.get(creditoRef);
+
+          clienteRef = doc(db, 'cliente', devolucionData.clienteId);
+          clienteSnap = await transaction.get(clienteRef);
+        }
+
         // ============================================================
-        // FASE 2: VALIDACIONES (sin más reads)
+        // FASE 2: VALIDACIONES (sin más reads de transaction)
         // ============================================================
 
         const movimientos = [];
@@ -483,6 +495,52 @@ const DevolucionesIndexPage = () => {
             empleadoId: user.email || user.uid,
             createdAt: serverTimestamp()
           });
+        }
+
+        // ── Si es devolución de crédito activo → reducir deuda y actualizar itemsCredito ──
+        if (devolucionData.tipoDevolucion === 'credito-activo' && devolucionData.creditoId) {
+          const montoDevuelto = itemsData.reduce((s, i) =>
+            s + parseFloat((i.precioVentaUnitario || 0) * (i.cantidadADevolver || 0)), 0
+          );
+
+          if (creditoSnap?.exists()) {
+            const totalActual = parseFloat(creditoSnap.data().totalCredito || 0);
+            transaction.update(creditoRef, {
+              totalCredito: parseFloat(Math.max(0, totalActual - montoDevuelto).toFixed(2)),
+              updatedAt: serverTimestamp()
+            });
+          }
+
+          if (clienteSnap?.exists()) {
+            const deudaActual = parseFloat(clienteSnap.data().montoCreditoActual || 0);
+            transaction.update(clienteRef, {
+              montoCreditoActual: parseFloat(Math.max(0, deudaActual - montoDevuelto).toFixed(2)),
+              updatedAt: serverTimestamp()
+            });
+          }
+
+          // getDocs normal fuera de transaction.get — permitido en Fase 3
+          for (const itemDevolucion of itemsData) {
+            const itemsCreditoSnap = await getDocs(
+              query(
+                collection(db, 'creditos', devolucionData.creditoId, 'itemsCredito'),
+                where('productoId', '==', itemDevolucion.productoId)
+              )
+            );
+            for (const itemDoc of itemsCreditoSnap.docs) {
+              const cantidadActual = parseInt(itemDoc.data().cantidad || 0);
+              const nuevaCantidad = Math.max(0, cantidadActual - itemDevolucion.cantidadADevolver);
+              if (nuevaCantidad === 0) {
+                transaction.delete(itemDoc.ref);
+              } else {
+                transaction.update(itemDoc.ref, {
+                  cantidad: nuevaCantidad,
+                  subtotal: parseFloat((nuevaCantidad * parseFloat(itemDoc.data().precioVentaUnitario || 0)).toFixed(2)),
+                  updatedAt: serverTimestamp()
+                });
+              }
+            }
+          }
         }
       });
 
