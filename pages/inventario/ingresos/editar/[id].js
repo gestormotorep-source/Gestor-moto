@@ -376,8 +376,9 @@ const EditarIngresoPage = () => {
     setEditLoteNumero(lote.numeroLote);
     setEditLotePrecioVenta(Number(lote.precioVentaUnitario || 0));
     setEditLotePrecioVentaMinimo(Number(lote.precioVentaMinimoUnitario || 0));
-    setShowUmbralEditLote(false);
     setLotesAnterioresEdit([]);
+    setNuevoUmbralLote(0);       
+    setShowEditLoteModal(true);
     obtenerLotesAnteriores(lote.productoId).then(lotes => setLotesAnterioresEdit(lotes));
 
     // ← NUEVO: leer umbral real desde Firestore en lugar de hardcodear 0
@@ -427,7 +428,7 @@ const EditarIngresoPage = () => {
       }
 
       // Actualizar umbral si fue editado
-      if (showUmbralEditLote && nuevoUmbralLote >= 0) {
+      if (nuevoUmbralLote >= 0) {
         await updateDoc(doc(db, 'productos', editingLote.productoId), {
           stockReferencialUmbral: nuevoUmbralLote,
           updatedAt: serverTimestamp(),
@@ -1097,23 +1098,22 @@ const EditarIngresoPage = () => {
                       </div>
                     )}
 
-                    {/* Umbral */}
-                    <div>
-                      {!showUmbralEdit ? (
-                        <button type="button" onClick={() => setShowUmbralEdit(true)}
-                          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                          ✏️ Editar stock mínimo
-                        </button>
+                    {/* Umbral — siempre visible, igual que en nuevo.js */}
+                    <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                      <label className="text-sm font-medium text-blue-700 whitespace-nowrap">
+                        Stock mínimo (actual: {loadingUmbral ? '...' : nuevoUmbralLote}):
+                      </label>
+                      {loadingUmbral ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
                       ) : (
-                        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                          <label className="text-sm font-medium text-blue-700 whitespace-nowrap">
-                            Stock mínimo (actual: {nuevoUmbralLote}):
-                          </label>
-                          <input type="number" value={nuevoUmbral} onChange={(e) => setNuevoUmbral(parseInt(e.target.value) || 0)}
-                            min="0" onWheel={(e) => e.target.blur()}
-                            className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
-                          <button type="button" onClick={() => setShowUmbralEdit(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
-                        </div>
+                        <input
+                          type="number"
+                          value={nuevoUmbralLote}
+                          onChange={(e) => setNuevoUmbralLote(parseInt(e.target.value) || 0)}
+                          min="0"
+                          onWheel={(e) => e.target.blur()}
+                          className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
+                        />
                       )}
                     </div>
                   </div>
@@ -1437,22 +1437,19 @@ const EditarIngresoPage = () => {
                     </div>
                   )}
 
-                  {/* Umbral */}
-                  <div>
-                    {!showEditUmbralItem ? (
-                      <button type="button" onClick={() => setShowEditUmbralItem(true)}
-                        className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                        ✏️ Editar stock mínimo
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                        <label className="text-sm font-medium text-blue-700 whitespace-nowrap">Stock mínimo:</label>
-                        <input type="number" value={editUmbralItem} onChange={(e) => setEditUmbralItem(parseInt(e.target.value) || 0)}
-                          min="0" onWheel={(e) => e.target.blur()}
-                          className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500" />
-                        <button type="button" onClick={() => setShowEditUmbralItem(false)} className="text-xs text-gray-500 hover:text-gray-700">✕</button>
-                      </div>
-                    )}
+                  {/* Umbral — siempre visible con valor real del producto */}
+                  <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <label className="text-sm font-medium text-blue-700 whitespace-nowrap">
+                      Stock mínimo:
+                    </label>
+                    <input
+                      type="number"
+                      value={nuevoUmbralLote}
+                      onChange={(e) => setNuevoUmbralLote(parseInt(e.target.value) || 0)}
+                      min="0"
+                      onWheel={(e) => e.target.blur()}
+                      className="w-24 px-2 py-1 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
                 </div>
 
