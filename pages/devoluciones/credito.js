@@ -43,6 +43,7 @@ const DevolucionCreditoPage = () => {
   const [creditoSeleccionado, setCreditoSeleccionado] = useState(null);
   // 'activo' | 'saldado'
   const [estadoCredito, setEstadoCredito] = useState(null);
+  const [deudaActualCliente, setDeudaActualCliente] = useState(0);
   const [itemsVenta, setItemsVenta] = useState([]);
   const [itemsADevolver, setItemsADevolver] = useState([]);
 
@@ -176,6 +177,20 @@ const seleccionarCredito = async (credito) => {
     setSearchTerm('');
     setCreditosEncontrados([]);
     setDevolucionData({ motivo: '', descripcionMotivo: '', montoADevolver: 0, observaciones: '' });
+
+    // Leer deuda real del cliente si el crédito está activo
+    if (!esSaldado && credito.clienteId) {
+      try {
+        const clienteSnap = await getDoc(doc(db, 'cliente', credito.clienteId));
+        if (clienteSnap.exists()) {
+          setDeudaActualCliente(parseFloat(clienteSnap.data().montoCreditoActual || 0));
+        }
+      } catch {
+        setDeudaActualCliente(0);
+      }
+    } else {
+      setDeudaActualCliente(0);
+    }
   } catch (err) {
     setError(err.message);
   } finally {
@@ -200,18 +215,46 @@ const seleccionarCredito = async (credito) => {
       if (cantidadADevolver === null || cantidadADevolver === 0) {
         setItemsADevolver(prev => prev.filter(i => i.id !== item.id));
       } else {
-        setItemsADevolver(prev => prev.map(i =>
-          i.id === item.id
-            ? {
-                ...i,
-                cantidadADevolver,
-                montoDevolucion: estadoCredito === 'saldado'
-                  ? cantidadADevolver * getPrecioReal(i)
-                  : 0,
-                gananciaDevolucion: (i.gananciaUnitaria || 0) * cantidadADevolver
-              }
-            : i
-        ));
+        setItemsADevolver(prev => prev.map(i => {
+          if (i.id !== item.id) return i;
+          const precioReal = getPrecioReal(i);
+          const valorProducto = cantidadADevolver * precioReal;
+
+          let montoDevolucion = 0;
+          let reduccionDeuda = 0;
+          let excedentePagoCliente = 0;
+
+          if (estadoCredito === 'saldado') {
+            montoDevolucion = valorProducto;
+            reduccionDeuda = 0;
+            excedentePagoCliente = valorProducto;
+          } else {
+            // Crédito activo: calcular sobre la deuda actual menos lo ya cubierto por otros items seleccionados
+            const valorOtrosItems = itemsADevolver
+              .filter(x => x.id !== item.id)
+              .reduce((s, x) => s + x.cantidadADevolver * getPrecioReal(x), 0);
+            const deudaRestante = Math.max(0, deudaActualCliente - valorOtrosItems);
+
+            if (valorProducto <= deudaRestante) {
+              reduccionDeuda = valorProducto;
+              excedentePagoCliente = 0;
+              montoDevolucion = 0;
+            } else {
+              reduccionDeuda = deudaRestante;
+              excedentePagoCliente = valorProducto - deudaRestante;
+              montoDevolucion = excedentePagoCliente;
+            }
+          }
+
+          return {
+            ...i,
+            cantidadADevolver,
+            montoDevolucion,
+            reduccionDeuda,
+            excedentePagoCliente,
+            gananciaDevolucion: (i.gananciaUnitaria || 0) * cantidadADevolver
+          };
+        }));
       }
     } else {
       try {
@@ -220,17 +263,40 @@ const seleccionarCredito = async (credito) => {
         const precioCompraUnitario = parseFloat(item.precioCompraUnitario || 0);
         const gananciaUnitaria = item.gananciaUnitaria || (precioReal - precioCompraUnitario);
         const cantidadFinal = cantidadADevolver || item.cantidad;
+        const valorProducto = cantidadFinal * precioReal;
 
-        // Si crédito no saldado → montoDevolucion = 0 (sin dinero)
-        const montoDevolucion = estadoCredito === 'saldado'
-          ? cantidadFinal * precioReal
-          : 0;
+        let montoDevolucion = 0;
+        let reduccionDeuda = 0;
+        let excedentePagoCliente = 0;
+
+        if (estadoCredito === 'saldado') {
+          montoDevolucion = valorProducto;
+          reduccionDeuda = 0;
+          excedentePagoCliente = valorProducto;
+        } else {
+          // Crédito activo: deuda ya cubierta por otros items ya seleccionados
+          const valorOtrosItems = itemsADevolver
+            .reduce((s, x) => s + x.cantidadADevolver * getPrecioReal(x), 0);
+          const deudaRestante = Math.max(0, deudaActualCliente - valorOtrosItems);
+
+          if (valorProducto <= deudaRestante) {
+            reduccionDeuda = valorProducto;
+            excedentePagoCliente = 0;
+            montoDevolucion = 0;
+          } else {
+            reduccionDeuda = deudaRestante;
+            excedentePagoCliente = valorProducto - deudaRestante;
+            montoDevolucion = excedentePagoCliente;
+          }
+        }
 
         setItemsADevolver(prev => [...prev, {
           ...item,
           precioVentaUnitario: precioReal,
           cantidadADevolver: cantidadFinal,
           montoDevolucion,
+          reduccionDeuda,
+          excedentePagoCliente,
           precioCompraUnitario,
           gananciaUnitaria,
           gananciaTotal: gananciaUnitaria * item.cantidad,
@@ -247,8 +313,13 @@ const seleccionarCredito = async (credito) => {
 
   // Recalcular monto total cuando cambian items
   useEffect(() => {
-    const total = itemsADevolver.reduce((sum, i) => sum + (i.montoDevolucion || 0), 0);
-    setDevolucionData(prev => ({ ...prev, montoADevolver: total }));
+    const totalExcedente = itemsADevolver.reduce((sum, i) => sum + (i.excedentePagoCliente || 0), 0);
+    const totalReduccion = itemsADevolver.reduce((sum, i) => sum + (i.reduccionDeuda || 0), 0);
+    setDevolucionData(prev => ({
+      ...prev,
+      montoADevolver: totalExcedente,      // dinero real a pagar al cliente
+      reduccionDeudaTotal: totalReduccion, // cuánto se reduce la deuda
+    }));
   }, [itemsADevolver]);
 
   const handleDevolucionChange = (e) => {
@@ -302,6 +373,9 @@ const seleccionarCredito = async (credito) => {
           clienteDNI: creditoSeleccionado.clienteDNI || null,
           tipoDevolucion: estadoCredito === 'saldado' ? 'credito-saldado' : 'credito-activo',
           montoADevolver: devolucionData.montoADevolver,
+          reduccionDeuda: itemsADevolver.reduce((s, i) => s + (i.reduccionDeuda || 0), 0),
+          excedentePagoCliente: itemsADevolver.reduce((s, i) => s + (i.excedentePagoCliente || 0), 0),
+          deudaClienteAlMomentoDevolucion: deudaActualCliente,
           gananciaRealAfectada,
           motivo: devolucionData.motivo,
           descripcionMotivo: devolucionData.descripcionMotivo || null,
@@ -579,10 +653,41 @@ const seleccionarCredito = async (credito) => {
                         </div>
                       ) : (
                         <div>
-                          <p className="text-sm font-medium text-yellow-800">Sin devolución de dinero</p>
-                          <p className="text-xs text-yellow-700 mt-1">
-                            Solo se reduce la deuda y regresa el stock.
-                          </p>
+                          {devolucionData.montoADevolver > 0 ? (
+                            <>
+                              <p className="text-sm font-medium text-orange-800">⚠️ Excedente a devolver al cliente</p>
+                              <p className="text-xs text-orange-700 mt-1">
+                                El producto vale más que la deuda restante.
+                              </p>
+                              <div className="flex justify-between items-center mt-2">
+                                <span className="text-xs text-yellow-700">Reducción deuda:</span>
+                                <span className="text-sm font-bold text-yellow-800">
+                                  S/. {(devolucionData.reduccionDeudaTotal || 0).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center mt-1">
+                                <span className="text-xs text-orange-700">Devolver al cliente:</span>
+                                <span className="text-sm font-bold text-orange-800">
+                                  S/. {devolucionData.montoADevolver.toFixed(2)}
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm font-medium text-yellow-800">Sin devolución de dinero</p>
+                              <p className="text-xs text-yellow-700 mt-1">
+                                Solo se reduce la deuda y regresa el stock.
+                              </p>
+                              {devolucionData.reduccionDeudaTotal > 0 && (
+                                <div className="flex justify-between items-center mt-2">
+                                  <span className="text-xs text-yellow-700">Reducción deuda:</span>
+                                  <span className="text-sm font-bold text-yellow-800">
+                                    S/. {(devolucionData.reduccionDeudaTotal || 0).toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

@@ -537,7 +537,9 @@ const NuevoCreditoPage = () => {
         }
 
         const montoActual = parseFloat(clienteSnap.data().montoCreditoActual || 0);
-        const nuevoMonto = montoActual + parseFloat(creditoActivo.totalCredito || 0);
+        // No acumular si ya hay un excedente pendiente (montoCreditoActual puede ser negativo internamente)
+        // Siempre partir del valor actual real (que ya fue corregido por la devolución)
+        const nuevoMonto = parseFloat((montoActual + parseFloat(creditoActivo.totalCredito || 0)).toFixed(2));
         transaction.update(clienteRef, { montoCreditoActual: nuevoMonto, updatedAt: serverTimestamp() });
         transaction.update(creditoRef, {
           estado: 'activo',

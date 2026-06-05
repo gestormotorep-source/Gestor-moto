@@ -148,42 +148,74 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
 
   // ── Vista de Abono (diseño consistente con el modal principal) ────────────
   if (venta.tipoVenta === 'abono') {
-    const getMetodoPagoIconAbono = (metodo) => {
-      switch (metodo?.toLowerCase()) {
-        case 'yape':        return '💜';
-        case 'plin':        return '💙';
-        case 'efectivo':    return '💵';
-        case 'tarjeta':
-        case 'tarjeta_credito':
-        case 'tarjeta_debito': return '💳';
-        case 'transferencia':  return '🏦';
-        default:            return '💰';
-      }
-    };
-    const getMetodoPagoLabelAbono = (metodo) => {
-      const m = {
-        efectivo: 'Efectivo', yape: 'Yape', plin: 'Plin',
-        tarjeta: 'Tarjeta', tarjeta_credito: 'T. Crédito',
-        tarjeta_debito: 'T. Débito', transferencia: 'Transferencia',
+    const [ventaCredito, setVentaCredito] = useState(null);
+    const [abonosCredito, setAbonosCredito] = useState([]);
+    const [devolucionesCredito, setDevolucionesCredito] = useState([]);
+    const [loadingCtx, setLoadingCtx] = useState(true);
+
+    useEffect(() => {
+      if (!venta.ventaId) { setLoadingCtx(false); return; }
+      const cargar = async () => {
+        try {
+          // Cargar venta de crédito
+          const ventaSnap = await getDoc(doc(db, 'ventas', venta.ventaId));
+          if (ventaSnap.exists()) setVentaCredito({ id: ventaSnap.id, ...ventaSnap.data() });
+
+          // Cargar todos los abonos de esa venta
+          const abonosSnap = await getDocs(query(
+            collection(db, 'abonos'),
+            where('ventaId', '==', venta.ventaId)
+          ));
+          const abonos = abonosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          abonos.sort((a, b) => {
+            const fa = a.fecha?.toDate ? a.fecha.toDate() : new Date(0);
+            const fb = b.fecha?.toDate ? b.fecha.toDate() : new Date(0);
+            return fa - fb;
+          });
+          setAbonosCredito(abonos);
+
+          // Cargar devoluciones aprobadas de esa venta
+          const devSnap = await getDocs(query(
+            collection(db, 'devoluciones'),
+            where('ventaId', '==', venta.ventaId),
+            where('estado', '==', 'aprobada')
+          ));
+          const devs = await Promise.all(devSnap.docs.map(async (devDoc) => {
+            const devData = { id: devDoc.id, ...devDoc.data() };
+            const itemsDevSnap = await getDocs(
+              collection(db, 'devoluciones', devDoc.id, 'itemsDevolucion')
+            );
+            devData.items = itemsDevSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            return devData;
+          }));
+          setDevolucionesCredito(devs);
+        } catch (e) {
+          console.error('Error cargando contexto de abono:', e);
+        } finally {
+          setLoadingCtx(false);
+        }
       };
-      return m[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
-    };
+      cargar();
+    }, [venta.ventaId]);
+
+    const totalAbonado = abonosCredito.reduce((s, a) => s + parseFloat(a.monto || 0), 0);
+    const totalDevuelto = devolucionesCredito.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
+    const excedente = parseFloat(ventaCredito?.excedentePagoCliente || 0);
+    const netoCobrado = totalAbonado - excedente;
 
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh]">
 
-          {/* Panel — mismo ancho máximo y estructura que el modal principal */}
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
-
-            {/* ── Header ── */}
+            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <InformationCircleIcon className="h-6 w-6 text-blue-600" />
-                Detalle de Abono
+                Detalle de Crédito
                 <span className="text-blue-700 font-mono text-base">
-                  #{(venta.ventaId || venta.numeroVenta || '').slice(-8).toUpperCase() || 'N/A'}
+                  #{(venta.ventaId || '').slice(-8).toUpperCase()}
                 </span>
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
                   CRÉDITO
@@ -194,78 +226,179 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
               </button>
             </div>
 
-            {/* ── Contenido ── */}
-            <div className="px-8 py-6 space-y-5">
-
-              {/* Datos generales — misma grilla que el modal de venta */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-50 rounded-lg p-5">
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Cliente</label>
-                  <p className="mt-0.5 text-sm font-medium text-gray-900">{venta.clienteNombre || 'N/A'}</p>
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+              {loadingCtx ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Fecha y Hora</label>
-                  <p className="mt-0.5 text-sm text-gray-900">
-                    {venta.fechaVenta instanceof Date
-                      ? venta.fechaVenta.toLocaleString('es-PE', {
-                          year: 'numeric', month: '2-digit', day: '2-digit',
-                          hour: '2-digit', minute: '2-digit'
-                        })
-                      : 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Estado</label>
-                  <span className="mt-0.5 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Completado
-                  </span>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Método de Pago</label>
-                  <p className="mt-0.5 text-sm text-gray-900 flex items-center gap-1">
-                    <span>{getMetodoPagoIconAbono(venta.metodoPago)}</span>
-                    {getMetodoPagoLabelAbono(venta.metodoPago)}
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Venta de Crédito asociada</label>
-                  <p className="mt-0.5 text-sm font-semibold text-blue-700 font-mono">
-                    {venta.ventaId || venta.numeroVenta || 'N/A'}
-                  </p>
-                </div>
-                {venta.observaciones && (
-                  <div className="col-span-full">
-                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Observaciones</label>
-                    <p className="mt-0.5 text-sm text-gray-900">{venta.observaciones}</p>
+              ) : (
+                <>
+                  {/* Info del cliente */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Cliente</label>
+                      <p className="mt-0.5 text-sm font-medium text-gray-900">{venta.clienteNombre || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">N° Venta Crédito</label>
+                      <p className="mt-0.5 text-sm font-mono text-blue-700">{ventaCredito?.numeroVenta || venta.ventaId}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Total Original</label>
+                      <p className="mt-0.5 text-sm font-bold text-gray-900">{formatCurrency(ventaCredito?.totalVenta || 0)}</p>
+                    </div>
                   </div>
-                )}
-              </div>
 
-              {/* Recuadro de monto — similar al análisis de ganancia del modal principal */}
-              <div className="bg-blue-50 rounded-lg p-5 border border-blue-100">
-                <h4 className="font-semibold text-gray-800 mb-3">Resumen del Abono</h4>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Monto Abonado:</span>
-                  <span className="text-2xl font-extrabold text-green-700">{formatCurrency(venta.totalVenta)}</span>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Este abono descuenta el saldo pendiente de la venta a crédito asociada.
-                  La ganancia de este movimiento se contabilizó en la venta original.
-                </p>
-              </div>
+                  {/* Abonos */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-1">
+                      💰 Abonos ({abonosCredito.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {abonosCredito.map((abono) => (
+                        <div key={abono.id} className={`flex justify-between items-center p-3 rounded-lg border ${abono.id === venta.id ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-400' : 'bg-gray-50 border-gray-200'}`}>
+                          <div>
+                            <p className="font-semibold text-blue-700">{formatCurrency(abono.monto)}</p>
+                            <p className="text-xs text-gray-500">
+                              {abono.fecha?.toDate
+                                ? abono.fecha.toDate().toLocaleString('es-PE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                : 'N/A'}
+                              {abono.id === venta.id && <span className="ml-2 text-blue-600 font-medium">← este abono</span>}
+                            </p>
+                          </div>
+                          <span className="text-sm font-medium capitalize text-gray-600">{abono.metodoPago}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-end">
+                        <div className="bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5 text-right">
+                          <span className="text-xs text-blue-600">Total abonado: </span>
+                          <span className="text-sm font-bold text-blue-800">{formatCurrency(totalAbonado)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
+                  {/* Devoluciones */}
+                  {devolucionesCredito.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-orange-700 mb-2 flex items-center gap-1">
+                        ↩ Devoluciones ({devolucionesCredito.length})
+                      </h4>
+                      <div className="space-y-3">
+                        {devolucionesCredito.map((dev) => (
+                          <div key={dev.id} className="border border-orange-200 rounded-lg overflow-hidden">
+                            <div className="bg-orange-50 px-3 py-2 flex justify-between items-center">
+                              <span className="text-xs font-bold text-orange-800">{dev.numeroDevolucion}</span>
+                              <span className="text-xs text-orange-600">
+                                {dev.fechaSolicitud?.toDate
+                                  ? dev.fechaSolicitud.toDate().toLocaleDateString('es-PE')
+                                  : 'N/A'}
+                              </span>
+                            </div>
+                            {dev.items?.length > 0 && (
+                              <div className="overflow-x-auto bg-white border-t border-orange-100">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-orange-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Producto</th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Marca</th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">C. Tienda</th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">C. Proveedor</th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Color</th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Medida</th>
+                                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Cant.</th>
+                                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">P. Unitario</th>
+                                      <th className="px-3 py-2 text-right text-xs font-semibold text-orange-600 uppercase">Subtotal Dev.</th>
+                                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Estado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-orange-50">
+                                    {dev.items.map((item) => {
+                                      const subtotalDev = parseFloat(item.precioVentaUnitario || 0) * parseInt(item.cantidadADevolver || 0);
+                                      return (
+                                        <tr key={item.id} className="hover:bg-orange-50 transition-colors">
+                                          <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{item.nombreProducto || 'N/A'}</td>
+                                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.marca || <span className="text-gray-400">N/A</span>}</td>
+                                          <td className="px-3 py-2 text-gray-600 font-mono whitespace-nowrap">{item.codigoTienda || <span className="text-gray-400">N/A</span>}</td>
+                                          <td className="px-3 py-2 text-gray-600 font-mono whitespace-nowrap">{item.codigoProveedor || <span className="text-gray-400">N/A</span>}</td>
+                                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.color || <span className="text-gray-400">N/A</span>}</td>
+                                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.medida || <span className="text-gray-400">N/A</span>}</td>
+                                          <td className="px-3 py-2 text-center text-gray-700 font-medium">{item.cantidadADevolver}</td>
+                                          <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{formatCurrency(item.precioVentaUnitario)}</td>
+                                          <td className="px-3 py-2 text-right font-semibold text-orange-700 whitespace-nowrap">-{formatCurrency(subtotalDev)}</td>
+                                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                                            {item.montoDevolucion === 0
+                                              ? <span className="text-xs text-yellow-600 font-medium">reduce deuda</span>
+                                              : <span className="text-xs text-orange-600 font-medium">+{formatCurrency(item.montoDevolucion)} a devolver</span>
+                                            }
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot className="bg-orange-50 border-t-2 border-orange-200">
+                                    <tr>
+                                      <td colSpan="8" className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Total devuelto:</td>
+                                      <td className="px-3 py-2 text-right text-sm font-bold text-orange-700">
+                                        -{formatCurrency(dev.items.reduce((s, i) => s + parseFloat(i.precioVentaUnitario || 0) * parseInt(i.cantidadADevolver || 0), 0))}
+                                      </td>
+                                      <td></td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="flex justify-end">
+                          <div className="bg-orange-100 border border-orange-200 rounded-lg px-3 py-1.5 text-right">
+                            <span className="text-xs text-orange-600">Total devuelto: </span>
+                            <span className="text-sm font-bold text-orange-800">-{formatCurrency(totalDevuelto)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resumen final */}
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Resumen</h4>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 line-through">Total original:</span>
+                        <span className="text-gray-400 line-through">{formatCurrency(ventaCredito?.totalVenta || 0)}</span>
+                      </div>
+                      <div className="flex justify-between text-blue-700">
+                        <span>+ Abonado:</span>
+                        <span className="font-semibold">{formatCurrency(totalAbonado)}</span>
+                      </div>
+                      {totalDevuelto > 0 && (
+                        <div className="flex justify-between text-orange-700">
+                          <span>- Devuelto (impacto):</span>
+                          <span className="font-semibold">-{formatCurrency(totalDevuelto)}</span>
+                        </div>
+                      )}
+                      {excedente > 0 && (
+                        <div className="flex justify-between text-red-600">
+                          <span>⚠️ Negocio debe al cliente:</span>
+                          <span className="font-semibold">-{formatCurrency(excedente)}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between font-bold text-green-700 text-base">
+                        <span>Neto cobrado:</span>
+                        <span>{formatCurrency(netoCobrado)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* ── Footer — igual al modal principal ── */}
             <div className="flex justify-end px-6 py-4 border-t border-gray-200 shrink-0">
-              <button
-                onClick={onClose}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition"
-              >
+              <button onClick={onClose} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition">
                 Cerrar
               </button>
             </div>
-
           </div>
         </div>
       </div>
@@ -719,11 +852,14 @@ const CajaPage = () => {
 
     ventasList.forEach(venta => {
       const totalVenta = parseFloat(venta.totalVenta || 0);
+
+      // Las ventas de crédito pendiente NO suman a caja — solo los abonos representan dinero real
+      const esVentaCredito = venta.tipoVenta === 'credito';
+      if (esVentaCredito) return;
+
       total += totalVenta;
       gananciaBruta += totalVenta;
 
-      // Los abonos suman al total de caja pero ganancia = 0
-      // (la ganancia ya se contabilizó cuando se hizo la venta de crédito)
       if (venta.tipoVenta !== 'abono') {
         gananciaReal += venta.gananciaTotalVenta && typeof venta.gananciaTotalVenta === 'number'
           ? venta.gananciaTotalVenta : totalVenta * 0.4;
@@ -990,6 +1126,8 @@ const CajaPage = () => {
         }
         snap.docs.forEach(d => {
           const data = d.data();
+          // Las ventas de crédito no van a la tabla de caja — sus abonos ya aparecen
+          if (data.tipoVenta === 'credito') return;
           ventasMap.set(d.id, {
             id: d.id, ...data,
             fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),

@@ -165,10 +165,14 @@ const ClienteCreditoDetalle = () => {
       }
 
       // 4. Calcular saldo real
-      const saldoRealQueDebe = Math.max(0, totalDeudaItems - totalAbonos);
+      const diferencia = totalDeudaItems - totalAbonos;
+      const saldoRealQueDebe = Math.max(0, diferencia);
+      const excedentePagoAlCliente = diferencia < 0 ? Math.abs(diferencia) : 0;
+
       setCliente(prevCliente => ({
         ...prevCliente,
-        montoCreditoActual: saldoRealQueDebe
+        montoCreditoActual: saldoRealQueDebe,
+        excedentePagoAlCliente, // negocio debe este monto al cliente
       }));
 
       console.log("=== CÁLCULO DEL SALDO ===");
@@ -258,9 +262,13 @@ const ClienteCreditoDetalle = () => {
         }
 
         if (estaSaldando) {
+          const metodosPreviosSaldando = [...new Set(abonos.map(a => a.metodoPago).filter(Boolean))];
+          const todosMetodosSaldando = [...new Set([...metodosPreviosSaldando, metodoPago])];
+          const metodoPagoFinalSaldando = todosMetodosSaldando.length > 1 ? 'mixto' : (todosMetodosSaldando[0] || metodoPago);
+
           await updateDoc(doc(db, 'ventas', creditoConVenta.ventaId), {
             estado: 'completada',
-            metodoPago,
+            metodoPago: metodoPagoFinalSaldando,
             fechaSaldado: new Date(),
             updatedAt: new Date()
           });
@@ -296,6 +304,11 @@ const ClienteCreditoDetalle = () => {
           setTimeout(() => router.push('/creditos/activos'), 2000);
 
         } else {
+          const abonosExistentes = abonos; // ya están en state
+          const metodosPrevios = [...new Set(abonosExistentes.map(a => a.metodoPago).filter(Boolean))];
+          const todosMetodos = [...new Set([...metodosPrevios, metodoPago])];
+          const metodoPagoFinal = todosMetodos.length > 1 ? 'mixto' : (todosMetodos[0] || metodoPago);
+
           await updateDoc(doc(db, 'ventas', creditoConVenta.ventaId), {
             ultimoAbono: {
               monto,
@@ -304,6 +317,7 @@ const ClienteCreditoDetalle = () => {
               abonoId: abonoRef.id,
               saldoRestante: nuevoSaldo,
             },
+            metodoPago: metodoPagoFinal, // ← actualizar método en la venta
             updatedAt: new Date()
           });
 
@@ -437,6 +451,14 @@ const ClienteCreditoDetalle = () => {
                 <p className="text-2xl font-bold text-red-600">
                   S/. {saldoQueDebe.toFixed(2)}
                 </p>
+                {(cliente.excedentePagoAlCliente || 0) > 0 && (
+                  <div className="mt-1 bg-orange-50 border border-orange-300 rounded px-2 py-1">
+                    <p className="text-xs text-orange-700 font-medium">⚠️ Negocio debe al cliente:</p>
+                    <p className="text-lg font-bold text-orange-700">
+                      S/. {(cliente.excedentePagoAlCliente || 0).toFixed(2)}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

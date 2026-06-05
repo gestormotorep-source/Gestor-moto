@@ -4,7 +4,16 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, collection, query, getDocs, orderBy, where } from 'firebase/firestore';
-import { ArrowLeftIcon, ReceiptPercentIcon, UserIcon, CalendarDaysIcon, TagIcon, BanknotesIcon, ShoppingCartIcon, TruckIcon, IdentificationIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon,
+  ReceiptPercentIcon, 
+  UserIcon, 
+  CalendarDaysIcon, 
+  TagIcon, 
+  BanknotesIcon, 
+  ShoppingCartIcon, 
+  TruckIcon, 
+  IdentificationIcon, 
+  CreditCardIcon } from '@heroicons/react/24/outline';
 
 const VentaDetailPage = () => {
   const { user } = useAuth();
@@ -15,6 +24,7 @@ const VentaDetailPage = () => {
   const [itemsVenta, setItemsVenta] = useState([]);
   const [cotizacionData, setCotizacionData] = useState(null);
   const [devolucionesVenta, setDevolucionesVenta] = useState([]);
+  const [abonosVenta, setAbonosVenta] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -33,7 +43,6 @@ const VentaDetailPage = () => {
       setLoading(true);
       setError(null);
       try {
-        // Obtener el documento principal de la venta
         const ventaRef = doc(db, 'ventas', id);
         const ventaSnap = await getDoc(ventaRef);
 
@@ -45,7 +54,6 @@ const VentaDetailPage = () => {
 
         const ventaData = ventaSnap.data();
 
-        // Formatear la fecha
         ventaData.fechaVentaFormatted = ventaData.fechaVenta?.toDate
           ? ventaData.fechaVenta.toDate().toLocaleDateString('es-ES', {
               year: 'numeric',
@@ -58,7 +66,6 @@ const VentaDetailPage = () => {
 
         setVenta({ id: ventaSnap.id, ...ventaData });
 
-        // Si la venta viene de una cotización, obtener los datos de la cotización original
         if (ventaData.cotizacionId) {
           try {
             const cotizacionRef = doc(db, 'cotizaciones', ventaData.cotizacionId);
@@ -71,7 +78,6 @@ const VentaDetailPage = () => {
           }
         }
 
-        // Obtener los ítems de la subcolección 'itemsVenta'
         const itemsCollectionRef = collection(db, 'ventas', id, 'itemsVenta');
         const qItems = query(itemsCollectionRef, orderBy('createdAt', 'asc'));
         const itemsSnapshot = await getDocs(qItems);
@@ -81,7 +87,7 @@ const VentaDetailPage = () => {
         }));
         setItemsVenta(fetchedItems);
 
-        // Cargar devoluciones aprobadas de esta venta
+        // Cargar devoluciones aprobadas
         try {
           const qDev = query(
             collection(db, 'devoluciones'),
@@ -91,11 +97,8 @@ const VentaDetailPage = () => {
           const devSnap = await getDocs(qDev);
 
           const devolucionesCargadas = [];
-
           await Promise.all(devSnap.docs.map(async (devDoc) => {
             const devData = { id: devDoc.id, ...devDoc.data() };
-
-            // Cargar itemsDevolucion de cada devolución
             const itemsDevSnap = await getDocs(
               collection(db, 'devoluciones', devDoc.id, 'itemsDevolucion')
             );
@@ -103,7 +106,6 @@ const VentaDetailPage = () => {
             devolucionesCargadas.push(devData);
           }));
 
-          // Ordenar por fecha de solicitud desc
           devolucionesCargadas.sort((a, b) => {
             const fa = a.fechaSolicitud?.toDate ? a.fechaSolicitud.toDate() : new Date(0);
             const fb = b.fechaSolicitud?.toDate ? b.fechaSolicitud.toDate() : new Date(0);
@@ -113,6 +115,29 @@ const VentaDetailPage = () => {
           setDevolucionesVenta(devolucionesCargadas);
         } catch (e) {
           console.error('Error cargando devoluciones:', e);
+        }
+
+        // Cargar abonos si es venta de crédito
+        if (ventaData.tipoVenta === 'credito') {
+          try {
+            const qAbonos = query(
+              collection(db, 'abonos'),
+              where('ventaId', '==', id)
+            );
+            const abonosSnap = await getDocs(qAbonos);
+            const abonosCargados = abonosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            abonosCargados.sort((a, b) => {
+              const fa = a.fecha?.toDate ? a.fecha.toDate() : new Date(0);
+              const fb = b.fecha?.toDate ? b.fecha.toDate() : new Date(0);
+              return fa - fb;
+            });
+            setAbonosVenta(abonosCargados);
+          } catch (e) {
+            console.error('Error cargando abonos:', e);
+            setAbonosVenta([]);
+          }
+        } else {
+          setAbonosVenta([]);
         }
 
       } catch (err) {
@@ -224,9 +249,18 @@ const VentaDetailPage = () => {
   );
 
   // Total devuelto acumulado
-  const totalDevuelto = devolucionesVenta.reduce(
-    (sum, d) => sum + parseFloat(d.montoADevolver || 0), 0
-  );
+  const totalDevuelto = devolucionesVenta.reduce((sum, d) => {
+    if (d.tipoDevolucion === 'credito-activo') {
+      // El impacto real en la venta es la reducción de deuda + lo que se devuelve en efectivo
+      const reduccion = parseFloat(d.reduccionDeuda || 0);
+      const excedente = parseFloat(d.excedentePagoCliente || 0);
+      // Si tiene los campos nuevos, usarlos; si no, fallback a montoProducto
+      if (reduccion > 0 || excedente > 0) return sum + reduccion + excedente;
+      // fallback: sumar el valor real del producto devuelto desde items
+      return sum + parseFloat(d.montoADevolver || 0);
+    }
+    return sum + parseFloat(d.montoADevolver || 0);
+  }, 0);
 
   // Renderizar los métodos de pago
   const renderPaymentMethods = () => {
@@ -408,6 +442,47 @@ const VentaDetailPage = () => {
             )}
           </div>
 
+
+           {/* Historial de Abonos — solo para ventas de crédito */}
+            {venta.tipoVenta === 'credito' && abonosVenta.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-blue-700 mb-4 border-b border-blue-200 pb-2 flex items-center gap-2">
+                  <BanknotesIcon className="h-5 w-5" />
+                  Abonos Registrados ({abonosVenta.length})
+                </h3>
+                <div className="space-y-2">
+                  {abonosVenta.map((abono) => (
+                    <div key={abono.id} className="flex justify-between items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div>
+                        <p className="font-semibold text-blue-700">
+                          S/. {parseFloat(abono.monto || 0).toFixed(2)}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {abono.fecha?.toDate
+                            ? abono.fecha.toDate().toLocaleDateString('es-PE', {
+                                year: 'numeric', month: '2-digit', day: '2-digit',
+                                hour: '2-digit', minute: '2-digit'
+                              })
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium capitalize">{abono.metodoPago}</p>
+                        <p className="text-xs text-gray-500">{abono.descripcion || 'Abono a crédito'}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex justify-end mt-2">
+                    <div className="bg-blue-100 border border-blue-300 rounded-lg px-4 py-2 text-right">
+                      <span className="text-sm text-blue-700 font-medium">Total abonado: </span>
+                      <span className="text-lg font-bold text-blue-800">
+                        S/. {abonosVenta.reduce((s, a) => s + parseFloat(a.monto || 0), 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )} 
           {/* Sección de Devoluciones */}
           {devolucionesVenta.length > 0 && (
             <div className="mb-8">
@@ -478,7 +553,14 @@ const VentaDetailPage = () => {
                                 S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
                               </td>
                               <td className="px-4 py-3 text-sm font-semibold text-orange-700 text-right">
-                                - S/. {parseFloat(item.montoDevolucion || 0).toFixed(2)}
+                                - S/. {parseFloat(
+                                  item.montoDevolucion > 0
+                                    ? item.montoDevolucion
+                                    : (item.precioVentaUnitario || 0) * (item.cantidadADevolver || 0)
+                                ).toFixed(2)}
+                                {item.montoDevolucion === 0 && dev.tipoDevolucion === 'credito-activo' && (
+                                  <span className="block text-xs text-yellow-600 font-normal">(reduce deuda)</span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -517,7 +599,6 @@ const VentaDetailPage = () => {
           <div className="flex justify-end items-end gap-6 border-t pt-4 mt-6 flex-wrap">
             
             {devolucionesVenta.length > 0 ? (
-              // CON devoluciones: mostrar original tachado + neto + estado actualizado
               <div className="text-right">
                 <p className="text-xl font-semibold text-gray-800 mb-3">
                   Estado:
@@ -539,12 +620,38 @@ const VentaDetailPage = () => {
                 <p className="text-xl font-semibold text-gray-400 line-through">
                   S/. {parseFloat(venta.totalVenta || 0).toFixed(2)}
                 </p>
-                <p className="text-sm text-orange-600 font-medium mt-1">
-                  - S/. {totalDevuelto.toFixed(2)} devuelto
-                </p>
-                <p className="text-3xl font-extrabold text-green-700 mt-2">
-                  Neto: S/. {(parseFloat(venta.totalVenta || 0) - totalDevuelto).toFixed(2)}
-                </p>
+
+                {/* Para créditos: mostrar desglose de abonos + devolución */}
+                {venta.tipoVenta === 'credito' && abonosVenta.length > 0 ? (
+                  <>
+                    <p className="text-sm text-blue-600 font-medium mt-1">
+                      + S/. {abonosVenta.reduce((s,a) => s + parseFloat(a.monto||0), 0).toFixed(2)} abonado
+                    </p>
+                    <p className="text-sm text-orange-600 font-medium mt-1">
+                      - S/. {totalDevuelto.toFixed(2)} devuelto
+                    </p>
+                    {(venta.excedentePagoCliente || 0) > 0 && (
+                      <p className="text-sm text-red-600 font-medium mt-1">
+                        ⚠️ Negocio debe al cliente: S/. {parseFloat(venta.excedentePagoCliente).toFixed(2)}
+                      </p>
+                    )}
+                    <p className="text-3xl font-extrabold text-green-700 mt-2">
+                      Neto cobrado: S/. {(
+                        abonosVenta.reduce((s,a) => s + parseFloat(a.monto||0), 0) 
+                        - parseFloat(venta.excedentePagoCliente || 0)
+                      ).toFixed(2)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-orange-600 font-medium mt-1">
+                      - S/. {totalDevuelto.toFixed(2)} devuelto
+                    </p>
+                    <p className="text-3xl font-extrabold text-green-700 mt-2">
+                      Neto: S/. {(parseFloat(venta.totalVenta || 0) - totalDevuelto).toFixed(2)}
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               // SIN devoluciones: mostrar normal

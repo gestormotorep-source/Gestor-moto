@@ -499,27 +499,71 @@ const DevolucionesIndexPage = () => {
 
         // ── Si es devolución de crédito activo → reducir deuda y actualizar itemsCredito ──
         if (devolucionData.tipoDevolucion === 'credito-activo' && devolucionData.creditoId) {
-          const montoDevuelto = itemsData.reduce((s, i) =>
+          const reduccionDeuda = parseFloat(devolucionData.reduccionDeuda || 0);
+          const excedentePago = parseFloat(devolucionData.excedentePagoCliente || 0);
+
+          const montoProductoTotal = itemsData.reduce((s, i) =>
             s + parseFloat((i.precioVentaUnitario || 0) * (i.cantidadADevolver || 0)), 0
           );
+
+          const reduccionReal = (reduccionDeuda > 0 || excedentePago > 0)
+            ? reduccionDeuda
+            : montoProductoTotal;
 
           if (creditoSnap?.exists()) {
             const totalActual = parseFloat(creditoSnap.data().totalCredito || 0);
             transaction.update(creditoRef, {
-              totalCredito: parseFloat(Math.max(0, totalActual - montoDevuelto).toFixed(2)),
+              totalCredito: parseFloat(Math.max(0, totalActual - montoProductoTotal).toFixed(2)),
               updatedAt: serverTimestamp()
             });
           }
 
           if (clienteSnap?.exists()) {
             const deudaActual = parseFloat(clienteSnap.data().montoCreditoActual || 0);
+            const nuevaDeuda = Math.max(0, deudaActual - reduccionReal);
             transaction.update(clienteRef, {
-              montoCreditoActual: parseFloat(Math.max(0, deudaActual - montoDevuelto).toFixed(2)),
+              montoCreditoActual: parseFloat(nuevaDeuda.toFixed(2)),
               updatedAt: serverTimestamp()
             });
+
+            // ── NUEVO: Si la deuda queda en 0 (por excedente), saldar el crédito y su venta ──
+            const deudaFinal = parseFloat(nuevaDeuda.toFixed(2));
+            if (deudaFinal <= 0 && excedentePago > 0) {
+              // Marcar crédito como saldado
+              transaction.update(creditoRef, {
+                estado: 'saldado',
+                fechaSaldado: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+
+              // Marcar venta vinculada como completada
+              if (devolucionData.ventaId) {
+                transaction.update(ventaRef, {
+                  estado: 'completada',
+                  estadoCredito: 'saldado',
+                  excedentePagoCliente: excedentePago,
+                  fechaSaldado: serverTimestamp(),
+                  updatedAt: serverTimestamp()
+                });
+              }
+
+              // Marcar cliente como sin crédito activo
+              transaction.update(clienteRef, {
+                montoCreditoActual: 0,
+                updatedAt: serverTimestamp()
+              });
+            }
+
+            // Si hay excedente pero deuda > 0 (caso raro), solo marcar excedente en venta
+            if (excedentePago > 0 && deudaFinal > 0 && devolucionData.ventaId) {
+              transaction.update(ventaRef, {
+                excedentePagoCliente: excedentePago,
+                updatedAt: serverTimestamp()
+              });
+            }
           }
 
-          // getDocs normal fuera de transaction.get — permitido en Fase 3
+          // Actualizar itemsCredito (ya estaba, no tocar)
           for (const itemDevolucion of itemsData) {
             const itemsCreditoSnap = await getDocs(
               query(
