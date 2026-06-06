@@ -272,6 +272,8 @@ const NuevoIngresoPage = () => {
       marca: selectedProduct.marca || '',
       medida: selectedProduct.medida || '',
       codigoTienda: selectedProduct.codigoTienda || '',
+      codigoProveedor: selectedProduct.codigoProveedor || '', 
+      stockActual: selectedProduct.stockActual || 0,
       color: selectedProduct.color || '',
       numeroLote: numeroLote.trim(),
       cantidad: quantity,
@@ -1225,6 +1227,8 @@ const NuevoIngresoPage = () => {
                       <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{editingItem.marca || 'Sin marca'}</span></div>
                       <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{editingItem.medida || 'N/A'}</span></div>
                       <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{editingItem.color || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Stock actual: </span><span className="font-bold text-gray-900">{editingItem.stockActual ?? 0}</span></div>
+                      <div><span className="font-medium text-gray-600">ID: </span><span className="text-gray-400 text-xs font-mono">{editingItem.productoId}</span></div>
                     </div>
                   </div>
 

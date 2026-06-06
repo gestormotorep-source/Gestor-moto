@@ -35,6 +35,7 @@ const EditarIngresoPage = () => {
   const [error, setError] = useState(null);
   const [proveedores, setProveedores] = useState([]);
   const [ingreso, setIngreso] = useState(null);
+  const [loadingUmbral, setLoadingUmbral] = useState(false);
 
   // Campos principales editables
   const [numeroBoleta, setNumeroBoleta] = useState('');
@@ -92,6 +93,7 @@ const EditarIngresoPage = () => {
   const [editPrecioVenta, setEditPrecioVenta] = useState(0);
   const [editPrecioVentaMinimo, setEditPrecioVentaMinimo] = useState(0);
   const [editLotesAnteriores, setEditLotesAnteriores] = useState([]);
+
 
   const generateLoteNumber = () => {
     const fecha = new Date();
@@ -159,6 +161,8 @@ const EditarIngresoPage = () => {
             precioVentaMinimoUnitario: (sub.precioVentaMinimoUnitario != null && sub.precioVentaMinimoUnitario !== 0)
                                          ? sub.precioVentaMinimoUnitario
                                          : (principal.precioVentaMinimoUnitario ?? 0),
+            codigoProveedor: sub.codigoProveedor || principal.codigoProveedor || '',  
+            stockActual: principal.stockActual ?? sub.stockActual ?? 0, 
           };
         });
 
@@ -369,7 +373,7 @@ const EditarIngresoPage = () => {
   };
 
   // Editar lote EXISTENTE (ya en Firestore)
-  const handleEditLoteExistente = async (lote) => {  // ← agregar async
+  const handleEditLoteExistente = async (lote) => {  
     setEditingLote(lote);
     setEditLoteQuantity(Number(lote.cantidad));
     setEditLotePrecio(Number(lote.precioCompraUnitario));
@@ -385,14 +389,17 @@ const EditarIngresoPage = () => {
     try {
       const prodSnap = await getDoc(doc(db, 'productos', lote.productoId));
       if (prodSnap.exists()) {
-        setNuevoUmbralLote(prodSnap.data().stockReferencialUmbral ?? 0);
+        const prodData = prodSnap.data();
+        setNuevoUmbralLote(prodData.stockReferencialUmbral ?? 0);
+        setEditingLote(prev => ({ 
+          ...prev, 
+          stockActual: prodData.stockActual ?? 0,
+          codigoProveedor: prodData.codigoProveedor || '',
+        }));    
       }
     } catch (err) {
-      console.error('Error leyendo umbral:', err);
       setNuevoUmbralLote(0);
     }
-
-    setShowEditLoteModal(true);
   };
 
   const handleUpdateLoteExistente = async () => {
@@ -1391,6 +1398,8 @@ const EditarIngresoPage = () => {
                           {editingLote.estado || 'activo'}
                         </span>
                       </div>
+                      <div><span className="font-medium text-gray-600">Stock actual: </span><span className="font-bold text-gray-900">{editingLote.stockActual ?? 0}</span></div>
+                      <div><span className="font-medium text-gray-600">ID: </span><span className="text-gray-400 text-xs font-mono">{editingLote.productoId}</span></div>
                     </div>
                   </div>
 
