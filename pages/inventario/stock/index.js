@@ -18,6 +18,7 @@ import {
   EyeIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ChevronLeftIcon, 
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 
@@ -41,7 +42,8 @@ const LotesPage = () => {
   const [searchTerm, setSearchTerm] = useState(cached?.filtros?.searchTerm || '');
   const [estadoFilter, setEstadoFilter] = useState(cached?.filtros?.estadoFilter || '');
   const [sortBy, setSortBy] = useState(cached?.filtros?.sortBy || 'nombre');
-  const [limitPerPage, setLimitPerPage] = useState(cached?.filtros?.limitPerPage || 50);
+  const [currentPage, setCurrentPage] = useState(cached?.filtros?.currentPage || 1);
+  const [gruposPerPage, setGruposPerPage] = useState(cached?.filtros?.gruposPerPage || 20);
 
   // Vista expandida — rehidratada desde cache (Set serializado como Array)
   const [expandedProducts, setExpandedProducts] = useState(() => {
@@ -203,13 +205,14 @@ const LotesPage = () => {
         searchTerm,
         estadoFilter,
         sortBy,
-        limitPerPage,
+        currentPage,
+        gruposPerPage,
         filteredGrupos,
         // Set → Array para serialización
         expandedProducts: Array.from(expandedProducts),
       });
     }
-  }, [lotesAgrupados, filteredGrupos, searchTerm, estadoFilter, sortBy, limitPerPage, expandedProducts]);
+  }, [lotesAgrupados, filteredGrupos, searchTerm, estadoFilter, sortBy, currentPage, gruposPerPage, expandedProducts]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const formatDate = (ts) => {
@@ -234,7 +237,8 @@ const LotesPage = () => {
     setSearchTerm('');
     setEstadoFilter('');
     setSortBy('nombre');
-    setLimitPerPage(50);
+    setCurrentPage(1);
+    setGruposPerPage(20);
     setExpandedProducts(new Set());
   };
 
@@ -261,7 +265,12 @@ const LotesPage = () => {
     totalLotes: lotesAgrupados.reduce((s, g) => s + g.lotes.length, 0),
   };
 
-  const displayed = filteredGrupos.slice(0, limitPerPage);
+  const totalPages = Math.ceil(filteredGrupos.length / gruposPerPage);
+  const indexOfLast = currentPage * gruposPerPage;
+  const indexOfFirst = indexOfLast - gruposPerPage;
+  const displayed = filteredGrupos.slice(indexOfFirst, indexOfLast);
+  const goToNext = () => { if (currentPage < totalPages) setCurrentPage(p => p + 1); };
+  const goToPrev = () => { if (currentPage > 1) setCurrentPage(p => p - 1); };
 
   if (!router.isReady || !user || loading) {
     return (
@@ -363,8 +372,8 @@ const LotesPage = () => {
 
               {/* Límite */}
               <select
-                value={limitPerPage}
-                onChange={e => setLimitPerPage(Number(e.target.value))}
+                value={gruposPerPage}
+                onChange={e => { setGruposPerPage(Number(e.target.value)); setCurrentPage(1); }}
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
               >
                 <option value={20}>20</option>
@@ -403,7 +412,7 @@ const LotesPage = () => {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 overflow-y-auto max-h-[60vh]">
               {displayed.map(grupo => {
                 const expanded = expandedProducts.has(grupo.productoId);
                 return (
@@ -570,17 +579,26 @@ const LotesPage = () => {
           )}
 
           {/* ── Footer con paginación simple ──────────────────────────── */}
-          {filteredGrupos.length > limitPerPage && (
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
-              <span className="text-sm text-gray-600">
-                Mostrando {displayed.length} de {filteredGrupos.length} productos
-              </span>
-              <button
-                onClick={() => setLimitPerPage(p => p + 50)}
-                className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
-              >
-                Cargar más
-              </button>
+          {filteredGrupos.length > gruposPerPage && (
+            <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <p className="text-sm text-gray-700">
+                Mostrando <span className="font-medium">{indexOfFirst + 1}</span> a{' '}
+                <span className="font-medium">{Math.min(indexOfLast, filteredGrupos.length)}</span> de{' '}
+                <span className="font-medium">{filteredGrupos.length}</span> productos
+              </p>
+              <div className="flex space-x-2">
+                <button onClick={goToPrev} disabled={currentPage === 1}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <ChevronLeftIcon className="h-5 w-5" />
+                </button>
+                <span className="px-3 py-1 text-sm text-gray-700">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <button onClick={goToNext} disabled={currentPage === totalPages}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <ChevronRightIcon className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           )}
 

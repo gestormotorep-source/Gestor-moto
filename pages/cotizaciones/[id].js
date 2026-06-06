@@ -5,6 +5,9 @@ import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import MixedPaymentModal from '../../components/modals/MixedPaymentModal';
+import ProductSearchItem from '../../components/ProductSearchItem';
+import ProductDetailsModal from '../../components/modals/ProductDetailsModal';
+import ProductModelsModal from '../../components/modals/ProductModelsModal';
 import { db } from '../../lib/firebase';
 import {
   collection,
@@ -83,6 +86,22 @@ const EditarVerCotizacionPage = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
+
+  // Estados para modales de detalles y modelos
+  const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
+  const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
+  const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
+  const [selectedProductForModels, setSelectedProductForModels] = useState(null);
+
+  const openProductDetailsModal = (product) => {
+    setSelectedProductForDetails(product);
+    setIsProductDetailsModalOpen(true);
+  };
+
+  const openProductModelsModal = (product) => {
+    setSelectedProductForModels(product);
+    setIsProductModelsModalOpen(true);
+  };
 
   // Estados para pagos mixtos
   const [paymentData, setPaymentData] = useState({
@@ -249,47 +268,63 @@ const EditarVerCotizacionPage = () => {
   }, [cotizacion?.totalCotizacion]);
 
   // BÚSQUEDA DE PRODUCTOS - solo si puede editar
-  const searchProducts = async (searchTerm) => {
-    if (!searchTerm.trim() || isViewOnly) {
-      setFilteredProductos([]);
-      return;
-    }
+  const searchProducts = async (term) => {
+    if (!term.trim()) { setFilteredProductos([]); return; }
 
     setIsSearching(true);
     try {
-      const qProductos = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
-      const productosSnapshot = await getDocs(qProductos);
-      const productosList = productosSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const idsVistos = new Set();
+      let candidatos = [];
+      const termUpper = term.trim().toUpperCase();
+      const palabras = termUpper.split(/[\s\-\/\.]+/).filter(p => p.length >= 1);
 
-      const searchTermLower = searchTerm.toLowerCase();
-      
-      const filtered = productosList.filter(producto => {
-        const nombre = (producto.nombre || '').toLowerCase();
-        const marca = (producto.marca || '').toLowerCase();
-        const codigoTienda = (producto.codigoTienda || '').toLowerCase();
-        const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
-        const descripcion = (producto.descripcion || '').toLowerCase();
-        
-        const modelosCompatibles = producto.modelosCompatiblesIds || [];
-        const modelosCompatiblesText = modelosCompatibles.join(' ').toLowerCase();
-        const modelosCompatiblesTexto = (producto.modelosCompatiblesTexto || '').toLowerCase();
+      if (palabras.length > 0) {
+        const queries = palabras.flatMap(palabra => [
+          getDocs(query(collection(db, 'productos'), where('palabrasClave', 'array-contains', palabra), limit(200))),
+          getDocs(query(collection(db, 'productos'), where('nombre', '>=', palabra), where('nombre', '<=', palabra + '\uf8ff'), limit(100))),
+        ]);
 
-        return nombre.includes(searchTermLower) ||
-              marca.includes(searchTermLower) ||
-              codigoTienda.includes(searchTermLower) ||
-              codigoProveedor.includes(searchTermLower) ||
-              descripcion.includes(searchTermLower) ||
-              modelosCompatiblesText.includes(searchTermLower) ||
-              modelosCompatiblesTexto.includes(searchTermLower);
-      });
+        queries.push(
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termUpper), limit(10))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(10))),
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '>=', termUpper), where('codigoTienda', '<=', termUpper + '\uf8ff'), limit(100))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', termUpper), where('codigoProveedor', '<=', termUpper + '\uf8ff'), limit(100))),
+        );
 
-      setFilteredProductos(filtered);
+        const prefijos = ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+                          'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+        prefijos.forEach(prefijo => {
+          const busqueda = prefijo + termUpper;
+          queries.push(
+            getDocs(query(collection(db, 'productos'), where('codigoTienda', '>=', busqueda), where('codigoTienda', '<=', busqueda + '\uf8ff'), limit(20))),
+            getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', busqueda), where('codigoProveedor', '<=', busqueda + '\uf8ff'), limit(20))),
+          );
+        });
+
+        const resultados = await Promise.all(queries);
+        resultados.forEach(snap => {
+          snap.docs.forEach(d => {
+            if (!idsVistos.has(d.id)) { idsVistos.add(d.id); candidatos.push({ id: d.id, ...d.data() }); }
+          });
+        });
+
+        candidatos = candidatos.filter(p => {
+          const nombreUpper = (p.nombre || '').toUpperCase();
+          const claves = (p.palabrasClave || []);
+          const codigoTienda = (p.codigoTienda || '').toUpperCase();
+          const codigoProveedor = (p.codigoProveedor || '').toUpperCase();
+          return palabras.every(palabra =>
+            nombreUpper.includes(palabra) ||
+            claves.some(clave => clave.includes(palabra)) ||
+            codigoTienda.includes(palabra) ||
+            codigoProveedor.includes(palabra)
+          );
+        });
+      }
+
+      setFilteredProductos(candidatos);
     } catch (err) {
-      console.error("Error al buscar productos:", err);
-      setError("Error al buscar productos");
+      console.error('Error al buscar productos:', err);
     } finally {
       setIsSearching(false);
     }
@@ -297,18 +332,12 @@ const EditarVerCotizacionPage = () => {
 
   // Efecto para buscar productos con debounce - solo si puede editar
   useEffect(() => {
-    if (isViewOnly) return;
-
     const timeoutId = setTimeout(() => {
-      if (searchTerm.trim()) {
-        searchProducts(searchTerm);
-      } else {
-        setFilteredProductos([]);
-      }
+      if (searchTerm.trim()) searchProducts(searchTerm);
+      else setFilteredProductos([]);
     }, 300);
-
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, isViewOnly]);
+  }, [searchTerm]);
 
   // Funciones de edición - solo disponibles si puede editar
   const handleUpdateCliente = async (selectedOption) => {
@@ -1112,7 +1141,7 @@ const handleGuardarCotizacion = async () => {
 
                     {/* Dropdown de productos */}
                     {searchTerm.trim() !== '' && (
-                      <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                      <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
                         {isSearching ? (
                           <div className="flex justify-center py-8">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -1122,63 +1151,20 @@ const handleGuardarCotizacion = async () => {
                             <p>No se encontraron productos</p>
                           </div>
                         ) : (
-                          <div className="max-h-80">
+                          <div className="max-h-96">
                             {filteredProductos.slice(0, 20).map(producto => (
-                              <div
+                              <ProductSearchItem
                                 key={producto.id}
-                                className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                                onClick={() => {
-                                  handleSelectProduct(producto);
-                                  setSearchTerm('');
-                                }}
-                              >
-                                <div className="flex items-center justify-between gap-6">
-                                  <div className="flex items-center gap-6 flex-1 min-w-0">
-                                    <div className="min-w-0 flex-shrink-0">
-                                      <h4 className="font-medium text-gray-900 truncate text-sm">
-                                        {producto.nombre} ({producto.codigoTienda})
-                                      </h4>
-                                    </div>
-                                    
-                                    <div className="flex-shrink-0">
-                                      <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
-                                      <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
-                                    </div>
-                                    
-                                    <div className="flex-shrink-0">
-                                      <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
-                                      <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
-                                    </div>
-                                    
-                                    <div className="flex-shrink-0">
-                                      <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
-                                      <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                                    </div>
-                                    
-                                    {producto.modelosCompatiblesTexto && (
-                                      <div className="flex-shrink-0 max-w-xs">
-                                        <span className="text-xs text-gray-500 uppercase tracking-wide">Modelos:</span>
-                                        <span className="ml-1 text-sm text-blue-700 font-medium truncate" title={producto.modelosCompatiblesTexto}>
-                                          {producto.modelosCompatiblesTexto}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  
-                                  <div className="text-right flex-shrink-0">
-                                    <p className="font-bold text-green-600 text-base">
-                                      S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                                    </p>
-                                    <p className="text-xs text-gray-500 uppercase tracking-wide">
-                                      Precio Venta
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
+                                producto={producto}
+                                onSelectProduct={handleSelectProduct}
+                                onClearSearch={() => setSearchTerm('')}
+                                onOpenDetails={openProductDetailsModal}
+                                onOpenModels={openProductModelsModal}
+                              />
                             ))}
                             {filteredProductos.length > 20 && (
                               <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-                                Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                                Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda.
                               </div>
                             )}
                           </div>
@@ -1346,154 +1332,141 @@ const handleGuardarCotizacion = async () => {
       {!isViewOnly && (
         <Transition.Root show={showQuantityModal} as={Fragment}>
           <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0"
-              enterTo="opacity-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100"
-              leaveTo="opacity-0"
-            >
+            <Transition.Child as={Fragment}
+              enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100"
+              leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
               <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
             </Transition.Child>
 
             <div className="fixed inset-0 z-50 overflow-y-auto">
-              <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-                <Transition.Child
-                  as={Fragment}
-                  enter="ease-out duration-300"
-                  enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              <div className="flex min-h-full items-center justify-center p-4">
+                <Transition.Child as={Fragment}
+                  enter="ease-out duration-300" enterFrom="opacity-0 translate-y-4 sm:scale-95"
                   enterTo="opacity-100 translate-y-0 sm:scale-100"
-                  leave="ease-in duration-200"
-                  leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                  leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                >
-                  <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
-                    <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                      <button
-                        type="button"
-                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        onClick={() => setShowQuantityModal(false)}
-                      >
-                        <span className="sr-only">Cerrar</span>
-                        <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                      </button>
-                    </div>
+                  leave="ease-in duration-200" leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                  leaveTo="opacity-0 translate-y-4 sm:scale-95">
+                  <Dialog.Panel className="relative transform overflow-hidden rounded-xl bg-white shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-5xl p-10">
+                    <button type="button" onClick={() => setShowQuantityModal(false)}
+                      className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
+                      <XMarkIcon className="h-6 w-6" />
+                    </button>
 
-                    <div className="sm:flex sm:items-start">
-                      <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                        <ShoppingCartIcon className="h-6 w-6 text-blue-600" aria-hidden="true" />
-                      </div>
-                      <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                        <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                          Agregar Producto a Cotización
-                        </Dialog.Title>
-                        
-                        {selectedProduct && (
-                          <div className="mt-4">
-                            <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                              <h4 className="font-semibold text-lg text-gray-900 mb-2">
-                                {selectedProduct.nombre}
-                              </h4>
-                              <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                  <span className="font-medium text-gray-700">Código: </span>
-                                  <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">Marca: </span>
-                                  <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">Stock disponible: </span>
-                                  <span className="text-gray-600">{selectedProduct.stockActual || 0}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">Color: </span>
-                                  <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
-                                </div>
+                    <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                      <ShoppingCartIcon className="h-7 w-7 text-blue-600" />
+                      Agregar Producto a Cotización
+                    </h3>
+
+                    {selectedProduct && (
+                      <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                        {/* COLUMNA IZQUIERDA */}
+                        <div className="flex flex-col gap-4 h-full">
+                          <div className="bg-gray-50 p-5 rounded-lg border-2 border-blue-200 text-left">
+                            <h4 className="font-bold text-xl text-gray-900 mb-1">{selectedProduct.nombre}</h4>
+                            {selectedProduct.codigoProveedor && (
+                              <div className="mb-3">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-blue-100 text-blue-800 font-mono">
+                                  C. Proveedor: {selectedProduct.codigoProveedor}
+                                </span>
                               </div>
-                              
-                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-sm font-medium text-yellow-800">
-                                    Precio Venta Mínimo:
-                                  </span>
-                                  <span className="text-lg font-bold text-yellow-900">
-                                    S/. {parseFloat(selectedProduct.precioVentaMinimo || 0).toFixed(2)}
-                                  </span>
-                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{selectedProduct.codigoTienda || 'N/A'}</span></div>
+                              <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{selectedProduct.marca || 'Sin marca'}</span></div>
+                              <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{selectedProduct.medida || 'N/A'}</span></div>
+                              <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{selectedProduct.color || 'N/A'}</span></div>
+                              <div><span className="font-medium text-gray-600">Stock disponible: </span><span className="font-bold text-gray-900">{selectedProduct.stockActual || 0}</span></div>
+                            </div>
+                          </div>
+
+                          <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                            <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                              <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Precios de referencia</span>
+                            </div>
+                            <div className="divide-y divide-amber-100">
+                              <div className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm text-gray-600">Precio compra</span>
+                                <span className="text-base font-bold text-amber-800">S/. {parseFloat(selectedProduct.precioCompraDefault || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm text-gray-600">Precio venta mínimo</span>
+                                <span className="text-base font-bold text-red-700">S/. {parseFloat(selectedProduct.precioVentaMinimo || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm text-gray-600">Precio venta sugerido</span>
+                                <span className="text-base font-bold text-blue-700">S/. {precioVenta.toFixed(2)}</span>
                               </div>
                             </div>
+                          </div>
+                        </div>
 
-                            <div className="grid grid-cols-2 gap-6">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-3">
-                                  Cantidad
-                                </label>
-                                <input
-                                  type="number"
-                                  value={quantity}
-                                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                                  min="1"
-                                  max={selectedProduct.stockActual || 999}
-                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                                />
+                        {/* COLUMNA DERECHA */}
+                        <div className="flex flex-col gap-5 h-full">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                              <input type="number" value={quantity}
+                                onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                                min="1" max={selectedProduct.stockActual || 999}
+                                onWheel={(e) => e.target.blur()}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base" />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                              <input type="number" value={precioVenta}
+                                onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
+                                min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-base ${
+                                  precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
+                                    ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                                    : 'border-gray-300 focus:ring-blue-500'
+                                }`} />
+                              {precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0) && (
+                                <p className="text-red-600 text-xs mt-1 font-medium">⚠️ Precio por debajo del mínimo permitido</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview con precio ingresado</p>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Ganancia unit.:</span>
+                                <span className={`font-bold ${(precioVenta - parseFloat(selectedProduct.precioCompraDefault || 0)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                  S/. {(precioVenta - parseFloat(selectedProduct.precioCompraDefault || 0)).toFixed(2)}
+                                </span>
                               </div>
-
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-3">
-                                  Precio de Venta (S/.)
-                                </label>
-                                <input
-                                  type="number"
-                                  value={precioVenta}
-                                  onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
-                                  min="0"
-                                  step="0.01"
-                                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-lg ${
-                                    precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
-                                      ? 'border-red-300 focus:ring-red-500 bg-red-50'
-                                      : 'border-gray-300 focus:ring-blue-500'
-                                  }`}
-                                />
-                                {precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0) && (
-                                  <p className="text-red-600 text-sm mt-1 font-medium">
-                                    ⚠️ Precio por debajo del mínimo permitido
-                                  </p>
-                                )}
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Ganancia total:</span>
+                                <span className={`font-bold ${(quantity * (precioVenta - parseFloat(selectedProduct.precioCompraDefault || 0))) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                  S/. {(quantity * (precioVenta - parseFloat(selectedProduct.precioCompraDefault || 0))).toFixed(2)}
+                                </span>
                               </div>
                             </div>
+                          </div>
 
-                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 mt-6">
+                          <div className="mt-auto flex flex-col gap-4">
+                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-5 rounded-lg border border-blue-200">
                               <div className="flex justify-between items-center">
                                 <span className="text-lg font-medium text-gray-700">Subtotal:</span>
                                 <span className="font-bold text-blue-800 text-2xl">S/. {(quantity * precioVenta).toFixed(2)}</span>
                               </div>
                             </div>
+                            <div className="flex justify-end gap-3">
+                              <button type="button" onClick={() => setShowQuantityModal(false)}
+                                className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                                Cancelar
+                              </button>
+                              <button type="button" onClick={handleAddProductToCotizacion}
+                                disabled={!cotizacion || quantity <= 0 || precioVenta <= 0}
+                                className="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold text-base hover:bg-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                Agregar a Cotización
+                              </button>
+                            </div>
                           </div>
-                        )}
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
-                      <button
-                        type="button"
-                        className="inline-flex w-full justify-center rounded-md bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                        onClick={handleAddProductToCotizacion}
-                        disabled={!cotizacion || quantity <= 0 || precioVenta <= 0}
-                      >
-                        Agregar a Cotización
-                      </button>
-                      <button
-                        type="button"
-                        className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
-                        onClick={() => setShowQuantityModal(false)}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
+                    )}
                   </Dialog.Panel>
                 </Transition.Child>
               </div>
@@ -1506,125 +1479,140 @@ const handleGuardarCotizacion = async () => {
       {!isViewOnly && (
         <Transition.Root show={showEditItemModal} as={Fragment}>
           <Dialog as="div" className="relative z-50" onClose={setShowEditItemModal}>
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0"
-              enterTo="opacity-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100"
-              leaveTo="opacity-0"
-            >
+            <Transition.Child as={Fragment}
+              enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100"
+              leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
               <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
             </Transition.Child>
 
             <div className="fixed inset-0 z-50 overflow-y-auto">
-              <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-                <Transition.Child
-                  as={Fragment}
-                  enter="ease-out duration-300"
-                  enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              <div className="flex min-h-full items-center justify-center p-4">
+                <Transition.Child as={Fragment}
+                  enter="ease-out duration-300" enterFrom="opacity-0 translate-y-4 sm:scale-95"
                   enterTo="opacity-100 translate-y-0 sm:scale-100"
-                  leave="ease-in duration-200"
-                  leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                  leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                >
-                  <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
-                    <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                      <button
-                        type="button"
-                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        onClick={() => setShowEditItemModal(false)}
-                      >
-                        <span className="sr-only">Cerrar</span>
-                        <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                      </button>
-                    </div>
+                  leave="ease-in duration-200" leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                  leaveTo="opacity-0 translate-y-4 sm:scale-95">
+                  <Dialog.Panel className="relative transform overflow-hidden rounded-xl bg-white shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-5xl p-10">
+                    <button type="button" onClick={() => setShowEditItemModal(false)}
+                      className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
+                      <XMarkIcon className="h-6 w-6" />
+                    </button>
 
-                    <div className="sm:flex sm:items-start">
-                      <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
-                        <PencilIcon className="h-6 w-6 text-yellow-600" aria-hidden="true" />
-                      </div>
-                      <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                        <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                          Editar Producto
-                        </Dialog.Title>
-                        
-                        {editingItem && (
-                          <div className="mt-4">
-                            <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                              <h4 className="font-semibold text-lg text-gray-900 mb-2">
-                                {editingItem.nombreProducto}
-                              </h4>
-                              <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                  <span className="font-medium text-gray-700">Código: </span>
-                                  <span className="text-gray-600">{editingItem.codigoTienda}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">Marca: </span>
-                                  <span className="text-gray-600">{editingItem.marca}</span>
-                                </div>
+                    <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                      <PencilIcon className="h-7 w-7 text-yellow-500" />
+                      Editar Producto en Cotización
+                    </h3>
+
+                    {editingItem && (
+                      <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                        {/* COLUMNA IZQUIERDA */}
+                        <div className="flex flex-col gap-4 h-full">
+                          <div className="bg-gray-50 p-5 rounded-lg border-2 border-yellow-200 text-left">
+                            <h4 className="font-bold text-xl text-gray-900 mb-1">{editingItem.nombreProducto}</h4>
+                            {editingItem.codigoProveedor && (
+                              <div className="mb-3">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-yellow-100 text-yellow-800 font-mono">
+                                  C. Proveedor: {editingItem.codigoProveedor}
+                                </span>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{editingItem.codigoTienda || 'N/A'}</span></div>
+                              <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{editingItem.marca || 'Sin marca'}</span></div>
+                              <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{editingItem.medida || 'N/A'}</span></div>
+                              <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{editingItem.color || 'N/A'}</span></div>
+                              <div><span className="font-medium text-gray-600">N° Lote: </span><span className="text-gray-700 font-mono text-xs">{editingItem.numeroLote || 'N/A'}</span></div>
+                            </div>
+                          </div>
+
+                          <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                            <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                              <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Precios de referencia del lote</span>
+                            </div>
+                            <div className="divide-y divide-amber-100">
+                              <div className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm text-gray-600">Precio de compra</span>
+                                <span className="text-base font-bold text-amber-800">S/. {parseFloat(editingItem.precioCompraUnitario || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm text-gray-600">Precio venta mínimo</span>
+                                <span className="text-base font-bold text-red-700">S/. {parseFloat(editingItem.precioVentaMinimo || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-center justify-between px-4 py-3">
+                                <span className="text-sm text-gray-600">Precio venta actual</span>
+                                <span className="text-base font-bold text-green-700">S/. {parseFloat(editingItem.precioVentaUnitario || 0).toFixed(2)}</span>
                               </div>
                             </div>
+                          </div>
+                        </div>
 
-                            <div className="grid grid-cols-2 gap-6">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-3">
-                                  Cantidad
-                                </label>
-                                <input
-                                  type="number"
-                                  value={editQuantity}
-                                  onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
-                                  min="1"
-                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                                />
+                        {/* COLUMNA DERECHA */}
+                        <div className="flex flex-col gap-5 h-full">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                              <input type="number" value={editQuantity}
+                                onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                                min="1" onWheel={(e) => e.target.blur()}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base" />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                              <input type="number" value={editPrecio}
+                                onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                                min="0" step="0.01" onWheel={(e) => e.target.blur()}
+                                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-base ${
+                                  editPrecio < parseFloat(editingItem.precioVentaMinimo || 0)
+                                    ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                                    : 'border-gray-300 focus:ring-yellow-500'
+                                }`} />
+                              {editPrecio < parseFloat(editingItem.precioVentaMinimo || 0) && (
+                                <p className="text-red-600 text-xs mt-1 font-medium">⚠️ Precio por debajo del mínimo permitido</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview con nuevo precio</p>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Ganancia unit.:</span>
+                                <span className={`font-bold ${(editPrecio - parseFloat(editingItem.precioCompraUnitario || 0)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                  S/. {(editPrecio - parseFloat(editingItem.precioCompraUnitario || 0)).toFixed(2)}
+                                </span>
                               </div>
-
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-3">
-                                  Precio de Venta (S/.)
-                                </label>
-                                <input
-                                  type="number"
-                                  value={editPrecio}
-                                  onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
-                                  min="0"
-                                  step="0.01"
-                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                                />
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Ganancia total:</span>
+                                <span className={`font-bold ${(editQuantity * (editPrecio - parseFloat(editingItem.precioCompraUnitario || 0))) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                  S/. {(editQuantity * (editPrecio - parseFloat(editingItem.precioCompraUnitario || 0))).toFixed(2)}
+                                </span>
                               </div>
                             </div>
+                          </div>
 
-                            <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg border border-yellow-200 mt-6">
+                          <div className="mt-auto flex flex-col gap-4">
+                            <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-5 rounded-lg border border-yellow-200">
                               <div className="flex justify-between items-center">
                                 <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
                                 <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
                               </div>
                             </div>
+                            <div className="flex justify-end gap-3">
+                              <button type="button" onClick={() => setShowEditItemModal(false)}
+                                className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                                Cancelar
+                              </button>
+                              <button type="button" onClick={handleUpdateItem}
+                                disabled={editQuantity <= 0 || editPrecio <= 0}
+                                className="px-6 py-3 rounded-lg bg-yellow-500 text-white font-semibold text-base hover:bg-yellow-400 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                Actualizar
+                              </button>
+                            </div>
                           </div>
-                        )}
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
-                      <button
-                        type="button"
-                        className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                        onClick={handleUpdateItem}
-                        disabled={editQuantity <= 0 || editPrecio <= 0}
-                      >
-                        Actualizar
-                      </button>
-                      <button
-                        type="button"
-                        className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
-                        onClick={() => setShowEditItemModal(false)}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
+                    )}
                   </Dialog.Panel>
                 </Transition.Child>
               </div>
@@ -1643,6 +1631,17 @@ const handleGuardarCotizacion = async () => {
           initialPaymentMethod={paymentData.paymentMethods[0]?.method || 'efectivo'}
         />
       )}
+
+      <ProductDetailsModal
+        isOpen={isProductDetailsModalOpen}
+        onClose={() => { setIsProductDetailsModalOpen(false); setSelectedProductForDetails(null); }}
+        product={selectedProductForDetails}
+      />
+      <ProductModelsModal
+        isOpen={isProductModelsModalOpen}
+        onClose={() => { setIsProductModelsModalOpen(false); setSelectedProductForModels(null); }}
+        product={selectedProductForModels}
+      />
     </Layout>
   );
 };

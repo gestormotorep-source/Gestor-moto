@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import ProductSearchItem from '../../components/ProductSearchItem';
+import ProductDetailsModal from '../../components/modals/ProductDetailsModal';
+import ProductModelsModal from '../../components/modals/ProductModelsModal';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import {
@@ -73,6 +75,22 @@ const NuevoCreditoPage = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
+
+  //  Modal detalles y modelos
+  const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
+  const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
+  const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
+  const [selectedProductForModels, setSelectedProductForModels] = useState(null);
+
+  const openProductDetailsModal = (product) => {
+    setSelectedProductForDetails(product);
+    setIsProductDetailsModalOpen(true);
+  };
+
+  const openProductModelsModal = (product) => {
+    setSelectedProductForModels(product);
+    setIsProductModelsModalOpen(true);
+  };
 
   // ── Cargar datos iniciales ─────────────────────────────
   useEffect(() => {
@@ -295,7 +313,9 @@ const NuevoCreditoPage = () => {
   // ── Seleccionar producto ───────────────────────────────
   const handleSelectProduct = (product) => {
     setSelectedProduct(product);
-    setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+    setPrecioVenta(
+      parseFloat(product.precioVentaDefault || product.precioVentaMinimo || product.precioCompraDefault || 0)
+    );
     setQuantity(1);
     setShowQuantityModal(true);
   };
@@ -733,11 +753,19 @@ const NuevoCreditoPage = () => {
     }
   };
 
-  const handleEditItem = (item) => {
+  const handleEditItem = async (item) => {
     setEditingItem(item);
     setEditQuantity(item.cantidad);
     setEditPrecio(parseFloat(item.precioVentaUnitario || 0));
     setShowEditItemModal(true);
+
+    // Obtener stock actual del producto en tiempo real
+    try {
+      const prodSnap = await getDoc(doc(db, 'productos', item.productoId));
+      if (prodSnap.exists()) {
+        setEditingItem(prev => ({ ...prev, stockActual: prodSnap.data().stockActual ?? 0 }));
+      }
+    } catch { /* si falla, queda N/A */ }
   };
 
   const clienteOptions = clientesConCredito.map(c => ({
@@ -942,6 +970,8 @@ const NuevoCreditoPage = () => {
                             producto={producto}
                             onSelectProduct={(p) => { handleSelectProduct(p); setSearchTerm(''); }}
                             onClearSearch={() => setSearchTerm('')}
+                            onOpenDetails={openProductDetailsModal}
+                            onOpenModels={openProductModelsModal}
                           />
                         ))}
                         {filteredProductos.length > 20 && (
@@ -1158,75 +1188,125 @@ const NuevoCreditoPage = () => {
             <div className="flex min-h-full items-center justify-center p-4">
               <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowEditItemModal(false)} />
               <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-5xl p-10">
-                <button onClick={() => setShowEditItemModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-500"><XMarkIcon className="h-6 w-6" /></button>
+                <button onClick={() => setShowEditItemModal(false)} className="absolute right-4 top-4 text-gray-400 hover:text-gray-500">
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
                 <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
                   <PencilIcon className="h-7 w-7 text-yellow-600" />
                   Editar Producto en Crédito
                 </h3>
                 {editingItem && (
                   <div className="grid grid-cols-2 gap-8 items-stretch">
+
+                    {/* COLUMNA IZQUIERDA */}
                     <div className="flex flex-col gap-4 h-full">
                       <div className="bg-gray-50 p-5 rounded-lg border-2 border-yellow-200">
                         <h4 className="font-bold text-xl text-gray-900 mb-1">{editingItem.nombreProducto}</h4>
                         {editingItem.codigoProveedor && (
-                          <div className="mb-3"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-yellow-100 text-yellow-800 font-mono">C. Proveedor: {editingItem.codigoProveedor}</span></div>
+                          <div className="mb-3">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-yellow-100 text-yellow-800 font-mono">
+                              C. Proveedor: {editingItem.codigoProveedor}
+                            </span>
+                          </div>
                         )}
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{editingItem.codigoTienda || 'N/A'}</span></div>
                           <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{editingItem.marca || 'Sin marca'}</span></div>
                           <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{editingItem.medida || 'N/A'}</span></div>
+                          <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{editingItem.color || 'N/A'}</span></div>
+                          <div><span className="font-medium text-gray-600">Stock: </span><span className="font-bold text-gray-900">{editingItem.stockActual ?? 'N/A'}</span></div>
                         </div>
                       </div>
+
                       <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
                         <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
                           <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Precios de referencia</span>
                         </div>
                         <div className="divide-y divide-amber-100">
-                          <div className="flex items-center justify-between px-4 py-3"><span className="text-sm text-gray-600">Precio de compra</span><span className="text-base font-bold text-amber-800">S/. {parseFloat(editingItem.precioCompraDefault || 0).toFixed(2)}</span></div>
-                          <div className="flex items-center justify-between px-4 py-3"><span className="text-sm text-gray-600">Precio venta mínimo</span><span className="text-base font-bold text-red-700">S/. {parseFloat(editingItem.precioVentaMinimo || 0).toFixed(2)}</span></div>
-                          <div className="flex items-center justify-between px-4 py-3"><span className="text-sm text-gray-600">Precio venta actual</span><span className="text-base font-bold text-green-700">S/. {parseFloat(editingItem.precioVentaUnitario || 0).toFixed(2)}</span></div>
                           <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-gray-600">Ganancia unitaria</span>
-                            <span className={`text-base font-bold ${parseFloat(editingItem.precioVentaUnitario || 0) - parseFloat(editingItem.precioCompraDefault || 0) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            <span className="text-sm text-gray-600">Precio de compra</span>
+                            <span className="text-base font-bold text-amber-800">S/. {parseFloat(editingItem.precioCompraDefault || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between px-4 py-3">
+                            <span className="text-sm text-gray-600">Precio venta mínimo</span>
+                            <span className="text-base font-bold text-red-700">S/. {parseFloat(editingItem.precioVentaMinimo || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between px-4 py-3">
+                            <span className="text-sm text-gray-600">Precio venta actual</span>
+                            <span className="text-base font-bold text-green-700">S/. {parseFloat(editingItem.precioVentaUnitario || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between px-4 py-3">
+                            <span className="text-sm text-gray-600">Ganancia unitaria actual</span>
+                            <span className={`text-base font-bold ${
+                              parseFloat(editingItem.precioVentaUnitario || 0) - parseFloat(editingItem.precioCompraDefault || 0) >= 0
+                                ? 'text-green-700' : 'text-red-700'
+                            }`}>
                               S/. {(parseFloat(editingItem.precioVentaUnitario || 0) - parseFloat(editingItem.precioCompraDefault || 0)).toFixed(2)}
                             </span>
                           </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* COLUMNA DERECHA */}
                     <div className="flex flex-col gap-5 h-full">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
-                          <input type="number" value={editQuantity} onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)} min="1" onWheel={(e) => e.target.blur()}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base" />
+                          <input
+                            type="number"
+                            value={editQuantity}
+                            onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                            min="1"
+                            onWheel={(e) => e.target.blur()}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
-                          <input type="number" value={editPrecio} onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)} min="0" step="0.01" onWheel={(e) => e.target.blur()}
-                            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-base ${editPrecio < parseFloat(editingItem.precioVentaMinimo || 0) ? 'border-red-300 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-yellow-500'}`} />
+                          <input
+                            type="number"
+                            value={editPrecio}
+                            onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            onWheel={(e) => e.target.blur()}
+                            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-base ${
+                              editPrecio < parseFloat(editingItem.precioVentaMinimo || 0)
+                                ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                                : 'border-gray-300 focus:ring-yellow-500'
+                            }`}
+                          />
                           {editPrecio < parseFloat(editingItem.precioVentaMinimo || 0) && (
                             <p className="text-red-600 text-xs mt-1 font-medium">⚠️ Precio por debajo del mínimo</p>
                           )}
                         </div>
                       </div>
+
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview con nuevo precio</p>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div className="flex justify-between">
                             <span className="text-gray-600">Ganancia unit.:</span>
-                            <span className={`font-bold ${(editPrecio - parseFloat(editingItem.precioCompraDefault || 0)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            <span className={`font-bold ${
+                              (editPrecio - parseFloat(editingItem.precioCompraDefault || 0)) >= 0
+                                ? 'text-green-700' : 'text-red-700'
+                            }`}>
                               S/. {(editPrecio - parseFloat(editingItem.precioCompraDefault || 0)).toFixed(2)}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Ganancia total:</span>
-                            <span className={`font-bold ${(editQuantity * (editPrecio - parseFloat(editingItem.precioCompraDefault || 0))) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            <span className={`font-bold ${
+                              (editQuantity * (editPrecio - parseFloat(editingItem.precioCompraDefault || 0))) >= 0
+                                ? 'text-green-700' : 'text-red-700'
+                            }`}>
                               S/. {(editQuantity * (editPrecio - parseFloat(editingItem.precioCompraDefault || 0))).toFixed(2)}
                             </span>
                           </div>
                         </div>
                       </div>
+
                       <div className="mt-auto flex flex-col gap-4">
                         <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-5 rounded-lg border border-yellow-200">
                           <div className="flex justify-between items-center">
@@ -1235,14 +1315,23 @@ const NuevoCreditoPage = () => {
                           </div>
                         </div>
                         <div className="flex justify-end gap-3">
-                          <button onClick={() => setShowEditItemModal(false)} className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">Cancelar</button>
-                          <button onClick={handleUpdateItem} disabled={editQuantity <= 0 || editPrecio <= 0}
-                            className="px-6 py-3 rounded-lg bg-yellow-600 text-white font-semibold text-base hover:bg-yellow-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                          <button
+                            onClick={() => setShowEditItemModal(false)}
+                            className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={handleUpdateItem}
+                            disabled={editQuantity <= 0 || editPrecio <= 0}
+                            className="px-6 py-3 rounded-lg bg-yellow-600 text-white font-semibold text-base hover:bg-yellow-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          >
                             Actualizar
                           </button>
                         </div>
                       </div>
                     </div>
+
                   </div>
                 )}
               </div>
@@ -1342,6 +1431,17 @@ const NuevoCreditoPage = () => {
           </div>
         )}
       </div>
+
+      <ProductDetailsModal
+        isOpen={isProductDetailsModalOpen}
+        onClose={() => { setIsProductDetailsModalOpen(false); setSelectedProductForDetails(null); }}
+        product={selectedProductForDetails}
+      />
+      <ProductModelsModal
+        isOpen={isProductModelsModalOpen}
+        onClose={() => { setIsProductModelsModalOpen(false); setSelectedProductForModels(null); }}
+        product={selectedProductForModels}
+      />
     </Layout>
   );
 };

@@ -285,10 +285,10 @@ const ProductosFaltantesPage = () => {
                 onChange={(e) => setLimitPerPage(Number(e.target.value))}
                 className="px-3 py-1.5 border border-gray-300 rounded-lg shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value={10}>10 / pág</option>
-                <option value={20}>20 / pág</option>
-                <option value={50}>50 / pág</option>
-                <option value={100}>100 / pág</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
 
               {/* Botón Filtros */}

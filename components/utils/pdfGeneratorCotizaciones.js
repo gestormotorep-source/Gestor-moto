@@ -585,13 +585,13 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         pdf.setFont(fontName, 'normal');
         pdf.text(`COTIZACION GENERADA EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
         
-        // Guardar PDF
+        // Generar nombre de archivo profesional
         const fechaSufijo = new Date().toISOString().split('T')[0];
         const clienteSufijo = clienteNombre.replace(/\s+/g, '-').toLowerCase();
         const fileName = `cotizacion-${numeroCotizacion.replace(/[^a-zA-Z0-9]/g, '-')}-${clienteSufijo}-${fechaSufijo}.pdf`;
-        pdf.save(fileName);
-        
-        return true;
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        return { url: pdfUrl, fileName };
         
     } catch (error) {
         console.error('Error al generar PDF de cotización:', error);
@@ -630,8 +630,8 @@ export const generarPDFCotizacionCompleta = async (cotizacionId, cotizacionData 
             }
         }
         
-        await generarPDFCotizacion(cotizacion, cliente);
-        return `Cotización generada exitosamente para ${cotizacion.clienteNombre || 'Cliente General'}`;
+        const result = await generarPDFCotizacion(cotizacion, cliente);
+        return result;
         
     } catch (error) {
         console.error('Error al generar PDF de cotización:', error);

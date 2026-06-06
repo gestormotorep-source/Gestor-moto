@@ -497,9 +497,9 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
         const periodoSufijo = periodo ? `-${periodo.toLowerCase().replace(/\s+/g, '-')}` : '';
         const clienteSufijo = cliente ? `-${cliente.nombre.replace(/\s+/g, '-')}` : '-todos-los-clientes';
         const fileName = `reporte-creditos${clienteSufijo}${periodoSufijo}-${fechaSufijo}.pdf`;
-        pdf.save(fileName);
-        
-        return true;
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        return { url: pdfUrl, fileName };
         
     } catch (error) {
         console.error('Error al generar PDF:', error);
@@ -510,8 +510,8 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
 // Función principal para generar PDF de un cliente específico
 export const generarPDFCliente = async (cliente, creditos, abonos = [], periodo = '') => {
     try {
-        await generarPDF(cliente, creditos, abonos, periodo);
-        return `Reporte PDF generado exitosamente para ${cliente.nombre} ${cliente.apellido || ''}`;
+        const result = await generarPDF(cliente, creditos, abonos, periodo);
+        return result; // { url, fileName }
     } catch (error) {
         throw new Error('Error al generar el reporte PDF. Por favor, inténtalo de nuevo.');
     }
@@ -618,9 +618,9 @@ export const generarPDFPorPeriodo = async (clientesConCreditos, periodo) => {
         const fechaSufijo = new Date().toISOString().split('T')[0];
         const periodoSufijo = periodo.toLowerCase().replace(/\s+/g, '-');
         const fileName = `reporte-creditos-${periodoSufijo}-${fechaSufijo}.pdf`;
-        pdf.save(fileName);
-        
-        return `Reporte PDF generado exitosamente - ${periodo}`;
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        return { url: pdfUrl, fileName };
         
     } catch (error) {
         console.error('Error al generar PDF por período:', error);

@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { generarPDFCliente, generarPDFPorPeriodo } from '../../components/utils/pdfGenerator';
+import { generarPDFCliente, generarPDFPorPeriodo } from '../../components/utils/pdfGeneratorCredito';
 import {
     collection,
     query,
@@ -134,6 +134,8 @@ const ClientesConCreditoActivos = () => {
     const [showPDFModal, setShowPDFModal] = useState(false);
     const [generatingPDF, setGeneratingPDF] = useState(false);
 
+    const [modalPDF, setModalPDF] = useState(null);
+
     // Estados para filtros
     const [filterPeriod, setFilterPeriod] = useState('all');
     const [startDate, setStartDate] = useState(null);
@@ -259,11 +261,8 @@ const ClientesConCreditoActivos = () => {
     // Generar PDF detallado para un cliente específico - ACTUALIZADA PARA INCLUIR ABONOS
     const generarPDFClienteHandler = async (cliente) => {
         setGeneratingPDF(true);
-        
         try {
-            // Obtener créditos del cliente según el filtro actual
             let qCreditos;
-            
             if (filterPeriod === 'all' || (!startDate && !endDate)) {
                 qCreditos = query(
                     collection(db, 'creditos'),
@@ -281,29 +280,19 @@ const ClientesConCreditoActivos = () => {
                     orderBy('fechaCreacion', 'desc')
                 );
             }
-            
+
             const creditosSnapshot = await getDocs(qCreditos);
             const creditos = [];
-            
-            // Para cada crédito, obtener sus items
+
             for (const creditoDoc of creditosSnapshot.docs) {
                 const creditoData = { id: creditoDoc.id, ...creditoDoc.data() };
-                
-                // Obtener items del crédito
                 const qItems = query(
                     collection(db, 'creditos', creditoDoc.id, 'itemsCredito'),
                     orderBy('createdAt', 'asc')
                 );
                 const itemsSnapshot = await getDocs(qItems);
-                const items = itemsSnapshot.docs.map(itemDoc => ({
-                    id: itemDoc.id,
-                    ...itemDoc.data()
-                }));
-                
-                creditos.push({
-                    ...creditoData,
-                    items: items
-                });
+                const items = itemsSnapshot.docs.map(itemDoc => ({ id: itemDoc.id, ...itemDoc.data() }));
+                creditos.push({ ...creditoData, items });
             }
 
             if (creditos.length === 0) {
@@ -311,14 +300,9 @@ const ClientesConCreditoActivos = () => {
                 return;
             }
 
-            // OBTENER ABONOS DEL CLIENTE
             let qAbonos;
             if (filterPeriod === 'all' || (!startDate && !endDate)) {
-                qAbonos = query(
-                    collection(db, 'abonos'),
-                    where('clienteId', '==', cliente.id),
-                    orderBy('fecha', 'desc')
-                );
+                qAbonos = query(collection(db, 'abonos'), where('clienteId', '==', cliente.id), orderBy('fecha', 'desc'));
             } else {
                 qAbonos = query(
                     collection(db, 'abonos'),
@@ -328,14 +312,10 @@ const ClientesConCreditoActivos = () => {
                     orderBy('fecha', 'desc')
                 );
             }
-            
-            const abonosSnapshot = await getDocs(qAbonos);
-            const abonos = abonosSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
 
-            // Obtener el nombre del período para el PDF
+            const abonosSnapshot = await getDocs(qAbonos);
+            const abonos = abonosSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
             const getPeriodoNombre = () => {
                 switch (filterPeriod) {
                     case 'day': return 'HOY';
@@ -346,13 +326,12 @@ const ClientesConCreditoActivos = () => {
                 }
             };
 
-            // Generar PDF usando la función actualizada que incluye abonos
-            const mensaje = await generarPDFCliente(cliente, creditos, abonos, getPeriodoNombre());
-            showAlert(mensaje);
-            
+            const result = await generarPDFCliente(cliente, creditos, abonos, getPeriodoNombre());
+            setModalPDF({ url: result.url, fileName: result.fileName });
+
         } catch (error) {
             console.error('Error al generar PDF del cliente:', error);
-            showAlert('Error al generar el reporte PDF. Por favor, inténtalo de nuevo.');
+            showAlert('Error al generar el reporte PDF.');
         } finally {
             setGeneratingPDF(false);
         }
@@ -361,7 +340,6 @@ const ClientesConCreditoActivos = () => {
     // Generar PDF por período (todos los clientes del período)
     const generarPDFPorPeriodoHandler = async () => {
         setGeneratingPDF(true);
-        
         try {
             if (clientesFiltrados.length === 0) {
                 showAlert('No hay clientes con crédito para el período seleccionado.');
@@ -378,12 +356,12 @@ const ClientesConCreditoActivos = () => {
                 }
             };
 
-            const mensaje = await generarPDFPorPeriodo(clientesFiltrados, getPeriodoNombre());
-            showAlert(mensaje);
-            
+            const result = await generarPDFPorPeriodo(clientesFiltrados, getPeriodoNombre());
+            setModalPDF({ url: result.url, fileName: result.fileName });
+
         } catch (error) {
             console.error('Error al generar PDF por período:', error);
-            showAlert('Error al generar el reporte PDF. Por favor, inténtalo de nuevo.');
+            showAlert('Error al generar el reporte PDF.');
         } finally {
             setGeneratingPDF(false);
         }
@@ -627,6 +605,46 @@ const ClientesConCreditoActivos = () => {
                     )}
                 </div>
             </div>
+
+            {modalPDF && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-0">
+                    <div className="bg-white rounded-xl shadow-2xl flex flex-col w-[90vw] h-[95vh]">
+
+                    <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 shrink-0">
+                        <h2 className="text-lg font-semibold text-gray-800">📄 Vista Previa - Reporte de Crédito</h2>
+                        <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = modalPDF.url;
+                            link.download = modalPDF.fileName;
+                            link.click();
+                            }}
+                            className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition"
+                        >
+                            <PrinterIcon className="h-4 w-4 mr-2" />
+                            Descargar
+                        </button>
+                        <button
+                            onClick={() => { URL.revokeObjectURL(modalPDF.url); setModalPDF(null); }}
+                            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                        >
+                            <XMarkIcon className="h-5 w-5" />
+                        </button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 p-2 min-h-0">
+                        <iframe
+                        src={modalPDF.url}
+                        className="w-full h-full rounded-lg border border-gray-200"
+                        title="Vista previa del reporte"
+                        />
+                    </div>
+
+                    </div>
+                </div>
+                )}
         </Layout>
     );
 };

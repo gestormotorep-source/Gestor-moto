@@ -48,6 +48,7 @@ const CotizacionesIndexPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredCotizaciones, setFilteredCotizaciones] = useState([]);
   const [totalCotizacionesPeriodo, setTotalCotizacionesPeriodo] = useState(0);
+  const [modalPDF, setModalPDF] = useState(null);
 
   // Estados para filtros
   const [filterPeriod, setFilterPeriod] = useState('day');
@@ -554,24 +555,22 @@ const CotizacionesIndexPage = () => {
   const handleImprimirCotizacion = async (cotizacion) => {
     try {
       const loadingToast = document.createElement('div');
-      loadingToast.innerHTML = `<div class="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50"><div class="flex items-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Generando PDF...</div></div>`;
+      loadingToast.innerHTML = `<div class="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50"><div class="flex items-center"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Generando vista previa...</div></div>`;
       document.body.appendChild(loadingToast);
 
       let clienteData = null;
       if (cotizacion.clienteId && cotizacion.clienteId !== 'general') {
         try {
-          const clienteDoc = await getDoc(doc(db, 'clientes', cotizacion.clienteId));
+          const clienteDoc = await getDoc(doc(db, 'cliente', cotizacion.clienteId));
           if (clienteDoc.exists()) clienteData = clienteDoc.data();
         } catch (e) { console.warn(e); }
       }
 
-      await generarPDFCotizacionCompleta(cotizacion.id, cotizacion, clienteData);
+      const result = await generarPDFCotizacionCompleta(cotizacion.id, cotizacion, clienteData);
       document.body.removeChild(loadingToast);
 
-      const toast = document.createElement('div');
-      toast.innerHTML = `<div class="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">PDF generado exitosamente</div>`;
-      document.body.appendChild(toast);
-      setTimeout(() => { if (document.body.contains(toast)) document.body.removeChild(toast); }, 3000);
+      setModalPDF({ url: result.url, fileName: result.fileName });
+
     } catch (error) {
       console.error('Error al generar PDF:', error);
     }
@@ -857,6 +856,52 @@ const CotizacionesIndexPage = () => {
           )}
         </div>
       </div>
+      {modalPDF && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-0">
+          <div className="bg-white rounded-xl shadow-2xl flex flex-col w-[90vw] h-[95vh]">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 shrink-0">
+              <h2 className="text-lg font-semibold text-gray-800">
+                📄 Vista Previa - Cotización
+              </h2>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = modalPDF.url;
+                    link.download = modalPDF.fileName;
+                    link.click();
+                  }}
+                  className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition"
+                >
+                  <PrinterIcon className="h-4 w-4 mr-2" />
+                  Descargar
+                </button>
+                <button
+                  onClick={() => {
+                    URL.revokeObjectURL(modalPDF.url);
+                    setModalPDF(null);
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* iframe */}
+            <div className="flex-1 p-2 min-h-0">
+              <iframe
+                src={modalPDF.url}
+                className="w-full h-full rounded-lg border border-gray-200"
+                title="Vista previa de la cotización"
+              />
+            </div>
+
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };
