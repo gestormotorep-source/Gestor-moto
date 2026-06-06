@@ -43,7 +43,8 @@ const MixedPaymentModal = ({
   onClose, 
   totalAmount, 
   onPaymentConfirm, 
-  initialPaymentMethod = 'efectivo' 
+  initialPaymentMethod = 'efectivo',
+  initialPaymentData = null
 }) => {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [isMixedPayment, setIsMixedPayment] = useState(false);
@@ -51,18 +52,18 @@ const MixedPaymentModal = ({
 
   // Inicializar métodos de pago cuando se abre el modal
   useEffect(() => {
-    if (isOpen) {
+  if (isOpen) {
+    if (initialPaymentData?.paymentMethods?.length > 0) {
+      setPaymentMethods(initialPaymentData.paymentMethods);
+      setIsMixedPayment(initialPaymentData.isMixedPayment || false);
+    } else {
       const initialMethod = PAYMENT_METHODS.find(pm => pm.method === initialPaymentMethod) || PAYMENT_METHODS[0];
-      setPaymentMethods([
-        {
-          ...initialMethod,
-          amount: totalAmount
-        }
-      ]);
+      setPaymentMethods([{ ...initialMethod, amount: totalAmount }]);
       setIsMixedPayment(false);
-      setError('');
     }
-  }, [isOpen, totalAmount, initialPaymentMethod]);
+    setError('');
+  }
+}, [isOpen, totalAmount, initialPaymentMethod, initialPaymentData]);
 
   // Agregar nuevo método de pago
   const addPaymentMethod = () => {

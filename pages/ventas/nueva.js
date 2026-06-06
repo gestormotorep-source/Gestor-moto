@@ -1716,6 +1716,7 @@ return (
         totalAmount={parseFloat(totalGeneralVenta)}
         onPaymentConfirm={handlePaymentConfirm}
         initialPaymentMethod={paymentData.paymentMethods[0]?.method || 'efectivo'}
+        initialPaymentData={paymentData}
       />
 
       <ProductDetailsModal 

@@ -125,81 +125,68 @@ const EditarVerCotizacionPage = () => {
 
   // Cargar datos iniciales
   useEffect(() => {
-    if (!user) {
-      router.push('/auth');
-      return;
-    }
-    if (cotizacionId) {
-      fetchInitialData();
-      fetchCotizacion();
-    }
-  }, [user, router, cotizacionId]);
+  if (!user) { router.push('/auth'); return; }
+  if (!cotizacionId) return;
 
-  const fetchInitialData = async () => {
+  const cargarTodo = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Cargar clientes
-      const qClientes = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
-      const clientesSnapshot = await getDocs(qClientes);
-      const clientesList = clientesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setClientes(clientesList);
+      // Cargar todo en paralelo
+      const [clientesSnap, empleadosSnap, cotizacionSnap] = await Promise.all([
+        getDocs(query(collection(db, 'cliente'), orderBy('nombre', 'asc'))),
+        getDocs(query(collection(db, 'empleado'), orderBy('nombre', 'asc'))),
+        getDoc(doc(db, 'cotizaciones', cotizacionId)),
+      ]);
 
-      // Cargar empleados
-      const qEmpleados = query(collection(db, 'empleado'), orderBy('nombre', 'asc'));
-      const empleadosSnapshot = await getDocs(qEmpleados);
-      const empleadosList = empleadosSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setEmpleados(empleadosList);
+      if (!cotizacionSnap.exists()) { setError('Cotización no encontrada'); return; }
 
-    } catch (err) {
-      console.error("Error al cargar datos iniciales:", err);
-      setError("Error al cargar datos iniciales");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCotizacion = async () => {
-    if (!cotizacionId) return;
-
-    setLoading(true);
-    try {
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacionId);
-      const cotizacionSnap = await getDoc(cotizacionRef);
-
-      if (!cotizacionSnap.exists()) {
-        setError('Cotización no encontrada');
-        return;
-      }
-
+      const clientesList = clientesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const empleadosList = empleadosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const cotizacionData = { id: cotizacionSnap.id, ...cotizacionSnap.data() };
+
+      setClientes(clientesList);
+      setEmpleados(empleadosList);
       setCotizacion(cotizacionData);
 
+      // Sincronizar campos simples
+      setPlacaMoto(cotizacionData.placaMoto || '');
+      setMetodoPago(cotizacionData.metodoPago || '');
+      setObservaciones(cotizacionData.observaciones || '');
+      if (cotizacionData.paymentData) setPaymentData(cotizacionData.paymentData);
+
+      // Sincronizar cliente
+      const cliente = clientesList.find(c => c.id === cotizacionData.clienteId);
+      setSelectedCliente(cliente ? {
+        value: cliente.id,
+        label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || ''}`.trim()
+      } : null);
+
+      // Sincronizar empleado
+      const empleado = empleadosList.find(e => e.id === cotizacionData.empleadoAsignadoId);
+      setSelectedEmpleado(empleado ? {
+        value: empleado.id,
+        label: `${empleado.nombre} ${empleado.apellido || ''} - ${empleado.puesto || ''}`.trim()
+      } : null);
+
       // Cargar items
-      const qItems = query(
-        collection(db, 'cotizaciones', cotizacionId, 'itemsCotizacion'), 
-        orderBy('createdAt', 'asc')
+      const itemsSnap = await getDocs(
+        query(collection(db, 'cotizaciones', cotizacionId, 'itemsCotizacion'), orderBy('createdAt', 'asc'))
       );
-      const itemsSnapshot = await getDocs(qItems);
-      const itemsList = itemsSnapshot.docs.map(itemDoc => ({
-        id: itemDoc.id,
-        ...itemDoc.data()
-      }));
-      setItemsCotizacion(itemsList);
+      setItemsCotizacion(itemsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
     } catch (err) {
-      console.error("Error al cargar cotización:", err);
-      setError("Error al cargar cotización");
+      console.error('Error al cargar:', err);
+      setError('Error al cargar: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  cargarTodo();
+}, [user, cotizacionId]);
+
+
 
   // Escuchar cambios en tiempo real solo si es modo edición
   useEffect(() => {
@@ -226,34 +213,6 @@ const EditarVerCotizacionPage = () => {
 
     return () => unsubscribe();
   }, [cotizacionId, isViewOnly]);
-
-  // Sincronizar formulario con cotización
-  useEffect(() => {
-    if (cotizacion && clientes.length > 0 && empleados.length > 0) {
-      // Sincronizar cliente
-      const cliente = clientes.find(c => c.id === cotizacion.clienteId);
-      setSelectedCliente(cliente ? {
-        value: cliente.id,
-        label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || ''}`.trim()
-      } : null);
-
-      // Sincronizar empleado
-      const empleado = empleados.find(e => e.id === cotizacion.empleadoAsignadoId);
-      setSelectedEmpleado(empleado ? {
-        value: empleado.id,
-        label: `${empleado.nombre} ${empleado.apellido || ''} - ${empleado.puesto || ''}`.trim()
-      } : null);
-
-      setPlacaMoto(cotizacion.placaMoto || '');
-      setMetodoPago(cotizacion.metodoPago || '');
-      setObservaciones(cotizacion.observaciones || '');
-
-      // Sincronizar datos de pago
-      if (cotizacion.paymentData) {
-        setPaymentData(cotizacion.paymentData);
-      }
-    }
-  }, [cotizacion, clientes, empleados]);
 
   // Actualizar el total cuando cambian los items
   useEffect(() => {
@@ -747,7 +706,6 @@ const handleGuardarCotizacion = async () => {
 
   const openPaymentModal = () => {
     if (isViewOnly) return;
-    
     const total = parseFloat(cotizacion?.totalCotizacion || 0);
     if (total <= 0) {
       setError('Debe añadir al menos un producto antes de configurar el pago.');
@@ -1629,6 +1587,7 @@ const handleGuardarCotizacion = async () => {
           totalAmount={parseFloat(cotizacion?.totalCotizacion || 0)}
           onPaymentConfirm={handlePaymentConfirm}
           initialPaymentMethod={paymentData.paymentMethods[0]?.method || 'efectivo'}
+          initialPaymentData={paymentData}
         />
       )}
 
