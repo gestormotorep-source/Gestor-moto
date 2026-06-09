@@ -251,7 +251,7 @@ const NuevaDevolucionPage = () => {
           clienteNombre: ventaSeleccionada.clienteNombre,
           clienteDNI: ventaSeleccionada.clienteDNI,
           metodoPagoOriginal: ventaSeleccionada.metodoPago,        // medio de la venta original
-          metodoPagoDevolucion: devolucionData.metodoPagoDevolucion,
+          metodoPagoDevolucion: devolucionData.metodoPagoDevolucion || 'efectivo',
           motivo: devolucionData.motivo,
           descripcionMotivo: devolucionData.descripcionMotivo || null,
           montoADevolver: devolucionData.montoADevolver,
