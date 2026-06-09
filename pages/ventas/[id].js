@@ -509,6 +509,11 @@ const VentaDetailPage = () => {
                             })
                           : 'N/A'}
                       </span>
+                      {dev.metodoPagoDevolucion && (
+                        <span className="text-xs font-medium text-orange-700 bg-orange-100 border border-orange-300 px-2 py-0.5 rounded-full">
+                          Devuelto por: {dev.metodoPagoDevolucion.toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-orange-700">

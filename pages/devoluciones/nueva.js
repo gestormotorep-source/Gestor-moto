@@ -42,7 +42,8 @@ const NuevaDevolucionPage = () => {
     motivo: '',
     descripcionMotivo: '',
     montoADevolver: 0,
-    observaciones: ''
+    observaciones: '',
+    metodoPagoDevolucion: 'efectivo' 
   });
 
   useEffect(() => {
@@ -249,7 +250,8 @@ const NuevaDevolucionPage = () => {
           clienteId: ventaSeleccionada.clienteId,
           clienteNombre: ventaSeleccionada.clienteNombre,
           clienteDNI: ventaSeleccionada.clienteDNI,
-          metodoPagoOriginal: ventaSeleccionada.metodoPago,
+          metodoPagoOriginal: ventaSeleccionada.metodoPago,        // medio de la venta original
+          metodoPagoDevolucion: devolucionData.metodoPagoDevolucion,
           motivo: devolucionData.motivo,
           descripcionMotivo: devolucionData.descripcionMotivo || null,
           montoADevolver: devolucionData.montoADevolver,
@@ -420,6 +422,26 @@ const NuevaDevolucionPage = () => {
                       </select>
                     </div>
 
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Método de Pago de la Devolución *
+                      </label>
+                      <select
+                        name="metodoPagoDevolucion"
+                        value={devolucionData.metodoPagoDevolucion}
+                        onChange={handleDevolucionChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      >
+                        <option value="efectivo">Efectivo</option>
+                        <option value="yape">Yape</option>
+                        <option value="plin">Plin</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        ¿Cómo se le devuelve el dinero al cliente?
+                      </p>
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Descripción del motivo</label>
                       <textarea

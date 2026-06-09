@@ -909,7 +909,8 @@ const CajaPage = () => {
         gananciaReal -= g;
         gananciaRealDescontada += g;
       }
-      switch (dev.metodoPagoOriginal?.toLowerCase()) {
+      const metodoDev = (dev.metodoPagoDevolucion || dev.metodoPagoOriginal || 'efectivo').toLowerCase();
+      switch (metodoDev) {
         case 'efectivo': devEfectivo += monto; efectivo -= monto; break;
         case 'yape': devYape += monto; yape -= monto; break;
         case 'plin': devPlin += monto; plin -= monto; break;
