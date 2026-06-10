@@ -972,7 +972,7 @@ const CajaPage = () => {
     const efectivoFisico = dineroInicialActual + efectivo; // efectivo ya tiene retiros descontados
 
     // ── Total del día = todo lo que entró menos devoluciones (sin contar dinero inicial) ──
-    const totalDia = Math.max(0, efectivo) + Math.max(0, yape) + Math.max(0, plin) + Math.max(0, tarjeta);
+    const totalDia = dineroInicialActual + Math.max(0, efectivo) + Math.max(0, yape) + Math.max(0, plin) + Math.max(0, tarjeta);
 
     setTotalesDelDia({
       efectivo: Math.max(0, efectivo),
