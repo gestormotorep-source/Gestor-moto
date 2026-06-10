@@ -16,7 +16,8 @@ import {
   TrashIcon,
   CheckCircleIcon,
   XMarkIcon,
-  HashtagIcon
+  HashtagIcon,
+  CreditCardIcon
 } from '@heroicons/react/24/outline';
 
 const NuevoCreditoAcumulativoPage = () => {
@@ -249,11 +250,34 @@ const NuevoCreditoAcumulativoPage = () => {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // 1. Verificar stock de cada lote en la transacción
+        // ══ FASE 1: TODOS LOS READS ══════════════════════════════════════════
+
+        // Leer lotes
+        const lotesSnaps = {};
         for (const item of items) {
           if (item.loteId) {
             const loteRef = doc(db, 'lotes', item.loteId);
-            const loteSnap = await transaction.get(loteRef);
+            lotesSnaps[item.loteId] = await transaction.get(loteRef);
+          }
+        }
+
+        // Leer productos únicos
+        const productosUnicos = [...new Set(items.map(i => i.productoId))];
+        const productosSnaps = {};
+        for (const productoId of productosUnicos) {
+          const productoRef = doc(db, 'productos', productoId);
+          productosSnaps[productoId] = await transaction.get(productoRef);
+        }
+
+        // Leer cliente
+        const clienteRef = doc(db, 'cliente', clienteSeleccionado.id);
+        const clienteSnap = await transaction.get(clienteRef);
+
+        // ══ FASE 2: VALIDACIONES (sin reads) ════════════════════════════════
+
+        for (const item of items) {
+          if (item.loteId) {
+            const loteSnap = lotesSnaps[item.loteId];
             if (!loteSnap.exists()) throw new Error(`Lote ${item.numeroLote} no encontrado`);
             const stockActual = loteSnap.data().stockRestante || 0;
             if (item.cantidad > stockActual) {
@@ -262,7 +286,9 @@ const NuevoCreditoAcumulativoPage = () => {
           }
         }
 
-        // 2. Crear el crédito acumulativo
+        // ══ FASE 3: TODOS LOS WRITES ════════════════════════════════════════
+
+        // Crear crédito
         const creditoRef = doc(collection(db, 'creditos'));
         const ahora = new Date();
         const numeroCredito = `CAC-${ahora.getFullYear().toString().slice(-2)}${String(ahora.getMonth()+1).padStart(2,'0')}${String(ahora.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-4)}`;
@@ -285,7 +311,7 @@ const NuevoCreditoAcumulativoPage = () => {
           updatedAt: serverTimestamp(),
         });
 
-        // 3. Crear cada item en subcolección itemsCredito
+        // Items del crédito
         for (const item of items) {
           const itemRef = doc(collection(db, 'creditos', creditoRef.id, 'itemsCredito'));
           transaction.set(itemRef, {
@@ -309,12 +335,11 @@ const NuevoCreditoAcumulativoPage = () => {
           });
         }
 
-        // 4. Descontar stock de cada lote
+        // Descontar stock de lotes
         for (const item of items) {
           if (item.loteId) {
             const loteRef = doc(db, 'lotes', item.loteId);
-            const loteSnap = await transaction.get(loteRef);
-            const stockActual = loteSnap.data().stockRestante || 0;
+            const stockActual = lotesSnaps[item.loteId].data().stockRestante || 0;
             transaction.update(loteRef, {
               stockRestante: stockActual - item.cantidad,
               updatedAt: serverTimestamp(),
@@ -322,11 +347,10 @@ const NuevoCreditoAcumulativoPage = () => {
           }
         }
 
-        // 5. Actualizar stockActual del producto
-        const productosUnicos = [...new Set(items.map(i => i.productoId))];
+        // Actualizar stock de productos
         for (const productoId of productosUnicos) {
           const productoRef = doc(db, 'productos', productoId);
-          const productoSnap = await transaction.get(productoRef);
+          const productoSnap = productosSnaps[productoId];
           if (productoSnap.exists()) {
             const stockActual = productoSnap.data().stockActual || 0;
             const cantidadTotal = items
@@ -339,16 +363,12 @@ const NuevoCreditoAcumulativoPage = () => {
           }
         }
 
-        // 6. Actualizar montoCreditoActual del cliente
-        const clienteRef = doc(db, 'cliente', clienteSeleccionado.id);
-        const clienteSnap = await transaction.get(clienteRef);
+        // Actualizar cliente
         const montoActual = clienteSnap.exists() ? (clienteSnap.data().montoCreditoActual || 0) : 0;
         transaction.update(clienteRef, {
           montoCreditoActual: montoActual + totalCredito,
           updatedAt: serverTimestamp(),
         });
-
-        return creditoRef.id;
       });
 
       router.push('/clientes/activos');
@@ -513,62 +533,85 @@ const NuevoCreditoAcumulativoPage = () => {
             <div className="col-span-12 lg:col-span-8 space-y-5">
 
               {/* Buscador de productos */}
-              <div className="bg-white border border-gray-200 rounded-lg relative">
+              <div className="bg-white border border-gray-400 rounded-lg relative">
                 <div className="p-4">
-                  <h2 className="text-base font-semibold text-gray-800 mb-3">2. Agregar Productos</h2>
+                  <h2 className="text-lg font-semibold mb-4 text-gray-800">2. Agregar Productos</h2>
                   <div className="relative">
-                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                     <input
                       type="text"
                       value={searchProducto}
                       onChange={e => setSearchProducto(e.target.value)}
-                      placeholder="Buscar producto por nombre, código..."
+                      placeholder="Nombre, marca, código..."
                       className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     />
-                    {buscandoProducto && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-600" />
-                      </div>
+                    {searchProducto && (
+                      <button
+                        onClick={() => { setSearchProducto(''); setProductosEncontrados([]); }}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {searchProducto.trim() === '' ? 'Escribe para buscar...' : `${productosEncontrados.length} productos encontrados`}
-                  </p>
+                  <div className="text-sm text-gray-600 mt-2">
+                    {!searchProducto.trim() ? 'Escribe para buscar productos...' : buscandoProducto ? 'Buscando...' : `${productosEncontrados.length} productos encontrados`}
+                  </div>
                 </div>
 
                 {/* Dropdown de productos */}
                 {searchProducto.trim() !== '' && (
-                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-72 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-400 rounded-b-lg shadow-lg z-40 max-h-96 overflow-y-auto">
                     {buscandoProducto ? (
-                      <div className="flex justify-center py-6">
+                      <div className="flex justify-center py-8">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600" />
                       </div>
                     ) : productosEncontrados.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500 text-sm">No se encontraron productos</div>
+                      <div className="p-4 text-center text-gray-500">
+                        <p>No se encontraron productos</p>
+                      </div>
                     ) : (
-                      productosEncontrados.map(p => (
-                        <div
-                          key={p.id}
-                          onClick={() => abrirModalCantidad(p)}
-                          className="px-4 py-3 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                        >
-                          <div className="flex justify-between items-center gap-4">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm text-gray-900">{p.nombre}</p>
-                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500 mt-0.5">
-                                {p.codigoTienda && <span>C.Tienda: <span className="font-mono font-semibold text-gray-700">{p.codigoTienda}</span></span>}
-                                {p.codigoProveedor && <span className="text-purple-700 font-semibold bg-purple-50 px-1 rounded">C.Prov: {p.codigoProveedor}</span>}
-                                {p.marca && <span>Marca: <span className="font-semibold text-gray-700">{p.marca}</span></span>}
-                                <span>Stock: <span className="font-bold text-gray-900">{p.stockActual || 0}</span></span>
+                      <div>
+                        {productosEncontrados.slice(0, 20).map(p => (
+                          <div
+                            key={p.id}
+                            onClick={() => { abrirModalCantidad(p); setSearchProducto(''); }}
+                            className="px-4 py-3 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <h4 className="font-semibold text-gray-900 text-sm">{p.nombre}</h4>
+                                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                                  {p.codigoTienda && (
+                                    <span>C.Tienda: <span className="font-mono font-semibold text-gray-700">{p.codigoTienda}</span></span>
+                                  )}
+                                  {p.codigoProveedor && (
+                                    <span className="text-purple-700 font-semibold bg-purple-50 px-1.5 py-0.5 rounded">
+                                      C.Prov: <span className="font-mono">{p.codigoProveedor}</span>
+                                    </span>
+                                  )}
+                                  {p.marca && (
+                                    <span>Marca: <span className="font-semibold text-gray-700">{p.marca}</span></span>
+                                  )}
+                                  {p.medida && (
+                                    <span>Medida: <span className="font-semibold text-gray-700">{p.medida}</span></span>
+                                  )}
+                                  <span>Stock: <span className="font-bold text-gray-900">{p.stockActual || 0}</span></span>
+                                </div>
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className="font-bold text-purple-600 text-base">S/. {parseFloat(p.precioVentaDefault || 0).toFixed(2)}</p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Precio Venta</p>
                               </div>
                             </div>
-                            <div className="text-right shrink-0">
-                              <p className="font-bold text-purple-600">S/. {parseFloat(p.precioVentaDefault || 0).toFixed(2)}</p>
-                              <p className="text-xs text-gray-400">P. Venta</p>
-                            </div>
                           </div>
-                        </div>
-                      ))
+                        ))}
+                        {productosEncontrados.length > 20 && (
+                          <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                            Mostrando 20 de {productosEncontrados.length} resultados.
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -650,114 +693,179 @@ const NuevoCreditoAcumulativoPage = () => {
         </div>
       </div>
 
-      {/* ── Modal Cantidad ── */}
+      {/* ── Modal Cantidad — diseño grande 2 columnas igual a nueva.js ── */}
       {showModalCantidad && productoModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowModalCantidad(false)} />
-            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-5xl p-10">
 
-              <button
-                onClick={() => setShowModalCantidad(false)}
-                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
-              >
-                <XMarkIcon className="h-5 w-5" />
+              <button onClick={() => setShowModalCantidad(false)}
+                className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
+                <XMarkIcon className="h-6 w-6" />
               </button>
 
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Agregar Producto</h3>
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                <CreditCardIcon className="h-7 w-7 text-purple-600" />
+                Agregar Producto a Crédito
+              </h3>
 
-              {/* Info del producto */}
-              <div className="bg-gray-50 rounded-lg p-3 mb-4 border border-gray-200">
-                <p className="font-bold text-gray-900">{productoModal.nombre}</p>
-                <div className="flex flex-wrap gap-x-4 text-xs text-gray-500 mt-1">
-                  {productoModal.codigoTienda && <span>C.Tienda: <span className="font-mono font-semibold">{productoModal.codigoTienda}</span></span>}
-                  {productoModal.marca && <span>Marca: {productoModal.marca}</span>}
-                  {productoModal.medida && <span>Medida: {productoModal.medida}</span>}
-                  <span>Stock total: <span className="font-bold text-gray-800">{productoModal.stockActual || 0}</span></span>
-                </div>
-              </div>
+              <div className="grid grid-cols-2 gap-8 items-stretch">
 
-              {/* Selección de lote */}
-              {lotesProducto.length > 0 && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Lote</label>
-                  <div className="space-y-2">
-                    {lotesProducto.map(lote => (
-                      <div
-                        key={lote.id}
-                        onClick={() => {
-                          setLoteSeleccionado(lote);
-                          setPrecioModal(parseFloat(lote.precioVentaUnitario || productoModal.precioVentaDefault || 0));
-                        }}
-                        className={`flex justify-between items-center px-3 py-2 rounded-lg border cursor-pointer transition-colors ${loteSeleccionado?.id === lote.id ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'}`}
-                      >
-                        <div>
-                          <span className="text-sm font-mono font-medium text-gray-800">{lote.numeroLote}</span>
-                          <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${(lote.stockRestante || 0) <= 0 ? 'bg-red-100 text-red-700' : (lote.stockRestante || 0) <= 5 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                            Stock: {lote.stockRestante || 0}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-purple-700">V: S/. {parseFloat(lote.precioVentaUnitario || 0).toFixed(2)}</p>
-                          <p className="text-xs text-gray-400">C: S/. {parseFloat(lote.precioCompraUnitario || 0).toFixed(2)}</p>
-                        </div>
+                {/* COLUMNA IZQUIERDA — info + lotes + precios referencia */}
+                <div className="flex flex-col gap-4 h-full">
+
+                  {/* Info del producto */}
+                  <div className="bg-gray-50 p-5 rounded-lg border-2 border-purple-200">
+                    <h4 className="font-bold text-xl text-gray-900 mb-1">{productoModal.nombre}</h4>
+                    {productoModal.codigoProveedor && (
+                      <div className="mb-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-bold bg-purple-100 text-purple-800 font-mono">
+                          C. Proveedor: {productoModal.codigoProveedor}
+                        </span>
                       </div>
-                    ))}
+                    )}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="font-medium text-gray-600">C. Tienda: </span><span className="text-gray-800">{productoModal.codigoTienda || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Marca: </span><span className="text-gray-800">{productoModal.marca || 'Sin marca'}</span></div>
+                      <div><span className="font-medium text-gray-600">Medida: </span><span className="text-gray-800">{productoModal.medida || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Color: </span><span className="text-gray-800">{productoModal.color || 'N/A'}</span></div>
+                      <div><span className="font-medium text-gray-600">Stock: </span><span className="font-bold text-gray-900">{productoModal.stockActual || 0}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Precios de referencia */}
+                  <div className="border border-amber-200 rounded-lg overflow-hidden flex-1">
+                    <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Precios de referencia</span>
+                    </div>
+                    <div className="divide-y divide-amber-100">
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <span className="text-sm text-gray-600">Precio de compra</span>
+                        <span className="text-base font-bold text-amber-800">S/. {parseFloat(productoModal.precioCompraDefault || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <span className="text-sm text-gray-600">Precio venta mínimo</span>
+                        <span className="text-base font-bold text-red-700">S/. {parseFloat(productoModal.precioVentaMinimo || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <span className="text-sm text-gray-600">Precio venta sugerido</span>
+                        <span className="text-base font-bold text-green-700">S/. {parseFloat(productoModal.precioVentaDefault || 0).toFixed(2)}</span>
+                      </div>
+                      {/* Lotes disponibles */}
+                      {lotesProducto.length > 0 && lotesProducto.map(lote => (
+                        <div
+                          key={lote.id}
+                          onClick={() => {
+                            setLoteSeleccionado(lote);
+                            setPrecioModal(parseFloat(lote.precioVentaUnitario || productoModal.precioVentaDefault || 0));
+                          }}
+                          className={`flex items-center justify-between px-4 py-3 cursor-pointer transition-colors ${loteSeleccionado?.id === lote.id ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+                        >
+                          <div>
+                            <span className="text-sm font-mono font-medium text-gray-800">{lote.numeroLote}</span>
+                            <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${(lote.stockRestante || 0) <= 0 ? 'bg-red-100 text-red-700' : (lote.stockRestante || 0) <= 5 ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                              Stock: {lote.stockRestante || 0}
+                            </span>
+                            {loteSeleccionado?.id === lote.id && (
+                              <span className="ml-2 text-xs font-bold text-purple-700">✓ seleccionado</span>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-purple-700">V: S/. {parseFloat(lote.precioVentaUnitario || 0).toFixed(2)}</p>
+                            <p className="text-xs text-gray-400">C: S/. {parseFloat(lote.precioCompraUnitario || 0).toFixed(2)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                    <p className="text-sm text-purple-700">⚠️ <strong>Crédito acumulativo:</strong> El stock se descuenta al confirmar.</p>
                   </div>
                 </div>
-              )}
 
-              {/* Cantidad y precio */}
-              <div className="grid grid-cols-2 gap-4 mb-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
-                  <input
-                    type="number"
-                    value={cantidadModal}
-                    onChange={e => setCantidadModal(parseInt(e.target.value) || 1)}
-                    min="1"
-                    max={loteSeleccionado?.stockRestante || undefined}
-                    onWheel={e => e.target.blur()}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-center text-lg font-semibold"
-                  />
-                  {loteSeleccionado && (
-                    <p className="text-xs text-gray-500 mt-1">Máx: {loteSeleccionado.stockRestante}</p>
-                  )}
+                {/* COLUMNA DERECHA — cantidad, precio, ganancia preview */}
+                <div className="flex flex-col gap-5 h-full">
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                      <input
+                        type="number"
+                        value={cantidadModal}
+                        onChange={e => setCantidadModal(parseInt(e.target.value) || 1)}
+                        min="1"
+                        max={loteSeleccionado?.stockRestante || productoModal.stockActual || 999}
+                        onWheel={e => e.target.blur()}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+                      />
+                      {loteSeleccionado && (
+                        <p className="text-xs text-gray-500 mt-1">Máx disponible: {loteSeleccionado.stockRestante}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
+                      <input
+                        type="number"
+                        value={precioModal}
+                        onChange={e => setPrecioModal(parseFloat(e.target.value) || 0)}
+                        min="0"
+                        step="0.01"
+                        onWheel={e => e.target.blur()}
+                        className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-base ${
+                          precioModal < parseFloat(productoModal.precioVentaMinimo || 0)
+                            ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                            : 'border-gray-300 focus:ring-purple-500'
+                        }`}
+                      />
+                      {precioModal < parseFloat(productoModal.precioVentaMinimo || 0) && (
+                        <p className="text-red-600 text-xs mt-1 font-medium">⚠️ Precio por debajo del mínimo</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Ganancia preview */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview de ganancia</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ganancia unit.:</span>
+                        <span className={`font-bold ${(precioModal - parseFloat(productoModal.precioCompraDefault || 0)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          S/. {(precioModal - parseFloat(productoModal.precioCompraDefault || 0)).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ganancia total:</span>
+                        <span className={`font-bold ${(cantidadModal * (precioModal - parseFloat(productoModal.precioCompraDefault || 0))) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          S/. {(cantidadModal * (precioModal - parseFloat(productoModal.precioCompraDefault || 0))).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Subtotal + botones al fondo */}
+                  <div className="mt-auto flex flex-col gap-4">
+                    <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-5 rounded-lg border border-purple-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Subtotal:</span>
+                        <span className="font-bold text-purple-800 text-2xl">S/. {(cantidadModal * precioModal).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <button onClick={() => setShowModalCantidad(false)}
+                        className="px-6 py-3 rounded-lg bg-white text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-semibold text-base">
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={agregarItem}
+                        disabled={cantidadModal <= 0 || precioModal < 0}
+                        className="px-6 py-3 rounded-lg bg-purple-600 text-white font-semibold text-base hover:bg-purple-500 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        Agregar a Crédito
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio de Venta (S/.)</label>
-                  <input
-                    type="number"
-                    value={precioModal}
-                    onChange={e => setPrecioModal(parseFloat(e.target.value) || 0)}
-                    min="0"
-                    step="0.01"
-                    onWheel={e => e.target.blur()}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-center text-lg font-semibold"
-                  />
-                </div>
-              </div>
-
-              {/* Subtotal */}
-              <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 mb-5 flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">Subtotal:</span>
-                <span className="text-xl font-bold text-purple-700">S/. {(cantidadModal * precioModal).toFixed(2)}</span>
-              </div>
-
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setShowModalCantidad(false)}
-                  className="px-5 py-2.5 rounded-lg bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={agregarItem}
-                  disabled={cantidadModal <= 0 || precioModal < 0}
-                  className="px-5 py-2.5 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  Agregar
-                </button>
               </div>
             </div>
           </div>

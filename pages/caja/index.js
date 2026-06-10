@@ -154,41 +154,74 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
     const [loadingCtx, setLoadingCtx] = useState(true);
 
     useEffect(() => {
-      if (!venta.ventaId) { setLoadingCtx(false); return; }
+      // Soporta abonos de crédito acumulativo (creditoId) y crédito viejo (ventaId)
+      const esAcumulativo = !!venta.creditoId && venta.tipo === 'acumulativo';
+      const referenciaId = venta.creditoId || venta.ventaId;
+      if (!referenciaId) { setLoadingCtx(false); return; }
+
       const cargar = async () => {
         try {
-          // Cargar venta de crédito
-          const ventaSnap = await getDoc(doc(db, 'ventas', venta.ventaId));
-          if (ventaSnap.exists()) setVentaCredito({ id: ventaSnap.id, ...ventaSnap.data() });
+          if (esAcumulativo) {
+            // ── Crédito acumulativo: cargar desde colección creditos ──
+            const creditoSnap = await getDoc(doc(db, 'creditos', referenciaId));
+            if (creditoSnap.exists()) {
+              const data = creditoSnap.data();
+              // Simular estructura de ventaCredito para reutilizar el mismo render
+              setVentaCredito({
+                id: creditoSnap.id,
+                numeroVenta: data.numeroCredito,
+                totalVenta: data.montoTotal,
+                ...data
+              });
+            }
 
-          // Cargar todos los abonos de esa venta
-          const abonosSnap = await getDocs(query(
-            collection(db, 'abonos'),
-            where('ventaId', '==', venta.ventaId)
-          ));
-          const abonos = abonosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-          abonos.sort((a, b) => {
-            const fa = a.fecha?.toDate ? a.fecha.toDate() : new Date(0);
-            const fb = b.fecha?.toDate ? b.fecha.toDate() : new Date(0);
-            return fa - fb;
-          });
-          setAbonosCredito(abonos);
+            // Cargar abonos por creditoId
+            const abonosSnap = await getDocs(query(
+              collection(db, 'abonos'),
+              where('creditoId', '==', referenciaId)
+            ));
+            const abonos = abonosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            abonos.sort((a, b) => {
+              const fa = a.fecha?.toDate ? a.fecha.toDate() : new Date(0);
+              const fb = b.fecha?.toDate ? b.fecha.toDate() : new Date(0);
+              return fa - fb;
+            });
+            setAbonosCredito(abonos);
+            // Los acumulativos no tienen devoluciones en colección separada
+            setDevolucionesCredito([]);
 
-          // Cargar devoluciones aprobadas de esa venta
-          const devSnap = await getDocs(query(
-            collection(db, 'devoluciones'),
-            where('ventaId', '==', venta.ventaId),
-            where('estado', '==', 'aprobada')
-          ));
-          const devs = await Promise.all(devSnap.docs.map(async (devDoc) => {
-            const devData = { id: devDoc.id, ...devDoc.data() };
-            const itemsDevSnap = await getDocs(
-              collection(db, 'devoluciones', devDoc.id, 'itemsDevolucion')
-            );
-            devData.items = itemsDevSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            return devData;
-          }));
-          setDevolucionesCredito(devs);
+          } else {
+            // ── Crédito viejo: flujo original sin cambios ──
+            const ventaSnap = await getDoc(doc(db, 'ventas', referenciaId));
+            if (ventaSnap.exists()) setVentaCredito({ id: ventaSnap.id, ...ventaSnap.data() });
+
+            const abonosSnap = await getDocs(query(
+              collection(db, 'abonos'),
+              where('ventaId', '==', referenciaId)
+            ));
+            const abonos = abonosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            abonos.sort((a, b) => {
+              const fa = a.fecha?.toDate ? a.fecha.toDate() : new Date(0);
+              const fb = b.fecha?.toDate ? b.fecha.toDate() : new Date(0);
+              return fa - fb;
+            });
+            setAbonosCredito(abonos);
+
+            const devSnap = await getDocs(query(
+              collection(db, 'devoluciones'),
+              where('ventaId', '==', referenciaId),
+              where('estado', '==', 'aprobada')
+            ));
+            const devs = await Promise.all(devSnap.docs.map(async (devDoc) => {
+              const devData = { id: devDoc.id, ...devDoc.data() };
+              const itemsDevSnap = await getDocs(
+                collection(db, 'devoluciones', devDoc.id, 'itemsDevolucion')
+              );
+              devData.items = itemsDevSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+              return devData;
+            }));
+            setDevolucionesCredito(devs);
+          }
         } catch (e) {
           console.error('Error cargando contexto de abono:', e);
         } finally {
@@ -196,7 +229,7 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
         }
       };
       cargar();
-    }, [venta.ventaId]);
+    }, [venta.ventaId, venta.creditoId]);
 
     const totalAbonado = abonosCredito.reduce((s, a) => s + parseFloat(a.monto || 0), 0);
     const totalDevuelto = devolucionesCredito.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
@@ -215,10 +248,14 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                 <InformationCircleIcon className="h-6 w-6 text-blue-600" />
                 Detalle de Crédito
                 <span className="text-blue-700 font-mono text-base">
-                  #{(venta.ventaId || '').slice(-8).toUpperCase()}
+                  #{(venta.creditoId || venta.ventaId || '').slice(-8).toUpperCase()}
                 </span>
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
-                  CRÉDITO
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                  venta.creditoId
+                    ? 'bg-purple-100 text-purple-700 border-purple-200'
+                    : 'bg-blue-100 text-blue-700 border-blue-200'
+                }`}>
+                  {venta.creditoId ? 'CRÉDITO ACUMULATIVO' : 'CRÉDITO'}
                 </span>
               </h2>
               <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition">
@@ -686,6 +723,7 @@ const CajaPage = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentPageVentas, setCurrentPageVentas] = useState(1);
   const ventasPerPageCaja = 20;
+  const unsubsRef = useRef([]);
 
   const [dineroInicial, setDineroInicial] = useState(0);
   const [showDineroInicialModal, setShowDineroInicialModal] = useState(false);
@@ -844,20 +882,16 @@ const CajaPage = () => {
     } finally { setLoading(false); }
   };
 
-  // ── calcularTotalesConGananciaReal ────────────────────────────────────────
-  // Recibe la lista mezclada (ventas completadas + abonos)
-  const calcularTotalesConGananciaReal = async (ventasList, devolucionesList = []) => {
-    let efectivo = 0, yape = 0, plin = 0, tarjeta = 0, total = 0;
+// ── REEMPLAZA calcularTotalesConGananciaReal y calcularRetiros ────────────
+// Una sola función pura que recibe TODOS los datos y calcula todo de una vez
+  const calcularTodo = (ventasList = [], devolucionesList = [], retirosList = [], dineroInicialActual = 0) => {
+    let efectivo = 0, yape = 0, plin = 0, tarjeta = 0;
     let gananciaBruta = 0, gananciaReal = 0;
 
     ventasList.forEach(venta => {
       const totalVenta = parseFloat(venta.totalVenta || 0);
+      if (venta.tipoVenta === 'credito') return;
 
-      // Las ventas de crédito pendiente NO suman a caja — solo los abonos representan dinero real
-      const esVentaCredito = venta.tipoVenta === 'credito';
-      if (esVentaCredito) return;
-
-      total += totalVenta;
       gananciaBruta += totalVenta;
 
       if (venta.tipoVenta !== 'abono') {
@@ -865,7 +899,6 @@ const CajaPage = () => {
           ? venta.gananciaTotalVenta : totalVenta * 0.4;
       }
 
-      // Sumar al método de pago correcto
       if (venta.paymentData?.paymentMethods) {
         venta.paymentData.paymentMethods.forEach(pm => {
           const a = parseFloat(pm.amount || 0);
@@ -886,12 +919,12 @@ const CajaPage = () => {
       }
     });
 
+    // ── Devoluciones ──────────────────────────────────────────────────────
     const ventasDelDiaMap = new Map();
-    ventasList.forEach(v => {
-      if (v.numeroVenta) ventasDelDiaMap.set(v.numeroVenta, v);
-    });
+    ventasList.forEach(v => { if (v.numeroVenta) ventasDelDiaMap.set(v.numeroVenta, v); });
 
-    let devEfectivo = 0, devYape = 0, devPlin = 0, devTarjeta = 0, totalDevuelto = 0, gananciaRealDescontada = 0;
+    let devEfectivo = 0, devYape = 0, devPlin = 0, devTarjeta = 0;
+    let totalDevuelto = 0, gananciaRealDescontada = 0;
     const delMismoDia = [], deDiasAnteriores = [];
 
     devolucionesList.forEach(dev => {
@@ -921,10 +954,32 @@ const CajaPage = () => {
     delMismoDia.forEach(d => procesarDev(d, true));
     deDiasAnteriores.forEach(d => procesarDev(d, false));
 
+    // ── Retiros: descontar de su método correspondiente ──────────────────
+    let retiroEfectivo = 0, retiroYape = 0, retiroPlin = 0, retiroTarjeta = 0, totalRetiros = 0;
+    retirosList.forEach(r => {
+      const monto = parseFloat(r.monto || 0);
+      totalRetiros += monto;
+      switch (r.tipo?.toLowerCase()) {
+        case 'efectivo': retiroEfectivo += monto; efectivo -= monto; break;
+        case 'yape': retiroYape += monto; yape -= monto; break;
+        case 'plin': retiroPlin += monto; plin -= monto; break;
+        case 'tarjeta': retiroTarjeta += monto; tarjeta -= monto; break;
+        default: retiroEfectivo += monto; efectivo -= monto; break;
+      }
+    });
+
+    // ── Efectivo físico incluye dinero inicial ───────────────────────────
+    const efectivoFisico = dineroInicialActual + efectivo; // efectivo ya tiene retiros descontados
+
+    // ── Total del día = todo lo que entró menos devoluciones (sin contar dinero inicial) ──
+    const totalDia = Math.max(0, efectivo) + Math.max(0, yape) + Math.max(0, plin) + Math.max(0, tarjeta);
+
     setTotalesDelDia({
-      efectivo: Math.max(0, efectivo), yape: Math.max(0, yape),
-      plin: Math.max(0, plin), tarjeta: Math.max(0, tarjeta),
-      total: total - totalDevuelto,
+      efectivo: Math.max(0, efectivo),
+      yape: Math.max(0, yape),
+      plin: Math.max(0, plin),
+      tarjeta: Math.max(0, tarjeta),
+      total: totalDia,
       gananciaBruta: Math.max(0, gananciaBruta),
       gananciaReal: Math.max(0, gananciaReal),
     });
@@ -933,14 +988,12 @@ const CajaPage = () => {
       totalDevuelto, efectivo: devEfectivo, yape: devYape, plin: devPlin, tarjeta: devTarjeta,
       delMismoDia: delMismoDia.length, deDiasAnteriores: deDiasAnteriores.length, gananciaRealDescontada,
     });
-  };
 
-  const calcularRetiros = (retirosList) => {
-    const totalRetiros = retirosList.reduce((t, r) => t + parseFloat(r.monto || 0), 0);
-    setDineroEnCaja(prev => ({
-      ...prev, totalRetiros,
-      efectivoFisico: Math.max(0, dineroInicial + totalesDelDia.efectivo - totalRetiros),
-    }));
+    setDineroEnCaja({
+      efectivoFisico: Math.max(0, efectivoFisico),
+      digital: { yape: Math.max(0, yape), plin: Math.max(0, plin), tarjeta: Math.max(0, tarjeta) },
+      totalRetiros,
+    });
   };
 
   // ── obtenerDetalleGanancia ───────────────────────────────────────────────
@@ -1098,134 +1151,141 @@ const CajaPage = () => {
     const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay   = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
 
-    // Mapa compartido para hacer merge de ventas + abonos sin duplicados
-    let ventasMap = new Map();       // id → registro normalizado
+    // ── Estado local del efecto (refs para evitar closures viejos) ───────
+    let ventasMap = new Map();
     let devolucionesList = [];
+    let retirosList = [];
+    let dineroInicialLocal = 0;
 
-    // Helper: reconstruir lista ordenada por fecha desc y actualizar estado
-    const flushVentas = async (devs) => {
+    // Cargar dinero inicial fresco para este efecto
+    const cargarDineroInicialLocal = async () => {
+      try {
+        const fechaString = selectedDate.toISOString().split('T')[0];
+        const snap = await getDoc(doc(db, 'dineroInicial', fechaString));
+        dineroInicialLocal = snap.exists() ? snap.data().monto || 0 : 0;
+        setDineroInicial(dineroInicialLocal);
+      } catch { dineroInicialLocal = 0; }
+    };
+
+    const flush = async () => {
       const merged = [...ventasMap.values()].sort((a, b) => b.fechaVenta - a.fechaVenta);
       setVentas(merged);
-      await calcularTotalesConGananciaReal(merged, devs ?? devolucionesList);
+      calcularTodo(merged, devolucionesList, retirosList, dineroInicialLocal);
       setLoading(false);
     };
 
-    // ── Listener 1: ventas completadas ──────────────────────────────────
-    const unsubVentas = onSnapshot(
-      query(
-        collection(db, 'ventas'),
-        where('fechaVenta', '>=', Timestamp.fromDate(startOfDay)),
-        where('fechaVenta', '<=', Timestamp.fromDate(endOfDay)),
-        where('estado', '==', 'completada'),
-        orderBy('fechaVenta', 'desc')
-      ),
-      async (snap) => {
-        // Eliminar del mapa las ventas que ya no están en este snapshot
-        // (solo las que NO son abonos, para no borrar los del listener 2)
-        for (const [id, v] of ventasMap.entries()) {
-          if (v.tipoVenta !== 'abono') ventasMap.delete(id);
-        }
-        snap.docs.forEach(d => {
-          const data = d.data();
-          // Las ventas de crédito no van a la tabla de caja — sus abonos ya aparecen
-          if (data.tipoVenta === 'credito') return;
-          ventasMap.set(d.id, {
-            id: d.id, ...data,
-            fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
-          });
-        });
-        await flushVentas();
-      },
-      (err) => { setError('Error al cargar ventas: ' + err.message); setLoading(false); }
-    );
-
-    // ── Listener 2: abonos del día ──────────────────────────────────────
-    // Ajusta el campo de fecha según tu colección 'abonos' real.
-    // Se asume que cada abono tiene: { fecha, monto, metodoPago, clienteNombre, ventaId }
-    let unsubAbonos = () => {};
-    try {
-      unsubAbonos = onSnapshot(
+    // Cargar dinero inicial primero, luego arrancar listeners
+    cargarDineroInicialLocal().then(() => {
+      // Listener 1: ventas completadas
+      const unsubVentas = onSnapshot(
         query(
-          collection(db, 'abonos'),
+          collection(db, 'ventas'),
+          where('fechaVenta', '>=', Timestamp.fromDate(startOfDay)),
+          where('fechaVenta', '<=', Timestamp.fromDate(endOfDay)),
+          where('estado', '==', 'completada'),
+          orderBy('fechaVenta', 'desc')
+        ),
+        async (snap) => {
+          for (const [id, v] of ventasMap.entries()) {
+            if (v.tipoVenta !== 'abono') ventasMap.delete(id);
+          }
+          snap.docs.forEach(d => {
+            const data = d.data();
+            if (data.tipoVenta === 'credito') return;
+            ventasMap.set(d.id, {
+              id: d.id, ...data,
+              fechaVenta: data.fechaVenta?.toDate ? data.fechaVenta.toDate() : new Date(),
+            });
+          });
+          await flush();
+        },
+        (err) => { setError('Error al cargar ventas: ' + err.message); setLoading(false); }
+      );
+
+      // Listener 2: abonos
+      let unsubAbonos = () => {};
+      try {
+        unsubAbonos = onSnapshot(
+          query(
+            collection(db, 'abonos'),
+            where('fecha', '>=', Timestamp.fromDate(startOfDay)),
+            where('fecha', '<=', Timestamp.fromDate(endOfDay)),
+            orderBy('fecha', 'desc')
+          ),
+          async (snap) => {
+            for (const [id, v] of ventasMap.entries()) {
+              if (v.tipoVenta === 'abono') ventasMap.delete(id);
+            }
+            snap.docs.forEach(d => {
+              const data = d.data();
+              const fechaAbono = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+              ventasMap.set(d.id, {
+                id: d.id, ...data,
+                fechaVenta: fechaAbono,
+                totalVenta: parseFloat(data.monto || 0),
+                tipoVenta: 'abono',
+                estado: 'completada',
+                metodoPago: data.metodoPago || 'efectivo',
+                clienteNombre: data.clienteNombre || 'N/A',
+                numeroVenta: data.ventaId || `ABONO-${d.id.slice(-6).toUpperCase()}`,
+                gananciaTotalVenta: 0,
+                paymentData: data.paymentData || null,
+              });
+            });
+            await flush();
+          },
+          (err) => { console.warn('Listener abonos (caja):', err.message); }
+        );
+      } catch (e) { console.warn('No se pudo iniciar listener de abonos:', e.message); }
+
+      // Listener 3: devoluciones
+      const unsubDevoluciones = onSnapshot(
+        query(
+          collection(db, 'devoluciones'),
+          where('fechaProcesamiento', '>=', Timestamp.fromDate(startOfDay)),
+          where('fechaProcesamiento', '<=', Timestamp.fromDate(endOfDay)),
+          where('estado', 'in', ['aprobada', 'procesada']),
+          orderBy('fechaProcesamiento', 'desc')
+        ),
+        async (snap) => {
+          devolucionesList = snap.docs.map(d => ({
+            id: d.id, ...d.data(),
+            fechaProcesamiento: d.data().fechaProcesamiento?.toDate
+              ? d.data().fechaProcesamiento.toDate() : new Date(),
+          }));
+          setDevoluciones(devolucionesList);
+          await flush();
+        },
+        (err) => { console.error('Error devoluciones:', err); }
+      );
+
+      // Listener 4: retiros
+      const unsubRetiros = onSnapshot(
+        query(
+          collection(db, 'retiros'),
           where('fecha', '>=', Timestamp.fromDate(startOfDay)),
           where('fecha', '<=', Timestamp.fromDate(endOfDay)),
           orderBy('fecha', 'desc')
         ),
         async (snap) => {
-          // Eliminar del mapa solo los abonos anteriores
-          for (const [id, v] of ventasMap.entries()) {
-            if (v.tipoVenta === 'abono') ventasMap.delete(id);
-          }
-          snap.docs.forEach(d => {
-            const data = d.data();
-            const fechaAbono = data.fecha?.toDate ? data.fecha.toDate() : new Date();
-            ventasMap.set(d.id, {
-              id: d.id,
-              ...data,
-              // Normalizar campos para que el resto del componente los entienda
-              fechaVenta: fechaAbono,
-              totalVenta: parseFloat(data.monto || 0),
-              tipoVenta: 'abono',
-              estado: 'completada',
-              metodoPago: data.metodoPago || 'efectivo',
-              clienteNombre: data.clienteNombre || 'N/A',
-              numeroVenta: data.ventaId || `ABONO-${d.id.slice(-6).toUpperCase()}`,
-              gananciaTotalVenta: 0, // los abonos no tienen ganancia propia
-              // paymentData opcional para soporte de pagos mixtos en abonos
-              paymentData: data.paymentData || null,
-            });
-          });
-          await flushVentas();
+          retirosList = snap.docs.map(d => ({
+            id: d.id, ...d.data(),
+            fecha: d.data().fecha?.toDate ? d.data().fecha.toDate() : new Date(),
+          }));
+          setRetiros(retirosList);
+          await flush(); // <-- recalcula TODO incluyendo retiros frescos
         },
-        (err) => {
-          // Silencioso: si no existe la colección 'abonos' o falta índice, no rompe
-          console.warn('Listener abonos (caja):', err.message);
-        }
+        (err) => { console.error('Error retiros:', err); }
       );
-    } catch (e) {
-      console.warn('No se pudo iniciar listener de abonos:', e.message);
-    }
 
-    // ── Listener 3: devoluciones ─────────────────────────────────────────
-    const unsubDevoluciones = onSnapshot(
-      query(
-        collection(db, 'devoluciones'),
-        where('fechaProcesamiento', '>=', Timestamp.fromDate(startOfDay)),
-        where('fechaProcesamiento', '<=', Timestamp.fromDate(endOfDay)),
-        where('estado', 'in', ['aprobada', 'procesada']),
-        orderBy('fechaProcesamiento', 'desc')
-      ),
-      async (snap) => {
-        devolucionesList = snap.docs.map(d => ({
-          id: d.id, ...d.data(),
-          fechaProcesamiento: d.data().fechaProcesamiento?.toDate ? d.data().fechaProcesamiento.toDate() : new Date(),
-        }));
-        setDevoluciones(devolucionesList);
-        await flushVentas(devolucionesList);
-      },
-      (err) => { console.error('Error devoluciones:', err); }
-    );
+      // Cleanup
+      // Guardamos unsubs en variables accesibles para el return
+      unsubsRef.current = [unsubVentas, unsubAbonos, unsubDevoluciones, unsubRetiros];
+    });
 
-    // ── Listener 4: retiros ──────────────────────────────────────────────
-    const unsubRetiros = onSnapshot(
-      query(
-        collection(db, 'retiros'),
-        where('fecha', '>=', Timestamp.fromDate(startOfDay)),
-        where('fecha', '<=', Timestamp.fromDate(endOfDay)),
-        orderBy('fecha', 'desc')
-      ),
-      (snap) => {
-        const list = snap.docs.map(d => ({
-          id: d.id, ...d.data(),
-          fecha: d.data().fecha?.toDate ? d.data().fecha.toDate() : new Date(),
-        }));
-        setRetiros(list);
-        calcularRetiros(list);
-      },
-      (err) => { console.error('Error retiros:', err); }
-    );
-
-    return () => { unsubVentas(); unsubAbonos(); unsubDevoluciones(); unsubRetiros(); };
+    return () => {
+      if (unsubsRef.current) unsubsRef.current.forEach(u => u());
+    };
   }, [user, router, selectedDate]);
 
   // ── Paginación ───────────────────────────────────────────────────────────
@@ -1393,7 +1453,7 @@ const CajaPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm font-medium">Efectivo Físico</p>
-                <p className="text-2xl font-bold">{formatCurrency(Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
+                <p className="text-2xl font-bold">{formatCurrency(dineroEnCaja.efectivoFisico)}</p>
                 {dineroInicial > 0 && <p className="text-green-200 text-xs mt-1">Incluye inicial: {formatCurrency(dineroInicial)}</p>}
               </div>
               <BanknotesIcon className="h-12 w-12 text-green-200" />
@@ -1676,10 +1736,10 @@ const CajaPage = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Dinero</label>
                   <select value={retiroTipo} onChange={e => setRetiroTipo(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500">
-                    <option value="efectivo">Efectivo (S/. {(dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros).toFixed(2)} disp.)</option>
-                    <option value="yape">Yape (S/. {totalesDelDia.yape.toFixed(2)} disp.)</option>
-                    <option value="plin">Plin (S/. {totalesDelDia.plin.toFixed(2)} disp.)</option>
-                    <option value="tarjeta">Tarjeta (S/. {totalesDelDia.tarjeta.toFixed(2)} disp.)</option>
+                    <option value="efectivo">Efectivo (S/. {Math.max(0, dineroEnCaja.efectivoFisico).toFixed(2)} disp.)</option>
+                    <option value="yape">Yape (S/. {Math.max(0, totalesDelDia.yape).toFixed(2)} disp.)</option>
+                    <option value="plin">Plin (S/. {Math.max(0, totalesDelDia.plin).toFixed(2)} disp.)</option>
+                    <option value="tarjeta">Tarjeta (S/. {Math.max(0, totalesDelDia.tarjeta).toFixed(2)} disp.)</option>
                   </select>
                 </div>
                 <div>

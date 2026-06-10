@@ -16,7 +16,8 @@ import {
     orderBy,
     doc,
     getDoc,
-    Timestamp
+    Timestamp,
+    limit
 } from 'firebase/firestore';
 import {
     UsersIcon,
@@ -498,6 +499,13 @@ const ClientesConCreditoActivos = () => {
             <PlusIcon className="h-5 w-5 mr-3" aria-hidden="true" />
             Nuevo Credito
         </button>
+        <button
+        onClick={() => router.push('/creditos/nuevo-acumulativo')}
+        className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition"
+        >
+        <PlusIcon className="h-5 w-5 mr-2" />
+        Nuevo Crédito Acumulativo
+        </button>
     </div>
 </div>
 
@@ -579,12 +587,31 @@ const ClientesConCreditoActivos = () => {
                                             <td className="border border-gray-300 px-3 py-2 text-sm text-center">
                                                 <div className="flex items-center justify-center gap-2">
                                                     {isAdmin && (<> <button
-                                                        onClick={() => router.push(`/creditos/${cliente.id}`)}
+                                                        onClick={async () => {
+                                                            // Verificar si tiene crédito acumulativo activo
+                                                            try {
+                                                            const snap = await getDocs(query(
+                                                                collection(db, 'creditos'),
+                                                                where('clienteId', '==', cliente.id),
+                                                                where('tipo', '==', 'acumulativo'),
+                                                                where('estado', '==', 'activo'),
+                                                                limit(1)
+                                                            ));
+                                                            if (!snap.empty) {
+                                                                router.push(`/creditos/acumulativo/${snap.docs[0].id}`);
+                                                            } else {
+                                                                router.push(`/creditos/${cliente.id}`);
+                                                            }
+                                                            } catch (err) {
+                                                            console.error('Error verificando crédito:', err);
+                                                            router.push(`/creditos/${cliente.id}`);
+                                                            }
+                                                        }}
                                                         className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs flex items-center"
-                                                    >
+                                                        >
                                                         <CreditCardIcon className="h-3 w-3 mr-1" />
                                                         Ver Detalle
-                                                    </button></>)}
+                                                        </button></>)}
                                                     {cliente.montoCreditoActual > 0 && (
                                                         <button
                                                             onClick={() => generarPDFClienteHandler(cliente)}

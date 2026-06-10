@@ -92,6 +92,19 @@ const ClienteCreditoDetalle = () => {
     setLoading(true);
     setError(null);
     try {
+      // 0. Verificar si tiene crédito acumulativo activo → redirigir
+      const snapAcumulativo = await getDocs(query(
+        collection(db, 'creditos'),
+        where('clienteId', '==', clienteId),
+        where('tipo', '==', 'acumulativo'),
+        where('estado', '==', 'activo'),
+        limit(1)
+      ));
+      if (!snapAcumulativo.empty) {
+        router.replace(`/creditos/acumulativo/${snapAcumulativo.docs[0].id}`);
+        return;
+      }
+
       // 1. Fetch Client Details
       const clientDocRef = doc(db, 'cliente', clienteId);
       const clientDocSnap = await getDoc(clientDocRef);

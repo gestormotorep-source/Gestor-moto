@@ -776,7 +776,14 @@ const DevolucionesIndexPage = () => {
                     {currentDevoluciones.map((devolucion, index) => (
                       <tr key={devolucion.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900">{devolucion.numeroDevolucion || 'N/A'}</td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{devolucion.numeroVentaOriginal}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">
+                          {devolucion.numeroVentaOriginal}
+                          {devolucion.tipoDevolucion === 'acumulativo' && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                              acumulativo
+                            </span>
+                          )}
+                        </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{devolucion.clienteNombre}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{devolucion.fechaSolicitudFormatted}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium">S/. {parseFloat(devolucion.montoADevolver || 0).toFixed(2)}</td>
@@ -789,7 +796,7 @@ const DevolucionesIndexPage = () => {
                               className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition-colors" title="Ver Detalles">
                               <EyeIcon className="h-5 w-5" />
                             </button>
-                            {devolucion.estado === 'solicitada' && (
+                            {devolucion.estado === 'solicitada' && devolucion.tipoDevolucion !== 'acumulativo' && (
                               <>
                                 <button onClick={() => handleAprobarDevolucion(devolucion.id)}
                                   className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition-colors" title="Aprobar">
@@ -800,6 +807,15 @@ const DevolucionesIndexPage = () => {
                                   <XCircleIcon className="h-5 w-5" />
                                 </button>
                               </>
+                            )}
+                            {devolucion.tipoDevolucion === 'acumulativo' && (
+                              <button
+                                onClick={() => router.push(`/creditos/acumulativo/${devolucion.creditoId}`)}
+                                className="text-purple-600 hover:text-purple-800 p-2 rounded-full hover:bg-purple-50 transition-colors"
+                                title="Ver en crédito acumulativo"
+                              >
+                                <CreditCardIcon className="h-5 w-5" />
+                              </button>
                             )}
                           </div>
                         </td>
