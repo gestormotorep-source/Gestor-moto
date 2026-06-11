@@ -1105,9 +1105,11 @@ const CajaPage = () => {
     if (!retiroAmount || !retiroMotivo.trim()) { alert('Por favor complete todos los campos'); return; }
     const monto = parseFloat(retiroAmount);
     if (isNaN(monto) || monto <= 0) { alert('El monto debe ser un número positivo'); return; }
-    const disponible = retiroTipo === 'efectivo' ? dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros
+    const disponible = retiroTipo === 'efectivo' 
+      ? dineroEnCaja.efectivoFisico  // ← ya incluye inicial y ya tiene retiros descontados
       : retiroTipo === 'yape' ? totalesDelDia.yape
-      : retiroTipo === 'plin' ? totalesDelDia.plin : totalesDelDia.tarjeta;
+      : retiroTipo === 'plin' ? totalesDelDia.plin 
+      : totalesDelDia.tarjeta;
     if (monto > disponible) {
       alert(`No hay suficiente dinero en ${retiroTipo.toUpperCase()}. Disponible: S/. ${disponible.toFixed(2)}`);
       return;
