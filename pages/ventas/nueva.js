@@ -426,7 +426,11 @@ const NuevaVentaPage = () => {
     setShowQuantityModal(true);
     setSearchTerm('');
 
-    // Precargar precio desde lote FIFO, fallback al producto
+    // ── Resetear precios ANTES de cargar, evita datos del producto anterior ──
+    setPrecioVenta(0);
+    setPrecioCompraFIFOModal(0);
+    setPrecioVentaMinimoFIFO(0);
+
     try {
       const lotesQuery = query(
         collection(db, 'lotes'),
@@ -445,11 +449,12 @@ const NuevaVentaPage = () => {
       } else {
         setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
       }
-    } catch {
-      setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
-      setPrecioCompraFIFOModal(parseFloat(product.precioCompraDefault || 0));
-      setPrecioVentaMinimoFIFO(parseFloat(product.precioVentaMinimo || 0));
-    }
+      } catch {
+        // Sin lotes disponibles: usar defaults del producto (pueden ser 0)
+        setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+        setPrecioCompraFIFOModal(0); // sin lote activo = sin precio de compra real
+        setPrecioVentaMinimoFIFO(0); // sin lote activo = sin mínimo
+      }
   };
 
   // Agregar producto a la venta
@@ -513,7 +518,6 @@ const obtenerLotesDisponiblesFIFO = async (productoId) => {
   }
 };
 
-// Nueva función para crear items separados automáticamente por lote
 const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, lotesDisponibles) => {
   const itemsSeparados = [];
   let cantidadPendiente = cantidadTotal;
