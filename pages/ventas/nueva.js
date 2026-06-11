@@ -423,14 +423,9 @@ const NuevaVentaPage = () => {
   const handleSelectProduct = async (product) => {
     setSelectedProduct(product);
     setQuantity(1);
-    setShowQuantityModal(true);
     setSearchTerm('');
 
-    // ── Resetear precios ANTES de cargar, evita datos del producto anterior ──
-    setPrecioVenta(0);
-    setPrecioCompraFIFOModal(0);
-    setPrecioVentaMinimoFIFO(0);
-
+    // ── Cargar precios ANTES de abrir el modal ──
     try {
       const lotesQuery = query(
         collection(db, 'lotes'),
@@ -444,17 +439,21 @@ const NuevaVentaPage = () => {
       if (!snap.empty) {
         const lote = snap.docs[0].data();
         setPrecioVenta(parseFloat(lote.precioVentaUnitario || product.precioVentaDefault || 0));
-        setPrecioCompraFIFOModal(parseFloat(lote.precioCompraUnitario || product.precioCompraDefault || 0));
+        setPrecioCompraFIFOModal(parseFloat(lote.precioCompraUnitario || 0));
         setPrecioVentaMinimoFIFO(parseFloat(lote.precioVentaMinimoUnitario || product.precioVentaMinimo || 0));
       } else {
         setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+        setPrecioCompraFIFOModal(0);
+        setPrecioVentaMinimoFIFO(0);
       }
-      } catch {
-        // Sin lotes disponibles: usar defaults del producto (pueden ser 0)
-        setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
-        setPrecioCompraFIFOModal(0); // sin lote activo = sin precio de compra real
-        setPrecioVentaMinimoFIFO(0); // sin lote activo = sin mínimo
-      }
+    } catch {
+      setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+      setPrecioCompraFIFOModal(0);
+      setPrecioVentaMinimoFIFO(0);
+    }
+
+    // ── Abrir modal DESPUÉS de tener los datos listos ──
+    setShowQuantityModal(true);
   };
 
   // Agregar producto a la venta
