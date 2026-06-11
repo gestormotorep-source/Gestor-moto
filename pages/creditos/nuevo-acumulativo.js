@@ -371,7 +371,7 @@ const NuevoCreditoAcumulativoPage = () => {
         });
       });
 
-      router.push('/clientes/activos');
+      router.push('/creditos/activos');
     } catch (err) {
       console.error('Error creando crédito acumulativo:', err);
       setError('Error al crear el crédito: ' + err.message);
@@ -400,7 +400,7 @@ const NuevoCreditoAcumulativoPage = () => {
               Nuevo Crédito Acumulativo
             </h1>
             <button
-              onClick={() => router.push('/clientes/activos')}
+              onClick={() => router.push('/creditos/activos')}
               className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
             >
               <ArrowLeftIcon className="h-4 w-4 mr-1" />

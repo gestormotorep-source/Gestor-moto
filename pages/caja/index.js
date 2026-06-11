@@ -27,6 +27,7 @@ import {
   DevicePhoneMobileIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
+  ArrowUturnLeftIcon,
   CurrencyDollarIcon,
   CalendarIcon,
   MinusCircleIcon,
@@ -724,6 +725,7 @@ const CajaPage = () => {
   const [currentPageVentas, setCurrentPageVentas] = useState(1);
   const ventasPerPageCaja = 20;
   const unsubsRef = useRef([]);
+  const [excedentesCredito, setExcedentesCredito] = useState([]);
 
   const [dineroInicial, setDineroInicial] = useState(0);
   const [showDineroInicialModal, setShowDineroInicialModal] = useState(false);
@@ -884,7 +886,7 @@ const CajaPage = () => {
 
 // ── REEMPLAZA calcularTotalesConGananciaReal y calcularRetiros ────────────
 // Una sola función pura que recibe TODOS los datos y calcula todo de una vez
-  const calcularTodo = (ventasList = [], devolucionesList = [], retirosList = [], dineroInicialActual = 0) => {
+  const calcularTodo = (ventasList = [], devolucionesList = [], retirosList = [], dineroInicialActual = 0, excedentesList = []) => {
     let efectivo = 0, yape = 0, plin = 0, tarjeta = 0;
     let gananciaBruta = 0, gananciaReal = 0;
 
@@ -968,6 +970,18 @@ const CajaPage = () => {
       }
     });
 
+    excedentesList.forEach(cred => {
+      const monto = parseFloat(cred.excedentePagoCliente || 0);
+      if (monto <= 0) return;
+      const metodo = (cred.excedenteMetodoPago || 'efectivo').toLowerCase();
+      switch (metodo) {
+        case 'efectivo': efectivo -= monto; break;
+        case 'yape':     yape -= monto;     break;
+        case 'plin':     plin -= monto;     break;
+        case 'tarjeta':  tarjeta -= monto;  break;
+        default:         efectivo -= monto; break;
+      }
+    });
     // ── Efectivo físico incluye dinero inicial ───────────────────────────
     const efectivoFisico = dineroInicialActual + efectivo; // efectivo ya tiene retiros descontados
 
@@ -1157,6 +1171,7 @@ const CajaPage = () => {
     let ventasMap = new Map();
     let devolucionesList = [];
     let retirosList = [];
+    let excedentesLocal = [];  
     let dineroInicialLocal = 0;
 
     // Cargar dinero inicial fresco para este efecto
@@ -1172,7 +1187,7 @@ const CajaPage = () => {
     const flush = async () => {
       const merged = [...ventasMap.values()].sort((a, b) => b.fechaVenta - a.fechaVenta);
       setVentas(merged);
-      calcularTodo(merged, devolucionesList, retirosList, dineroInicialLocal);
+      calcularTodo(merged, devolucionesList, retirosList, dineroInicialLocal, excedentesLocal);
       setLoading(false);
     };
 
@@ -1280,9 +1295,28 @@ const CajaPage = () => {
         (err) => { console.error('Error retiros:', err); }
       );
 
-      // Cleanup
-      // Guardamos unsubs en variables accesibles para el return
-      unsubsRef.current = [unsubVentas, unsubAbonos, unsubDevoluciones, unsubRetiros];
+      let unsubExcedentes = () => {};
+      try {
+        unsubExcedentes = onSnapshot(
+          query(
+            collection(db, 'creditos'),
+            where('fechaSaldado', '>=', Timestamp.fromDate(startOfDay)),
+            where('fechaSaldado', '<=', Timestamp.fromDate(endOfDay)),
+            where('tipo', '==', 'acumulativo')
+          ),
+          async (snap) => {
+            excedentesLocal = snap.docs             // ← actualiza la variable local
+              .map(d => ({ id: d.id, ...d.data() }))
+              .filter(c => parseFloat(c.excedentePagoCliente || 0) > 0);
+            setExcedentesCredito(excedentesLocal);
+            await flush();
+          },
+          (err) => { console.warn('Listener excedentes:', err.message); }
+        );
+      } catch (e) { console.warn('No se pudo iniciar listener excedentes:', e.message); }
+
+      // Cleanup — agregar unsubExcedentes
+      unsubsRef.current = [unsubVentas, unsubAbonos, unsubDevoluciones, unsubRetiros, unsubExcedentes];
     });
 
     return () => {
@@ -1550,6 +1584,49 @@ const CajaPage = () => {
             </div>
             <div className="mt-4 pt-4 border-t border-gray-200 text-right">
               <p className="font-semibold text-red-600">Total Retirado: {formatCurrency(dineroEnCaja.totalRetiros)}</p>
+            </div>
+          </div>
+        )}
+        {/* ── Excedentes de Créditos Acumulativos ── */}
+        {excedentesCredito.length > 0 && (
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <ArrowUturnLeftIcon className="h-6 w-6 text-orange-500 mr-2" />
+              Devoluciones por Excedente — Créditos Acumulativos ({excedentesCredito.length})
+            </h3>
+            <div className="space-y-3">
+              {excedentesCredito.map(cred => (
+                <div key={cred.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <div className="flex items-center space-x-3">
+                    <ArrowUturnLeftIcon className="h-5 w-5 text-orange-500" />
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {formatCurrency(cred.excedentePagoCliente)} — {(cred.excedenteMetodoPago || 'efectivo').toUpperCase()}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Cliente: {cred.clienteNombre} · Crédito: {cred.numeroCredito}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      NEGOCIO DEBE AL CLIENTE
+                    </span>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {cred.fechaSaldado?.toDate
+                        ? cred.fechaSaldado.toDate().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200 text-right">
+              <p className="font-semibold text-orange-600">
+                Total a devolver al cliente: {formatCurrency(
+                  excedentesCredito.reduce((s, c) => s + parseFloat(c.excedentePagoCliente || 0), 0)
+                )}
+              </p>
             </div>
           </div>
         )}

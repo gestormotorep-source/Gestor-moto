@@ -343,16 +343,20 @@ const CreditoAcumulativoPage = () => {
       const metodoPagoFinal = metodosValidos.length > 1 ? 'mixto' : metodosValidos[0]?.method || 'efectivo';
 
       await runTransaction(db, async (transaction) => {
+        // ══ FASE 1: TODOS LOS READS ══════════════════════════
         const creditoRef = doc(db, 'creditos', id);
         const creditoSnap = await transaction.get(creditoRef);
         if (!creditoSnap.exists()) throw new Error('Crédito no encontrado');
         const creditoData = creditoSnap.data();
 
+        const clienteRef = doc(db, 'cliente', creditoData.clienteId);
+        const clienteSnap = await transaction.get(clienteRef);
+
+        // ══ FASE 2: TODOS LOS WRITES ══════════════════════════
         const nuevoMontoPagado = parseFloat(creditoData.montoPagado || 0) + totalAbono;
         const nuevoSaldo = parseFloat(creditoData.montoTotal || 0) - nuevoMontoPagado;
         const seLiquidó = nuevoSaldo <= 0;
 
-        // Actualizar crédito
         transaction.update(creditoRef, {
           montoPagado: nuevoMontoPagado,
           saldoPendiente: Math.max(0, nuevoSaldo),
@@ -361,7 +365,6 @@ const CreditoAcumulativoPage = () => {
           updatedAt: serverTimestamp(),
         });
 
-        // Crear abono
         const abonoRef = doc(collection(db, 'abonos'));
         transaction.set(abonoRef, {
           creditoId: id,
@@ -371,7 +374,11 @@ const CreditoAcumulativoPage = () => {
           metodoPago: metodoPagoFinal,
           paymentData: metodosValidos.length > 1 ? {
             isMixedPayment: true,
-            paymentMethods: metodosValidos.map(m => ({ method: m.method, amount: parseFloat(m.amount), label: METODOS_PAGO.find(mp => mp.value === m.method)?.label || m.method }))
+            paymentMethods: metodosValidos.map(m => ({
+              method: m.method,
+              amount: parseFloat(m.amount),
+              label: METODOS_PAGO.find(mp => mp.value === m.method)?.label || m.method
+            }))
           } : null,
           descripcion: `Abono a crédito acumulativo ${creditoData.numeroCredito}`,
           tipo: 'acumulativo',
@@ -380,9 +387,6 @@ const CreditoAcumulativoPage = () => {
           createdAt: serverTimestamp(),
         });
 
-        // Actualizar montoCreditoActual del cliente
-        const clienteRef = doc(db, 'cliente', creditoData.clienteId);
-        const clienteSnap = await transaction.get(clienteRef);
         if (clienteSnap.exists()) {
           const montoActual = parseFloat(clienteSnap.data().montoCreditoActual || 0);
           transaction.update(clienteRef, {
@@ -469,12 +473,13 @@ const CreditoAcumulativoPage = () => {
         const seLiquidó = nuevoSaldo <= 0 && nuevoMontoTotal >= 0;
 
         transaction.update(creditoRef, {
-            montoTotal: nuevoMontoTotal,
-            saldoPendiente: nuevoSaldo,
-            excedentePagoCliente: excedente > 0 ? excedente : null,
-            estado: seLiquidó ? 'saldado' : 'activo',
-            fechaSaldado: seLiquidó ? serverTimestamp() : null,
-            updatedAt: serverTimestamp(),
+          montoTotal: nuevoMontoTotal,
+          saldoPendiente: nuevoSaldo,
+          excedentePagoCliente: excedente > 0 ? excedente : null,
+          excedenteMétodoPago: excedente > 0 ? metodoPagoDevolucion : null, // ← NUEVO
+          estado: seLiquidó ? 'saldado' : 'activo',
+          fechaSaldado: seLiquidó ? serverTimestamp() : null,
+          updatedAt: serverTimestamp(),
         });
 
         if (clienteSnap.exists()) {
@@ -836,47 +841,113 @@ const CreditoAcumulativoPage = () => {
                       <p className="text-gray-500">No hay productos activos en este crédito</p>
                     </div>
                   ) : (
+                    <>
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse min-w-full">
                         <thead className="bg-purple-50">
                           <tr className="border-b border-gray-300">
-                            <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha</th>
-                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">C. Tienda</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Producto</th>
-                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Lote</th>
-                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Cant.</th>
-                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">P. Unit.</th>
-                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Subtotal</th>
-                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Acciones</th>
+                            <th className="px-3 py-3 text-left   text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">FECHA</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. TIENDA</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-48">PRODUCTO</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. PROVEEDOR</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MARCA</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MEDIDA</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">COLOR</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">LOTE</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">CANT.</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. COMPRA</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA MIN</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">P. VENTA</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">SUBTOTAL</th>
+                            <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">ACCIONES</th>
                           </tr>
                         </thead>
                         <tbody>
                           {itemsActivos.map((item, idx) => (
                             <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+ 
+                              {/* FECHA */}
                               <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">
                                 {formatFecha(item.fechaAgregado)}
                               </td>
-                              <td className="px-3 py-3 text-center text-sm font-medium text-gray-700">
-                                {item.codigoTienda || 'N/A'}
+ 
+                              {/* C. TIENDA */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-900 font-medium">
+                                  {item.codigoTienda || 'N/A'}
+                                </span>
                               </td>
-                              <td className="px-4 py-3">
-                                <p className="text-sm font-medium text-gray-900">{item.nombreProducto}</p>
-                                <p className="text-xs text-gray-500">{item.marca || ''} {item.medida ? `· ${item.medida}` : ''}</p>
+ 
+                              {/* PRODUCTO */}
+                              <td className="px-4 py-3 min-w-48">
+                                <div className="font-medium text-gray-900 text-sm">{item.nombreProducto}</div>
                               </td>
-                              <td className="px-3 py-3 text-center">
+ 
+                              {/* C. PROVEEDOR */}
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="font-medium text-gray-900 text-sm">
+                                  {item.codigoProveedor || '—'}
+                                </div>
+                              </td>
+ 
+                              {/* MARCA */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-700">{item.marca || 'Sin marca'}</span>
+                              </td>
+ 
+                              {/* MEDIDA */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-700">{item.medida || 'N/A'}</span>
+                              </td>
+ 
+                              {/* COLOR */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm text-gray-700">{item.color || 'N/A'}</span>
+                              </td>
+ 
+                              {/* LOTE */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
                                 {item.numeroLote
                                   ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 font-mono">{item.numeroLote}</span>
                                   : <span className="text-xs text-gray-400">—</span>
                                 }
                               </td>
-                              <td className="px-3 py-3 text-center text-sm font-medium text-gray-900">{item.cantidad}</td>
-                              <td className="px-3 py-3 text-center text-sm text-gray-700">
-                                S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
+ 
+                              {/* CANT. */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">{item.cantidad}</span>
                               </td>
-                              <td className="px-3 py-3 text-center text-sm font-semibold text-gray-900">
-                                S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+ 
+                              {/* P. COMPRA */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  S/. {parseFloat(item.precioCompraUnitario || 0).toFixed(2)}
+                                </span>
                               </td>
-                              <td className="px-3 py-3 text-center">
+ 
+                              {/* P. VENTA MIN */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
+                                </span>
+                              </td>
+ 
+                              {/* P. VENTA */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">
+                                  S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
+                                </span>
+                              </td>
+ 
+                              {/* SUBTOTAL */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <span className="text-sm font-semibold text-gray-900">
+                                  S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+                                </span>
+                              </td>
+ 
+                              {/* ACCIONES */}
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <div className="flex justify-center gap-1">
                                   {credito?.estado === 'activo' && (
                                     <>
@@ -894,13 +965,15 @@ const CreditoAcumulativoPage = () => {
                                   )}
                                 </div>
                               </td>
+ 
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                      </div>
 
                       {/* Total activos */}
-                      <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 border-t border-gray-300">
+                      <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 border-t border-gray-300 rounded-b-lg">
                         <div className="flex justify-between items-center">
                           <div>
                             <h3 className="text-base font-semibold">Total del Crédito</h3>
@@ -911,7 +984,7 @@ const CreditoAcumulativoPage = () => {
                           </div>
                         </div>
                       </div>
-                    </div>
+                      </>
                   )}
                 </div>
               </div>
@@ -1126,37 +1199,60 @@ const CreditoAcumulativoPage = () => {
       {showModalAbono && credito && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowModalAbono(false)} />
-            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-8">
+            <div className="fixed inset-0 bg-black bg-opacity-25" onClick={() => setShowModalAbono(false)} />
+            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
 
-              <button onClick={() => setShowModalAbono(false)}
-                className="absolute right-4 top-4 text-gray-400 hover:text-gray-600">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                  <BanknotesIcon className="h-6 w-6 mr-2 text-green-600" />
+                  Registrar Abono
+                </h3>
+                <button onClick={() => setShowModalAbono(false)} className="text-gray-400 hover:text-gray-600">
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
 
-              <h3 className="text-xl font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                <BanknotesIcon className="h-6 w-6 text-green-600" />
-                Registrar Abono
-              </h3>
-              <p className="text-sm text-gray-500 mb-5">
-                Saldo pendiente: <span className="font-bold text-red-600">S/. {parseFloat(credito.saldoPendiente || 0).toFixed(2)}</span>
-              </p>
+              {/* Total a pagar */}
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700">Saldo pendiente:</span>
+                  <span className="text-xl font-bold text-red-600">S/. {parseFloat(credito.saldoPendiente || 0).toFixed(2)}</span>
+                </div>
+              </div>
 
+              {/* Métodos de pago */}
               <div className="space-y-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">Métodos de pago:</label>
+                  {abonoMethods.length < 5 && (
+                    <button type="button" onClick={agregarMetodoPago}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-full text-green-700 bg-green-100 hover:bg-green-200">
+                      + Agregar
+                    </button>
+                  )}
+                </div>
+
                 {abonoMethods.map((m, idx) => (
-                  <div key={idx} className="flex gap-2 items-center">
+                  <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <span className="text-lg">
+                      {m.method === 'efectivo' ? '💵' : m.method === 'tarjeta' ? '💳' : m.method === 'transferencia' ? '🏦' : '📱'}
+                    </span>
                     <select value={m.method} onChange={e => actualizarMetodoPago(idx, 'method', e.target.value)}
-                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500">
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-green-500 focus:outline-none">
                       {METODOS_PAGO.map(mp => (
-                        <option key={mp.value} value={mp.value}>{mp.label}</option>
+                        <option key={mp.value} value={mp.value}
+                          disabled={abonoMethods.some((a, i) => i !== idx && a.method === mp.value)}>
+                          {mp.label}
+                        </option>
                       ))}
                     </select>
-                    <div className="relative flex-1">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">S/.</span>
+                    <div className="flex items-center">
+                      <span className="text-sm text-gray-500 mr-2">S/.</span>
                       <input type="number" value={m.amount}
                         onChange={e => actualizarMetodoPago(idx, 'amount', e.target.value)}
                         min="0" step="0.01" placeholder="0.00" onWheel={e => e.target.blur()}
-                        className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
+                        className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:ring-2 focus:ring-green-500 focus:outline-none" />
                     </div>
                     {abonoMethods.length > 1 && (
                       <button onClick={() => quitarMetodoPago(idx)} className="text-red-400 hover:text-red-600">
@@ -1167,44 +1263,54 @@ const CreditoAcumulativoPage = () => {
                 ))}
               </div>
 
-              {abonoMethods.length < 4 && (
-                <button onClick={agregarMetodoPago}
-                  className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1 mb-5">
-                  + Agregar otro método de pago
-                </button>
-              )}
-
-              <div className={`rounded-lg px-4 py-3 mb-5 flex justify-between items-center ${
-                totalAbono > parseFloat(credito.saldoPendiente || 0)
-                  ? 'bg-red-50 border border-red-200'
-                  : 'bg-green-50 border border-green-200'
-              }`}>
-                <span className="text-sm font-medium text-gray-700">Total abono:</span>
-                <span className={`text-2xl font-bold ${totalAbono > parseFloat(credito.saldoPendiente || 0) ? 'text-red-700' : 'text-green-700'}`}>
-                  S/. {totalAbono.toFixed(2)}
-                </span>
+              {/* Resumen */}
+              <div className="p-4 bg-gray-50 rounded-lg space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total abono:</span>
+                  <span className="font-medium">S/. {totalAbono.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Restante:</span>
+                  <span className={`font-medium ${
+                    (parseFloat(credito.saldoPendiente || 0) - totalAbono) > 0.01 ? 'text-red-600' :
+                    totalAbono > parseFloat(credito.saldoPendiente || 0) ? 'text-orange-600' : 'text-green-600'
+                  }`}>
+                    S/. {(parseFloat(credito.saldoPendiente || 0) - totalAbono).toFixed(2)}
+                  </span>
+                </div>
+                {(parseFloat(credito.saldoPendiente || 0) - totalAbono) > 0.01 && totalAbono > 0 && (
+                  <button type="button"
+                    onClick={() => {
+                      const restante = parseFloat(credito.saldoPendiente || 0) - totalAbono;
+                      const last = abonoMethods.length - 1;
+                      actualizarMetodoPago(last, 'amount', (parseFloat(abonoMethods[last].amount) || 0) + restante);
+                    }}
+                    className="text-xs text-green-600 hover:text-green-800">
+                    Auto-completar restante
+                  </button>
+                )}
+                {totalAbono > 0 && totalAbono <= parseFloat(credito.saldoPendiente || 0) &&
+                (parseFloat(credito.saldoPendiente || 0) - totalAbono) === 0 && (
+                  <p className="text-xs font-bold text-green-700">✓ Se liquidará el crédito</p>
+                )}
               </div>
 
-              {totalAbono > 0 && totalAbono <= parseFloat(credito.saldoPendiente || 0) && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-5 text-sm text-blue-700">
-                  Saldo restante tras el abono: <span className="font-bold">S/. {(parseFloat(credito.saldoPendiente || 0) - totalAbono).toFixed(2)}</span>
-                  {(parseFloat(credito.saldoPendiente || 0) - totalAbono) === 0 && (
-                    <span className="ml-2 font-bold text-green-700">✓ Se liquidará el crédito</span>
-                  )}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3">
+              {/* Botones */}
+              <div className="flex gap-3">
                 <button onClick={() => setShowModalAbono(false)}
-                  className="px-5 py-2.5 rounded-lg bg-white text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 font-medium">
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                   Cancelar
                 </button>
                 <button onClick={guardarAbono}
                   disabled={guardandoAbono || totalAbono <= 0 || totalAbono > parseFloat(credito.saldoPendiente || 0)}
-                  className="px-5 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2">
-                  {guardandoAbono ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Guardando...</> : <><CheckCircleIcon className="h-5 w-5" />Confirmar Abono</>}
+                  className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed gap-2">
+                  {guardandoAbono
+                    ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Guardando...</>
+                    : <><CheckCircleIcon className="h-4 w-4" />Confirmar Abono</>
+                  }
                 </button>
               </div>
+
             </div>
           </div>
         </div>

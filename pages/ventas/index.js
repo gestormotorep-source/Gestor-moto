@@ -66,6 +66,9 @@ const VentasIndexPage = () => {
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState(cached?.filtros?.searchTerm || '');
+
+  // Estados para filtros y paginación
+  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
   
   // Estados para filtros
   const [filterPeriod, setFilterPeriod] = useState(cached?.filtros?.filterPeriod || 'day');

@@ -107,6 +107,8 @@ const NuevaVentaPage = () => {
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
 
+  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
+
   useEffect(() => {
     // Reemplaza el fetchData completo
   const fetchData = async () => {
@@ -488,6 +490,7 @@ const NuevaVentaPage = () => {
       // AGREGAR TODOS LOS ITEMS SEPARADOS
       setItemsVenta(prev => [...prev, ...itemsSeparados]);
       setShowQuantityModal(false);
+      setNombrePersonalizado('');  // ← agregar esto
       setError(null);
     } catch (err) {
       console.error("Error al crear items por lote:", err);
@@ -533,6 +536,7 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
       id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${contadorItem}`,
       productoId: producto.id,
       nombreProducto: producto.nombre,
+      nombrePersonalizado: nombrePersonalizado.trim() || null,
       stockActual: producto.stockActual || 0,
       marca: producto.marca || '',
       medida: producto.medida || '',
@@ -1317,6 +1321,12 @@ return (
                                 <div className="font-medium text-gray-900 text-sm">
                                   {item.nombreProducto}
                                 </div>
+                                {/* Nombre personalizado para VARIOS REPUESTOS */}
+                                {item.nombrePersonalizado && (
+                                  <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                                    → {item.nombrePersonalizado}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="font-medium text-gray-900 text-sm">
@@ -1422,7 +1432,10 @@ return (
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowQuantityModal(false)}></div>
             <div className="relative bg-white rounded-xl shadow-xl w-[95vw] max-w-5xl p-10">
 
-              <button type="button" onClick={() => setShowQuantityModal(false)}
+              <button type="button" onClick={() => {
+                setShowQuantityModal(false);
+                setNombrePersonalizado('');  // ← agregar esto
+              }}
                 className="absolute right-4 top-4 rounded-md text-gray-400 hover:text-gray-500">
                 <XMarkIcon className="h-6 w-6" />
               </button>
@@ -1492,6 +1505,22 @@ return (
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base"
                         />
                       </div>
+                      {/* Campo nombre personalizado — solo para VARIOS REPUESTOS */}
+                      {(selectedProduct?.codigoProveedor === '0' ||
+                        selectedProduct?.nombre?.toUpperCase().includes('VARIOS')) && (
+                        <div className="col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Nombre descriptivo <span className="text-gray-400 font-normal">(ej: Tuerca, Perno M8...)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={nombrePersonalizado}
+                            onChange={e => setNombrePersonalizado(e.target.value)}
+                            placeholder="¿Qué producto es?"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base"
+                          />
+                        </div>
+                      )}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
                         <input

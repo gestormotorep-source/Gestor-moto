@@ -132,7 +132,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Caja',
       icon: ChartBarIcon,
       adminOnly: true,
-      path: '/caja'
+      submenu: [
+        { name: 'Caja', path: '/caja' },
+        { name: 'Auditoría', path: '/caja/auditoria ' }
+      ]
     }
   ];
 
