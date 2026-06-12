@@ -3,6 +3,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
+import ProductSearchItem from '../../components/ProductSearchItem';
+import ProductDetailsModal from '../../components/modals/ProductDetailsModal';
+import ProductModelsModal from '../../components/modals/ProductModelsModal';
 import { db } from '../../lib/firebase';
 import {
   collection, query, where, getDocs, doc, getDoc,
@@ -49,6 +52,11 @@ const NuevoCreditoAcumulativoPage = () => {
   const [precioModal, setPrecioModal] = useState(0);
   const [lotesProducto, setLotesProducto] = useState([]);
   const [loteSeleccionado, setLoteSeleccionado] = useState(null);
+
+  const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
+  const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
+  const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
+  const [selectedProductForModels, setSelectedProductForModels] = useState(null);
 
   // ── Observaciones ─────────────────────────────────────────────────────
   const [observaciones, setObservaciones] = useState('');
@@ -124,13 +132,28 @@ const NuevoCreditoAcumulativoPage = () => {
 
       if (palabras.length > 0) {
         const queries = palabras.flatMap(palabra => [
-          getDocs(query(collection(db, 'productos'), where('palabrasClave', 'array-contains', palabra), limit(100))),
-          getDocs(query(collection(db, 'productos'), where('nombre', '>=', palabra), where('nombre', '<=', palabra + '\uf8ff'), limit(50))),
+          getDocs(query(collection(db, 'productos'), where('palabrasClave', 'array-contains', palabra), limit(200))),
+          getDocs(query(collection(db, 'productos'), where('nombre', '>=', palabra), where('nombre', '<=', palabra + '\uf8ff'), limit(100))),
         ]);
+
         queries.push(
-          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termUpper), limit(5))),
-          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(5))),
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '==', termUpper), limit(10))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '==', termUpper), limit(10))),
+          getDocs(query(collection(db, 'productos'), where('codigoTienda', '>=', termUpper), where('codigoTienda', '<=', termUpper + '\uf8ff'), limit(100))),
+          getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', termUpper), where('codigoProveedor', '<=', termUpper + '\uf8ff'), limit(100))),
         );
+
+        // Búsqueda por subcadena en códigos (prefijos A-Z)
+        const prefijos = ['', 'A','B','C','D','E','F','G','H','I','J','K','L',
+                          'M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+        prefijos.forEach(prefijo => {
+          const busqueda = prefijo + termUpper;
+          queries.push(
+            getDocs(query(collection(db, 'productos'), where('codigoTienda', '>=', busqueda), where('codigoTienda', '<=', busqueda + '\uf8ff'), limit(20))),
+            getDocs(query(collection(db, 'productos'), where('codigoProveedor', '>=', busqueda), where('codigoProveedor', '<=', busqueda + '\uf8ff'), limit(20))),
+          );
+        });
+
         const resultados = await Promise.all(queries);
         resultados.forEach(snap => {
           snap.docs.forEach(d => {
@@ -140,17 +163,23 @@ const NuevoCreditoAcumulativoPage = () => {
             }
           });
         });
+
+        // Filtro local por subcadena en todos los campos
         candidatos = candidatos.filter(p => {
-          const nombreUpper = (p.nombre || '').toUpperCase();
-          const claves = p.palabrasClave || [];
+          const nombreUpper     = (p.nombre          || '').toUpperCase();
+          const claves          = (p.palabrasClave   || []);
+          const codigoTienda    = (p.codigoTienda    || '').toUpperCase();
+          const codigoProveedor = (p.codigoProveedor || '').toUpperCase();
+
           return palabras.every(palabra =>
-            nombreUpper.includes(palabra) ||
-            claves.some(c => c.includes(palabra)) ||
-            (p.codigoTienda || '').toUpperCase().includes(palabra) ||
-            (p.codigoProveedor || '').toUpperCase().includes(palabra)
+            nombreUpper.includes(palabra)                  ||
+            claves.some(c => c.includes(palabra))         ||
+            codigoTienda.includes(palabra)                ||
+            codigoProveedor.includes(palabra)
           );
         });
       }
+
       setProductosEncontrados(candidatos.slice(0, 20));
     } catch (err) {
       console.error('Error buscando productos:', err);
@@ -573,38 +602,14 @@ const NuevoCreditoAcumulativoPage = () => {
                     ) : (
                       <div>
                         {productosEncontrados.slice(0, 20).map(p => (
-                          <div
+                          <ProductSearchItem
                             key={p.id}
-                            onClick={() => { abrirModalCantidad(p); setSearchProducto(''); }}
-                            className="px-4 py-3 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                          >
-                            <div className="flex items-center justify-between gap-4">
-                              <div className="flex flex-col gap-1 flex-1 min-w-0">
-                                <h4 className="font-semibold text-gray-900 text-sm">{p.nombre}</h4>
-                                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                                  {p.codigoTienda && (
-                                    <span>C.Tienda: <span className="font-mono font-semibold text-gray-700">{p.codigoTienda}</span></span>
-                                  )}
-                                  {p.codigoProveedor && (
-                                    <span className="text-purple-700 font-semibold bg-purple-50 px-1.5 py-0.5 rounded">
-                                      C.Prov: <span className="font-mono">{p.codigoProveedor}</span>
-                                    </span>
-                                  )}
-                                  {p.marca && (
-                                    <span>Marca: <span className="font-semibold text-gray-700">{p.marca}</span></span>
-                                  )}
-                                  {p.medida && (
-                                    <span>Medida: <span className="font-semibold text-gray-700">{p.medida}</span></span>
-                                  )}
-                                  <span>Stock: <span className="font-bold text-gray-900">{p.stockActual || 0}</span></span>
-                                </div>
-                              </div>
-                              <div className="text-right flex-shrink-0">
-                                <p className="font-bold text-purple-600 text-base">S/. {parseFloat(p.precioVentaDefault || 0).toFixed(2)}</p>
-                                <p className="text-xs text-gray-500 uppercase tracking-wide">Precio Venta</p>
-                              </div>
-                            </div>
-                          </div>
+                            producto={p}
+                            onSelectProduct={(prod) => { abrirModalCantidad(prod); }}
+                            onClearSearch={() => { setSearchProducto(''); setProductosEncontrados([]); }}
+                            onOpenDetails={(prod) => { setSelectedProductForDetails(prod); setIsProductDetailsModalOpen(true); }}
+                            onOpenModels={(prod) => { setSelectedProductForModels(prod); setIsProductModelsModalOpen(true); }}
+                          />
                         ))}
                         {productosEncontrados.length > 20 && (
                           <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
@@ -871,6 +876,17 @@ const NuevoCreditoAcumulativoPage = () => {
           </div>
         </div>
       )}
+
+    <ProductDetailsModal 
+      isOpen={isProductDetailsModalOpen} 
+      onClose={() => { setIsProductDetailsModalOpen(false); setSelectedProductForDetails(null); }} 
+      product={selectedProductForDetails} 
+    />
+    <ProductModelsModal 
+      isOpen={isProductModelsModalOpen} 
+      onClose={() => { setIsProductModelsModalOpen(false); setSelectedProductForModels(null); }} 
+      product={selectedProductForModels} 
+    />
     </Layout>
   );
 };

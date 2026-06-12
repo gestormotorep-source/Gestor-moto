@@ -21,7 +21,9 @@ import {
   addDoc,
   where,
   limit,
-  Timestamp
+  Timestamp,
+  runTransaction,
+  getDocs 
 } from 'firebase/firestore';
 import {
   ShoppingCartIcon,
@@ -662,20 +664,90 @@ const VentasIndexPage = () => {
   };
 
   const handleAnularVenta = async (id) => {
-    if (!window.confirm('¿Estás seguro de que deseas ANULAR esta venta? Esta acción es irreversible.')) {
-      return;
-    }
+    if (!window.confirm('¿Estás seguro de que deseas ANULAR esta venta? Se revertirá el stock. Esta acción es irreversible.')) return;
 
     try {
-      const ventaRef = doc(db, 'ventas', id);
-      await updateDoc(ventaRef, {
-        estado: 'anulada',
-        updatedAt: serverTimestamp(),
+      await runTransaction(db, async (transaction) => {
+        // FASE 1: READS
+        const ventaRef = doc(db, 'ventas', id);
+        const ventaSnap = await transaction.get(ventaRef);
+        if (!ventaSnap.exists()) throw new Error('Venta no encontrada');
+        if (ventaSnap.data().estado === 'anulada') throw new Error('La venta ya está anulada');
+
+        const itemsSnap = await getDocs(collection(db, 'ventas', id, 'itemsVenta'));
+        const items = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Leer lotes y productos
+        const lotesSnaps = {};
+        const productosSnaps = {};
+
+        for (const item of items) {
+          if (item.loteId && !lotesSnaps[item.loteId]) {
+            const loteRef = doc(db, 'lotes', item.loteId);
+            lotesSnaps[item.loteId] = { ref: loteRef, snap: await transaction.get(loteRef) };
+          }
+          if (item.productoId && !productosSnaps[item.productoId]) {
+            const prodRef = doc(db, 'productos', item.productoId);
+            productosSnaps[item.productoId] = { ref: prodRef, snap: await transaction.get(prodRef) };
+          }
+        }
+
+        // FASE 2: WRITES
+        // Anular venta
+        transaction.update(ventaRef, { estado: 'anulada', updatedAt: serverTimestamp() });
+
+        // Revertir stock por item
+        for (const item of items) {
+          const cantidad = parseFloat(item.cantidad || 0);
+
+          // Revertir lote
+          if (item.loteId && lotesSnaps[item.loteId]?.snap.exists()) {
+            const loteData = lotesSnaps[item.loteId].snap.data();
+            const nuevoStock = (loteData.stockRestante || 0) + cantidad;
+            transaction.update(lotesSnaps[item.loteId].ref, {
+              stockRestante: nuevoStock,
+              estado: 'activo',
+              updatedAt: serverTimestamp()
+            });
+          }
+
+          // Movimiento de auditoría
+          transaction.set(doc(collection(db, 'movimientosLotes')), {
+            ventaId: id,
+            numeroVenta: ventaSnap.data().numeroVenta,
+            productoId: item.productoId,
+            nombreProducto: item.nombreProducto,
+            loteId: item.loteId || null,
+            numeroLote: item.numeroLote || null,
+            cantidadDevuelta: cantidad,
+            tipoMovimiento: 'anulacion-venta',
+            fechaMovimiento: serverTimestamp(),
+            empleadoId: user.email || user.uid,
+            createdAt: serverTimestamp()
+          });
+        }
+
+        // Revertir stockActual por producto (acumular cantidades)
+        const cantidadesPorProducto = {};
+        for (const item of items) {
+          if (!item.productoId) continue;
+          cantidadesPorProducto[item.productoId] = (cantidadesPorProducto[item.productoId] || 0) + parseFloat(item.cantidad || 0);
+        }
+
+        for (const [productoId, cantidad] of Object.entries(cantidadesPorProducto)) {
+          if (!productosSnaps[productoId]?.snap.exists()) continue;
+          const prodData = productosSnaps[productoId].snap.data();
+          transaction.update(productosSnaps[productoId].ref, {
+            stockActual: (prodData.stockActual || 0) + cantidad,
+            updatedAt: serverTimestamp()
+          });
+        }
       });
-      alert('Venta anulada con éxito.');
+
+      alert('Venta anulada y stock revertido con éxito.');
     } catch (err) {
-      console.error("Error al anular venta:", err);
-      setError("Error al anular la venta: " + err.message);
+      console.error('Error al anular venta:', err);
+      setError('Error al anular la venta: ' + err.message);
     }
   };
 

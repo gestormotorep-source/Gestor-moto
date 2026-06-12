@@ -1470,7 +1470,6 @@ const CajaPage = () => {
         )}
 
         {/* Dinero Inicial */}
-        {dineroInicial > 0 && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <BanknotesIcon className="h-8 w-8 text-blue-600" />
@@ -1481,7 +1480,6 @@ const CajaPage = () => {
             </div>
             <p className="text-xs text-blue-500">Efectivo disponible para vuelto</p>
           </div>
-        )}
 
         {/* Cards de métodos de pago */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
