@@ -828,7 +828,7 @@ const CreditoAcumulativoPage = () => {
                           <ProductSearchItem
                             key={p.id}
                             producto={p}
-                            onSelectProduct={(prod) => { abrirModalCantidad(prod); }}
+                            onSelectProduct={(prod) => { abrirModalProducto(prod); }}  // ← nombre correcto
                             onClearSearch={() => { setSearchProducto(''); setProductosEncontrados([]); }}
                             onOpenDetails={(prod) => { setSelectedProductForDetails(prod); setIsProductDetailsModalOpen(true); }}
                             onOpenModels={(prod) => { setSelectedProductForModels(prod); setIsProductModelsModalOpen(true); }}
