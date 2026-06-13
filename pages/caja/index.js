@@ -44,7 +44,7 @@ import {
   XMarkIcon
 } from '@heroicons/react/24/outline';
 
-// ── DatePickerPopover (mismo diseño que ventas) ────────────────────────────
+// ── DatePickerPopover ────────────────────────────────────────────────────
 const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(selected || new Date());
@@ -147,7 +147,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
   if (!show || !data) return null;
   const { venta, detalle } = data;
 
-  // ── Vista de Abono (diseño consistente con el modal principal) ────────────
   if (venta.tipoVenta === 'abono') {
     const [ventaCredito, setVentaCredito] = useState(null);
     const [abonosCredito, setAbonosCredito] = useState([]);
@@ -155,7 +154,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
     const [loadingCtx, setLoadingCtx] = useState(true);
 
     useEffect(() => {
-      // Soporta abonos de crédito acumulativo (creditoId) y crédito viejo (ventaId)
       const esAcumulativo = !!venta.creditoId && venta.tipo === 'acumulativo';
       const referenciaId = venta.creditoId || venta.ventaId;
       if (!referenciaId) { setLoadingCtx(false); return; }
@@ -163,11 +161,9 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
       const cargar = async () => {
         try {
           if (esAcumulativo) {
-            // ── Crédito acumulativo: cargar desde colección creditos ──
             const creditoSnap = await getDoc(doc(db, 'creditos', referenciaId));
             if (creditoSnap.exists()) {
               const data = creditoSnap.data();
-              // Simular estructura de ventaCredito para reutilizar el mismo render
               setVentaCredito({
                 id: creditoSnap.id,
                 numeroVenta: data.numeroCredito,
@@ -175,8 +171,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                 ...data
               });
             }
-
-            // Cargar abonos por creditoId
             const abonosSnap = await getDocs(query(
               collection(db, 'abonos'),
               where('creditoId', '==', referenciaId)
@@ -188,11 +182,8 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
               return fa - fb;
             });
             setAbonosCredito(abonos);
-            // Los acumulativos no tienen devoluciones en colección separada
             setDevolucionesCredito([]);
-
           } else {
-            // ── Crédito viejo: flujo original sin cambios ──
             const ventaSnap = await getDoc(doc(db, 'ventas', referenciaId));
             if (ventaSnap.exists()) setVentaCredito({ id: ventaSnap.id, ...ventaSnap.data() });
 
@@ -242,8 +233,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
         <div className="flex min-h-full items-center justify-center p-4">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
           <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh]">
-
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <InformationCircleIcon className="h-6 w-6 text-blue-600" />
@@ -271,7 +260,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                 </div>
               ) : (
                 <>
-                  {/* Info del cliente */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Cliente</label>
@@ -287,7 +275,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                     </div>
                   </div>
 
-                  {/* Abonos */}
                   <div>
                     <h4 className="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-1">
                       💰 Abonos ({abonosCredito.length})
@@ -316,7 +303,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                     </div>
                   </div>
 
-                  {/* Devoluciones */}
                   {devolucionesCredito.length > 0 && (
                     <div>
                       <h4 className="text-sm font-semibold text-orange-700 mb-2 flex items-center gap-1">
@@ -398,7 +384,6 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
                     </div>
                   )}
 
-                  {/* Resumen final */}
                   <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Resumen</h4>
                     <div className="space-y-1.5 text-sm">
@@ -716,7 +701,6 @@ const CajaPage = () => {
   const { user } = useAuth();
   const router = useRouter();
 
-  // ── ventas = ventas completadas + abonos del día (merged) ──
   const [ventas, setVentas] = useState([]);
   const [retiros, setRetiros] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -728,6 +712,7 @@ const CajaPage = () => {
   const [excedentesCredito, setExcedentesCredito] = useState([]);
 
   const [dineroInicial, setDineroInicial] = useState(0);
+  const [dineroInicialFijo, setDineroInicialFijo] = useState(0);
   const [showDineroInicialModal, setShowDineroInicialModal] = useState(false);
   const [inputDineroInicial, setInputDineroInicial] = useState('');
   const [processingDineroInicial, setProcessingDineroInicial] = useState(false);
@@ -770,8 +755,13 @@ const CajaPage = () => {
     try {
       const fechaString = fecha.toISOString().split('T')[0];
       const snap = await getDoc(doc(db, 'dineroInicial', fechaString));
-      setDineroInicial(snap.exists() ? snap.data().monto || 0 : 0);
-    } catch { setDineroInicial(0); }
+      const monto = snap.exists() ? snap.data().monto || 0 : 0;
+      setDineroInicial(monto);
+      setDineroInicialFijo(monto);
+    } catch {
+      setDineroInicial(0);
+      setDineroInicialFijo(0);
+    }
   };
 
   const verificarCierreCaja = async (fecha) => {
@@ -791,12 +781,17 @@ const CajaPage = () => {
     if (!window.confirm(`¿Confirma establecer S/. ${monto.toFixed(2)} como dinero inicial del día?`)) return;
     setProcessingDineroInicial(true);
     try {
-      const fechaString = selectedDate.toISOString().split('T')[0];
+      const fechaString = [
+        selectedDate.getFullYear(),
+        String(selectedDate.getMonth() + 1).padStart(2, '0'),
+        String(selectedDate.getDate()).padStart(2, '0')
+      ].join('-');
       await setDoc(doc(db, 'dineroInicial', fechaString), {
         monto, fecha: Timestamp.fromDate(selectedDate), fechaString,
         establecidoPor: user.email, fechaCreacion: serverTimestamp()
       });
       setDineroInicial(monto);
+      setDineroInicialFijo(monto);
       setInputDineroInicial('');
       setShowDineroInicialModal(false);
       alert('Dinero inicial establecido exitosamente');
@@ -810,7 +805,11 @@ const CajaPage = () => {
     if (!window.confirm('¿Está seguro de que desea cerrar la caja del día? Esta acción no se puede deshacer.')) return;
     setLoadingCierreCaja(true);
     try {
-      const fechaString = selectedDate.toISOString().split('T')[0];
+      const fechaString = [
+        selectedDate.getFullYear(),
+        String(selectedDate.getMonth() + 1).padStart(2, '0'),
+        String(selectedDate.getDate()).padStart(2, '0')
+      ].join('-');
       const limpiar = (obj) => {
         const r = {};
         for (const [k, v] of Object.entries(obj)) {
@@ -820,7 +819,6 @@ const CajaPage = () => {
         }
         return r;
       };
-      // Separar ventas reales de abonos para el resumen de cierre
       const ventasReales = ventas.filter(v => v.tipoVenta !== 'abono');
       const abonosDelDia = ventas.filter(v => v.tipoVenta === 'abono');
 
@@ -876,7 +874,11 @@ const CajaPage = () => {
     try {
       setLoading(true);
       const { generarPDFCajaCompleta } = await import('../../components/utils/pdfGeneratorCaja');
-      const fechaString = selectedDate.toISOString().split('T')[0];
+      const fechaString = [
+        selectedDate.getFullYear(),
+        String(selectedDate.getMonth() + 1).padStart(2, '0'),
+        String(selectedDate.getDate()).padStart(2, '0')
+      ].join('-');
       await generarPDFCajaCompleta(fechaString);
       alert('Reporte generado exitosamente');
     } catch (error) {
@@ -884,8 +886,6 @@ const CajaPage = () => {
     } finally { setLoading(false); }
   };
 
-// ── REEMPLAZA calcularTotalesConGananciaReal y calcularRetiros ────────────
-// Una sola función pura que recibe TODOS los datos y calcula todo de una vez
   const calcularTodo = (ventasList = [], devolucionesList = [], retirosList = [], dineroInicialActual = 0, excedentesList = []) => {
     let efectivo = 0, yape = 0, plin = 0, tarjeta = 0;
     let gananciaBruta = 0, gananciaReal = 0;
@@ -921,7 +921,6 @@ const CajaPage = () => {
       }
     });
 
-    // ── Devoluciones ──────────────────────────────────────────────────────
     const ventasDelDiaMap = new Map();
     ventasList.forEach(v => { if (v.numeroVenta) ventasDelDiaMap.set(v.numeroVenta, v); });
 
@@ -956,7 +955,6 @@ const CajaPage = () => {
     delMismoDia.forEach(d => procesarDev(d, true));
     deDiasAnteriores.forEach(d => procesarDev(d, false));
 
-    // ── Retiros: descontar de su método correspondiente ──────────────────
     let retiroEfectivo = 0, retiroYape = 0, retiroPlin = 0, retiroTarjeta = 0, totalRetiros = 0;
     retirosList.forEach(r => {
       const monto = parseFloat(r.monto || 0);
@@ -982,10 +980,8 @@ const CajaPage = () => {
         default:         efectivo -= monto; break;
       }
     });
-    // ── Efectivo físico incluye dinero inicial ───────────────────────────
-    const efectivoFisico = dineroInicialActual + efectivo; // efectivo ya tiene retiros descontados
 
-    // ── Total del día = todo lo que entró menos devoluciones (sin contar dinero inicial) ──
+    const efectivoFisico = dineroInicialActual + efectivo;
     const totalDia = dineroInicialActual + Math.max(0, efectivo) + Math.max(0, yape) + Math.max(0, plin) + Math.max(0, tarjeta);
 
     setTotalesDelDia({
@@ -1010,13 +1006,11 @@ const CajaPage = () => {
     });
   };
 
-  // ── obtenerDetalleGanancia ───────────────────────────────────────────────
   const obtenerDetalleGanancia = async (ventaId) => {
     try {
       const venta = ventas.find(v => v.id === ventaId);
       if (!venta) return { gananciaTotal: 0, metodoCalculo: 'error', items: [], error: 'Venta no encontrada' };
 
-      // Si es abono no tiene items de venta
       if (venta.tipoVenta === 'abono') {
         return { gananciaTotal: 0, metodoCalculo: 'abono', items: [], tieneDevoluciones: false };
       }
@@ -1119,10 +1113,10 @@ const CajaPage = () => {
     if (!retiroAmount || !retiroMotivo.trim()) { alert('Por favor complete todos los campos'); return; }
     const monto = parseFloat(retiroAmount);
     if (isNaN(monto) || monto <= 0) { alert('El monto debe ser un número positivo'); return; }
-    const disponible = retiroTipo === 'efectivo' 
-      ? dineroEnCaja.efectivoFisico  // ← ya incluye inicial y ya tiene retiros descontados
+    const disponible = retiroTipo === 'efectivo'
+      ? dineroEnCaja.efectivoFisico
       : retiroTipo === 'yape' ? totalesDelDia.yape
-      : retiroTipo === 'plin' ? totalesDelDia.plin 
+      : retiroTipo === 'plin' ? totalesDelDia.plin
       : totalesDelDia.tarjeta;
     if (monto > disponible) {
       alert(`No hay suficiente dinero en ${retiroTipo.toUpperCase()}. Disponible: S/. ${disponible.toFixed(2)}`);
@@ -1154,10 +1148,6 @@ const CajaPage = () => {
   };
 
   // ── useEffect principal ──────────────────────────────────────────────────
-  // CAMBIO CLAVE: se agregan dos listeners en paralelo:
-  //   1. ventas completadas (como antes)
-  //   2. abonos del día (nuevos) — colección 'abonos'
-  // Ambos fusionan sus resultados en `ventasMap` y actualizan `ventas` juntos.
   useEffect(() => {
     if (!user) { router.push('/auth'); return; }
     setLoading(true); setError(null);
@@ -1167,20 +1157,24 @@ const CajaPage = () => {
     const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay   = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
 
-    // ── Estado local del efecto (refs para evitar closures viejos) ───────
     let ventasMap = new Map();
     let devolucionesList = [];
     let retirosList = [];
-    let excedentesLocal = [];  
+    let excedentesLocal = [];
     let dineroInicialLocal = 0;
 
-    // Cargar dinero inicial fresco para este efecto
+    // ── CLAVE: cargarDineroInicialLocal actualiza AMBOS estados ──────────
     const cargarDineroInicialLocal = async () => {
       try {
-        const fechaString = selectedDate.toISOString().split('T')[0];
+        const fechaString = [
+          selectedDate.getFullYear(),
+          String(selectedDate.getMonth() + 1).padStart(2, '0'),
+          String(selectedDate.getDate()).padStart(2, '0')
+        ].join('-');
         const snap = await getDoc(doc(db, 'dineroInicial', fechaString));
         dineroInicialLocal = snap.exists() ? snap.data().monto || 0 : 0;
         setDineroInicial(dineroInicialLocal);
+        setDineroInicialFijo(dineroInicialLocal); // ← CRÍTICO: actualiza el valor fijo visible
       } catch { dineroInicialLocal = 0; }
     };
 
@@ -1191,9 +1185,7 @@ const CajaPage = () => {
       setLoading(false);
     };
 
-    // Cargar dinero inicial primero, luego arrancar listeners
     cargarDineroInicialLocal().then(() => {
-      // Listener 1: ventas completadas
       const unsubVentas = onSnapshot(
         query(
           collection(db, 'ventas'),
@@ -1219,7 +1211,6 @@ const CajaPage = () => {
         (err) => { setError('Error al cargar ventas: ' + err.message); setLoading(false); }
       );
 
-      // Listener 2: abonos
       let unsubAbonos = () => {};
       try {
         unsubAbonos = onSnapshot(
@@ -1255,7 +1246,6 @@ const CajaPage = () => {
         );
       } catch (e) { console.warn('No se pudo iniciar listener de abonos:', e.message); }
 
-      // Listener 3: devoluciones
       const unsubDevoluciones = onSnapshot(
         query(
           collection(db, 'devoluciones'),
@@ -1276,7 +1266,6 @@ const CajaPage = () => {
         (err) => { console.error('Error devoluciones:', err); }
       );
 
-      // Listener 4: retiros
       const unsubRetiros = onSnapshot(
         query(
           collection(db, 'retiros'),
@@ -1290,7 +1279,7 @@ const CajaPage = () => {
             fecha: d.data().fecha?.toDate ? d.data().fecha.toDate() : new Date(),
           }));
           setRetiros(retirosList);
-          await flush(); // <-- recalcula TODO incluyendo retiros frescos
+          await flush();
         },
         (err) => { console.error('Error retiros:', err); }
       );
@@ -1305,7 +1294,7 @@ const CajaPage = () => {
             where('tipo', '==', 'acumulativo')
           ),
           async (snap) => {
-            excedentesLocal = snap.docs             // ← actualiza la variable local
+            excedentesLocal = snap.docs
               .map(d => ({ id: d.id, ...d.data() }))
               .filter(c => parseFloat(c.excedentePagoCliente || 0) > 0);
             setExcedentesCredito(excedentesLocal);
@@ -1315,7 +1304,6 @@ const CajaPage = () => {
         );
       } catch (e) { console.warn('No se pudo iniciar listener excedentes:', e.message); }
 
-      // Cleanup — agregar unsubExcedentes
       unsubsRef.current = [unsubVentas, unsubAbonos, unsubDevoluciones, unsubRetiros, unsubExcedentes];
     });
 
@@ -1330,11 +1318,9 @@ const CajaPage = () => {
   const indexOfFirstVenta = indexOfLastVenta - ventasPerPageCaja;
   const currentVentasCaja = ventas.slice(indexOfFirstVenta, indexOfLastVenta);
 
-  // ── Contadores separados para el encabezado de la tabla ─────────────────
   const totalVentasReales = ventas.filter(v => v.tipoVenta !== 'abono').length;
   const totalAbonosDia    = ventas.filter(v => v.tipoVenta === 'abono').length;
 
-  // ── DevolucionesComponent ────────────────────────────────────────────────
   const DevolucionesDelDiaComponenteMejorado = () => {
     if (!devoluciones.length) return null;
     const delMismoDia       = devoluciones.filter(d => ventas.some(v => v.numeroVenta === d.numeroVenta));
@@ -1408,12 +1394,11 @@ const CajaPage = () => {
     </Layout>
   );
 
-  // ── RENDER ───────────────────────────────────────────────────────────────
   return (
     <Layout title="Caja">
       <div className="flex flex-col mx-4 py-4 space-y-6">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
           <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4">
             <div className="flex items-center space-x-3">
@@ -1469,26 +1454,26 @@ const CajaPage = () => {
           </div>
         )}
 
-        {/* Dinero Inicial */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <BanknotesIcon className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-sm font-medium text-blue-900">Dinero Inicial del Día</p>
-                <p className="text-2xl font-bold text-blue-600">{formatCurrency(dineroInicial)}</p>
-              </div>
+        {/* Dinero Inicial — siempre muestra el valor bruto de Firebase */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <BanknotesIcon className="h-8 w-8 text-blue-600" />
+            <div>
+              <p className="text-sm font-medium text-blue-900">Dinero Inicial del Día</p>
+              <p className="text-2xl font-bold text-blue-600">{formatCurrency(dineroInicialFijo)}</p>
             </div>
-            <p className="text-xs text-blue-500">Efectivo disponible para vuelto</p>
           </div>
+          <p className="text-xs text-blue-500">Efectivo disponible para vuelto</p>
+        </div>
 
-        {/* Cards de métodos de pago */}
+        {/* Cards métodos de pago */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm font-medium">Efectivo Físico</p>
                 <p className="text-2xl font-bold">{formatCurrency(dineroEnCaja.efectivoFisico)}</p>
-                {dineroInicial > 0 && <p className="text-green-200 text-xs mt-1">Incluye inicial: {formatCurrency(dineroInicial)}</p>}
+                {dineroInicialFijo > 0 && <p className="text-green-200 text-xs mt-1">Incluye inicial: {formatCurrency(dineroInicialFijo)}</p>}
               </div>
               <BanknotesIcon className="h-12 w-12 text-green-200" />
             </div>
@@ -1585,7 +1570,8 @@ const CajaPage = () => {
             </div>
           </div>
         )}
-        {/* ── Excedentes de Créditos Acumulativos ── */}
+
+        {/* Excedentes */}
         {excedentesCredito.length > 0 && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -1631,13 +1617,12 @@ const CajaPage = () => {
 
         <DevolucionesDelDiaComponenteMejorado />
 
-        {/* ── Tabla de Ventas + Abonos ── */}
+        {/* Tabla Movimientos */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-1 flex items-center">
             <EyeIcon className="h-6 w-6 text-blue-600 mr-2" />
             Movimientos del Día ({ventas.length})
           </h3>
-          {/* Leyenda de contadores */}
           <div className="flex items-center gap-3 mb-4">
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
               {totalVentasReales} venta{totalVentasReales !== 1 ? 's' : ''}
@@ -1678,7 +1663,6 @@ const CajaPage = () => {
                         key={venta.id}
                         className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${esAbono ? 'border-l-4 border-blue-400' : ''}`}
                       >
-                        {/* N° / Referencia */}
                         <td className="border border-gray-300 px-3 py-2 text-sm font-medium">
                           <div className="flex flex-col">
                             <span>{venta.numeroVenta || 'N/A'}</span>
@@ -1688,29 +1672,19 @@ const CajaPage = () => {
                             {!esAbono && indicador && <ArrowTrendingDownIcon className="h-4 w-4 text-red-400 mt-0.5" />}
                           </div>
                         </td>
-
-                        {/* Cliente */}
                         <td className="border border-gray-300 px-3 py-2 text-sm">{venta.clienteNombre}</td>
-
-                        {/* Hora */}
                         <td className="border border-gray-300 px-3 py-2 text-sm">
                           {venta.fechaVenta?.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' })}
                         </td>
-
-                        {/* Método Pago */}
                         <td className="border border-gray-300 px-3 py-2 text-sm">
                           <div className="flex items-center gap-1">
                             {getPaymentMethodIcon(venta.metodoPago)}
                             <span className="text-xs">{venta.metodoPago?.toUpperCase() || 'N/A'}</span>
                           </div>
                         </td>
-
-                        {/* Total */}
                         <td className={`border border-gray-300 px-3 py-2 text-sm text-right font-medium ${indicador ? 'text-red-600' : esAbono ? 'text-blue-700' : ''}`}>
                           {formatCurrency(venta.totalVenta)}
                         </td>
-
-                        {/* Tipo / Estado */}
                         <td className="border border-gray-300 px-3 py-2 text-center">
                           {esAbono ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -1722,8 +1696,6 @@ const CajaPage = () => {
                             </span>
                           )}
                         </td>
-
-                        {/* Acciones */}
                         <td className="border border-gray-300 px-3 py-2 text-center">
                           <button
                             onClick={() => mostrarDetalleGanancia(venta)}
@@ -1760,9 +1732,7 @@ const CajaPage = () => {
           )}
         </div>
 
-        {/* ── Modales ── */}
-
-        {/* Dinero Inicial */}
+        {/* Modal Dinero Inicial */}
         {showDineroInicialModal && (
           <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 w-96">
@@ -1774,9 +1744,9 @@ const CajaPage = () => {
                   <XMarkIcon className="h-5 w-5" />
                 </button>
               </div>
-              {dineroInicial > 0 && (
+              {dineroInicialFijo > 0 && (
                 <div className="bg-gray-50 p-3 rounded-lg mb-4 text-sm text-gray-600">
-                  Actual: <strong>{formatCurrency(dineroInicial)}</strong>
+                  Actual: <strong>{formatCurrency(dineroInicialFijo)}</strong>
                 </div>
               )}
               <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo monto (S/.)</label>
@@ -1796,7 +1766,7 @@ const CajaPage = () => {
           </div>
         )}
 
-        {/* Retiro */}
+        {/* Modal Retiro */}
         {showRetiroModal && (
           <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 w-96">
@@ -1843,7 +1813,7 @@ const CajaPage = () => {
           </div>
         )}
 
-        {/* Cierre de Caja */}
+        {/* Modal Cierre */}
         {showCierreModal && (
           <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 w-96">
@@ -1860,12 +1830,12 @@ const CajaPage = () => {
                 <p className="text-sm text-yellow-700">Esta acción no se puede deshacer. Una vez cerrada, no podrá realizar retiros ni modificaciones.</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600 space-y-1">
-                <p><strong>Dinero Inicial:</strong> {formatCurrency(dineroInicial)}</p>
+                <p><strong>Dinero Inicial:</strong> {formatCurrency(dineroInicialFijo)}</p>
                 <p><strong>Ventas:</strong> {totalVentasReales}</p>
                 {totalAbonosDia > 0 && <p><strong>Abonos de crédito:</strong> {totalAbonosDia}</p>}
                 <p><strong>Total Ingresos:</strong> {formatCurrency(totalesDelDia.total)}</p>
                 <p><strong>Total Retiros:</strong> {formatCurrency(dineroEnCaja.totalRetiros)}</p>
-                <p><strong>Efectivo Final:</strong> {formatCurrency(Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
+                <p><strong>Efectivo Final:</strong> {formatCurrency(Math.max(0, dineroInicialFijo + totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button onClick={() => setShowCierreModal(false)} disabled={loadingCierreCaja}

@@ -130,7 +130,11 @@ const AuditoriaPage = () => {
     const endOfDay   = new Date(selectedDate); endOfDay.setHours(23,59,59,999);
     const tsStart = Timestamp.fromDate(startOfDay);
     const tsEnd   = Timestamp.fromDate(endOfDay);
-    const fechaString = selectedDate.toISOString().split('T')[0];
+    const fechaString = [
+      selectedDate.getFullYear(),
+      String(selectedDate.getMonth() + 1).padStart(2, '0'),
+      String(selectedDate.getDate()).padStart(2, '0')
+    ].join('-');
 
     try {
       // ── Dinero inicial ──────────────────────────────────────────────

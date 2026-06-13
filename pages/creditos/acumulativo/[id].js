@@ -67,6 +67,7 @@ const CreditoAcumulativoPage = () => {
   // ── Modal abono ────────────────────────────────────────────────────────
   const [showModalAbono, setShowModalAbono]         = useState(false);
   const [guardandoAbono, setGuardandoAbono]         = useState(false);
+  const [showConfirmAbono, setShowConfirmAbono] = useState(false);
   const [abonoMethods, setAbonoMethods]             = useState([
     { method: 'efectivo', amount: '' }
   ]);
@@ -1320,12 +1321,78 @@ const CreditoAcumulativoPage = () => {
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                   Cancelar
                 </button>
-                <button onClick={guardarAbono}
+                <button
+                  onClick={() => setShowConfirmAbono(true)}
                   disabled={guardandoAbono || totalAbono <= 0 || totalAbono > parseFloat(credito.saldoPendiente || 0)}
                   className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed gap-2">
+                  <CheckCircleIcon className="h-4 w-4" />Confirmar Abono
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN ABONO */}
+      {showConfirmAbono && credito && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-40" onClick={() => setShowConfirmAbono(false)} />
+            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+
+              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                ¿Confirmar este abono?
+              </h3>
+
+              {/* Resumen */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Cliente:</span>
+                  <span className="font-semibold text-gray-900">{credito.clienteNombre}</span>
+                </div>
+                <div className="flex justify-between text-sm border-t border-green-200 pt-2">
+                  <span className="text-gray-600">Total abono:</span>
+                  <span className="text-lg font-bold text-green-700">S/. {totalAbono.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Saldo restante:</span>
+                  <span className="font-semibold text-gray-800">
+                    S/. {Math.max(0, parseFloat(credito.saldoPendiente || 0) - totalAbono).toFixed(2)}
+                  </span>
+                </div>
+                {parseFloat(credito.saldoPendiente || 0) - totalAbono <= 0 && (
+                  <p className="text-xs font-bold text-green-700 pt-1">✓ Este abono liquidará el crédito</p>
+                )}
+              </div>
+
+              {/* Métodos */}
+              <div className="mb-5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Métodos de pago</p>
+                <div className="space-y-1">
+                  {abonoMethods.filter(m => parseFloat(m.amount) > 0).map((m, idx) => (
+                    <div key={idx} className="flex justify-between text-sm bg-gray-50 rounded px-3 py-2">
+                      <span className="capitalize text-gray-700">{METODOS_PAGO.find(mp => mp.value === m.method)?.label || m.method}</span>
+                      <span className="font-semibold text-gray-900">S/. {parseFloat(m.amount).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowConfirmAbono(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                  Volver
+                </button>
+                <button
+                  onClick={async () => { setShowConfirmAbono(false); await guardarAbono(); }}
+                  disabled={guardandoAbono}
+                  className="flex-1 inline-flex justify-center items-center px-4 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 disabled:bg-gray-400 gap-2">
                   {guardandoAbono
                     ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Guardando...</>
-                    : <><CheckCircleIcon className="h-4 w-4" />Confirmar Abono</>
+                    : <><CheckCircleIcon className="h-4 w-4" />Sí, registrar</>
                   }
                 </button>
               </div>

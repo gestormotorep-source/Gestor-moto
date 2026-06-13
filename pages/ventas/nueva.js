@@ -109,6 +109,12 @@ const NuevaVentaPage = () => {
 
   const [nombrePersonalizado, setNombrePersonalizado] = useState('');
 
+  // ID del producto "Varios" para ventas sin producto específico
+  const PRODUCTOS_VARIOS_IDS = new Set([
+    '0CPwiOhioNxNZ8lLddtc',
+    'ntnhqzYi8E7yaccrivU4',
+  ]);
+
   useEffect(() => {
     // Reemplaza el fetchData completo
   const fetchData = async () => {
@@ -611,6 +617,7 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
           cantidad: editQuantity,
           precioVentaUnitario: editPrecio.toFixed(2),
           subtotal: (editQuantity * editPrecio).toFixed(2),
+          nombrePersonalizado: editingItem.nombrePersonalizado ?? null,
           precioCompraDefault: precioCompraFIFO.toFixed(2), // PARA LA TABLA
           precioVentaMinimo: precioVentaMinimo.toFixed(2), // PARA LA TABLA
           // ACTUALIZAR CON PRECIO FIFO REAL
@@ -1506,8 +1513,7 @@ return (
                         />
                       </div>
                       {/* Campo nombre personalizado — solo para VARIOS REPUESTOS */}
-                      {(selectedProduct?.codigoProveedor === '0' ||
-                        selectedProduct?.nombre?.toUpperCase().includes('VARIOS')) && (
+                      {PRODUCTOS_VARIOS_IDS.has(selectedProduct?.id) && (
                         <div className="col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Nombre descriptivo <span className="text-gray-400 font-normal">(ej: Tuerca, Perno M8...)</span>
@@ -1692,6 +1698,20 @@ return (
                         )}
                       </div>
                     </div>
+                    {PRODUCTOS_VARIOS_IDS.has(editingItem?.productoId) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Nombre descriptivo <span className="text-gray-400 font-normal">(ej: Tuerca, Perno M8...)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editingItem.nombrePersonalizado || ''}
+                          onChange={e => setEditingItem(prev => ({ ...prev, nombrePersonalizado: e.target.value }))}
+                          placeholder="¿Qué producto es?"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base"
+                        />
+                      </div>
+                    )}
 
                     {/* Preview ganancia con nuevo precio */}
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
