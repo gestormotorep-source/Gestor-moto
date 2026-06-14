@@ -1357,7 +1357,7 @@ const CajaPage = () => {
             {delMismoDia.map(dev => (
               <div key={dev.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border-l-4 border-orange-400">
                 <div>
-                  <p className="font-medium text-gray-900">{formatCurrency(dev.montoADevolver)} - {dev.metodoPagoOriginal?.toUpperCase()}</p>
+                  <p className="font-medium text-gray-900">{formatCurrency(dev.montoADevolver)} - {(dev.metodoPagoDevolucion || dev.metodoPagoOriginal)?.toUpperCase()}</p>
                   <p className="text-sm text-gray-600">Venta: {dev.numeroVenta} - {dev.clienteNombre}</p>
                 </div>
                 <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">MISMO DÍA</span>
@@ -1374,7 +1374,7 @@ const CajaPage = () => {
             {deDiasAnteriores.map(dev => (
               <div key={dev.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
                 <div>
-                  <p className="font-medium text-gray-900">{formatCurrency(dev.montoADevolver)} - {dev.metodoPagoOriginal?.toUpperCase()}</p>
+                  <p className="font-medium text-gray-900">{formatCurrency(dev.montoADevolver)} - {(dev.metodoPagoDevolucion || dev.metodoPagoOriginal)?.toUpperCase()}</p>
                   <p className="text-sm text-gray-600">Venta: {dev.numeroVenta} - {dev.clienteNombre}</p>
                 </div>
                 <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">DÍAS ANT.</span>

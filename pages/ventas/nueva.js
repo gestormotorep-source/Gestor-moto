@@ -906,6 +906,7 @@ const handleSubmit = async (e) => {
         const itemData = {
           productoId: item.productoId,
           nombreProducto: item.nombreProducto,
+          nombrePersonalizado: item.nombrePersonalizado || null,
           marca: item.marca || '',
           medida: item.medida || '',
           codigoProveedor: item.codigoProveedor || '',

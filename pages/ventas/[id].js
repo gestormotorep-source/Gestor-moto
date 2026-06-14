@@ -425,6 +425,11 @@ const VentaDetailPage = () => {
                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.codigoTienda || 'N/A'}</td>
                           <td className={`px-4 py-4 whitespace-nowrap text-sm font-medium ${fueDevuelto ? 'text-orange-800' : 'text-gray-900'}`}>
                             {item.nombreProducto}
+                            {item.nombrePersonalizado && (
+                              <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                                → {item.nombrePersonalizado}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.marca || 'N/A'}</td>
                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.codigoProveedor || 'N/A'}</td>

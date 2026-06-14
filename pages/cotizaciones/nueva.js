@@ -453,6 +453,37 @@ const NuevaCotizacionPage = () => {
       setError("Error al actualizar método de pago");
     }
   };
+  // Actualizar observaciones
+const handleUpdateObservaciones = async (nuevasObservaciones) => {
+  if (!cotizacionActiva?.id) return;
+
+  try {
+    const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+    await updateDoc(cotizacionRef, {
+      observaciones: nuevasObservaciones || '',
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Error al actualizar observaciones:", err);
+    setError("Error al actualizar observaciones");
+  }
+};
+
+// Actualizar placa de moto
+const handleUpdatePlacaMoto = async (nuevaPlaca) => {
+  if (!cotizacionActiva?.id) return;
+
+  try {
+    const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+    await updateDoc(cotizacionRef, {
+      placaMoto: nuevaPlaca || null,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Error al actualizar placa:", err);
+    setError("Error al actualizar placa");
+  }
+};
 
 
 
@@ -980,6 +1011,7 @@ const NuevaCotizacionPage = () => {
                           type="text"
                           value={placaMoto}
                           onChange={(e) => setPlacaMoto(e.target.value)}
+                          onBlur={() => handleUpdatePlacaMoto(placaMoto)}
                           placeholder="Ej: ABC-123"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
@@ -1037,6 +1069,7 @@ const NuevaCotizacionPage = () => {
                         <textarea
                           value={observaciones}
                           onChange={(e) => setObservaciones(e.target.value)}
+                          onBlur={() => handleUpdateObservaciones(observaciones)}
                           placeholder="Observaciones adicionales..."
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           rows="3"
