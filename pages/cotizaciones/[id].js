@@ -87,6 +87,13 @@ const EditarVerCotizacionPage = () => {
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
 
+  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
+
+  const PRODUCTOS_VARIOS_IDS = new Set([
+    '0CPwiOhioNxNZ8lLddtc',
+    'ntnhqzYi8E7yaccrivU4',
+  ]);
+
   // Estados para modales de detalles y modelos
   const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
   const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
@@ -388,6 +395,7 @@ const EditarVerCotizacionPage = () => {
     
     setSelectedProduct(product);
     setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
+    setNombrePersonalizado('');
     setQuantity(1);
     setShowQuantityModal(true);
   };
@@ -427,6 +435,7 @@ const EditarVerCotizacionPage = () => {
       const item = {
         productoId: producto.id,
         nombreProducto: producto.nombre,
+        nombrePersonalizado: nombrePersonalizado.trim() || null,
         marca: producto.marca || '',
         codigoTienda: producto.codigoTienda || '',
         color: producto.color || '',
@@ -464,11 +473,13 @@ const EditarVerCotizacionPage = () => {
   const handleAddProductToCotizacion = async () => {
     if (!cotizacion?.id || !selectedProduct || isViewOnly) return;
 
-    const existsInCotizacion = itemsCotizacion.some(item => item.productoId === selectedProduct.id);
-    if (existsInCotizacion) {
-      alert('Este producto ya ha sido añadido a la cotización. Edite la cantidad en la tabla.');
-      setShowQuantityModal(false);
-      return;
+    if (!PRODUCTOS_VARIOS_IDS.has(selectedProduct.id)) {
+      const existsInCotizacion = itemsCotizacion.some(item => item.productoId === selectedProduct.id);
+      if (existsInCotizacion) {
+        alert('Este producto ya ha sido añadido a la cotización. Edite la cantidad en la tabla.');
+        setShowQuantityModal(false);
+        return;
+      }
     }
 
     if ((selectedProduct.stockActual || 0) < quantity) {
@@ -592,6 +603,7 @@ const EditarVerCotizacionPage = () => {
         transaction.update(itemRef, {
           cantidad: editQuantity,
           precioVentaUnitario: editPrecio,
+          nombrePersonalizado: editingItem.nombrePersonalizado ?? null,
           subtotal: newSubtotal,
           precioCompraUnitario: precioCompraFIFO,
           gananciaUnitaria: nuevaGananciaUnitaria,
@@ -1180,10 +1192,15 @@ const handleGuardarCotizacion = async () => {
                                       {item.codigoTienda || 'N/A'}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3">
+                                  <td className="px-4 py-3 min-w-48">
                                     <div className="font-medium text-gray-900 text-sm">
                                       {item.nombreProducto}
                                     </div>
+                                    {item.nombrePersonalizado && (
+                                      <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                                        → {item.nombrePersonalizado}
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="px-3 py-3 text-center">
                                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
@@ -1369,6 +1386,20 @@ const handleGuardarCotizacion = async () => {
                                 onWheel={(e) => e.target.blur()}
                                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base" />
                             </div>
+                            {PRODUCTOS_VARIOS_IDS.has(selectedProduct?.id) && (
+                              <div className="col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Nombre descriptivo 
+                                </label>
+                                <input
+                                  type="text"
+                                  value={nombrePersonalizado}
+                                  onChange={e => setNombrePersonalizado(e.target.value)}
+                                  placeholder="¿Qué producto es?"
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                                />
+                              </div>
+                            )}
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
                               <input type="number" value={precioVenta}
@@ -1515,6 +1546,20 @@ const handleGuardarCotizacion = async () => {
                                 min="1" onWheel={(e) => e.target.blur()}
                                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base" />
                             </div>
+                            {PRODUCTOS_VARIOS_IDS.has(editingItem?.productoId) && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Nombre descriptivo
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingItem.nombrePersonalizado || ''}
+                                  onChange={e => setEditingItem(prev => ({ ...prev, nombrePersonalizado: e.target.value }))}
+                                  placeholder="¿Qué producto es?"
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base"
+                                />
+                              </div>
+                            )}
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
                               <input type="number" value={editPrecio}

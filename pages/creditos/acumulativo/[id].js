@@ -64,6 +64,13 @@ const CreditoAcumulativoPage = () => {
   const [loteSeleccionado, setLoteSeleccionado]     = useState(null);
   const [guardandoProducto, setGuardandoProducto]   = useState(false);
 
+  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
+
+  const PRODUCTOS_VARIOS_IDS = new Set([
+    '0CPwiOhioNxNZ8lLddtc',
+    'ntnhqzYi8E7yaccrivU4',
+  ]);
+
   // ── Modal abono ────────────────────────────────────────────────────────
   const [showModalAbono, setShowModalAbono]         = useState(false);
   const [guardandoAbono, setGuardandoAbono]         = useState(false);
@@ -206,6 +213,7 @@ const CreditoAcumulativoPage = () => {
     setCantidadModal(1);
     setPrecioModal(parseFloat(producto.precioVentaDefault || 0));
     setLoteSeleccionado(null);
+    setNombrePersonalizado('');
     setShowModalProducto(true);
     setSearchProducto('');
     setProductosEncontrados([]);
@@ -300,6 +308,7 @@ const CreditoAcumulativoPage = () => {
         transaction.set(itemRef, {
             productoId: productoModal.id,
             nombreProducto: productoModal.nombre,
+            nombrePersonalizado: nombrePersonalizado.trim() || null,
             marca: productoModal.marca || '',
             medida: productoModal.medida || '',
             codigoTienda: productoModal.codigoTienda || '',
@@ -336,6 +345,7 @@ const CreditoAcumulativoPage = () => {
         });
 
         setShowModalProducto(false);
+        setNombrePersonalizado('');
     } catch (err) {
         setError('Error al agregar producto: ' + err.message);
     } finally {
@@ -582,6 +592,7 @@ const CreditoAcumulativoPage = () => {
         // ══ FASE 2: TODOS LOS WRITES ══════════════════════════
         transaction.update(itemRef, {
             precioVentaUnitario: editPrecio,
+            nombrePersonalizado: editingItem.nombrePersonalizado || null,
             subtotal: nuevoSubtotal,
             updatedAt: serverTimestamp(),
         });
@@ -901,6 +912,11 @@ const CreditoAcumulativoPage = () => {
                               {/* PRODUCTO */}
                               <td className="px-4 py-3 min-w-48">
                                 <div className="font-medium text-gray-900 text-sm">{item.nombreProducto}</div>
+                                {item.nombrePersonalizado && (
+                                  <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                                    → {item.nombrePersonalizado}
+                                  </div>
+                                )}
                               </td>
  
                               {/* C. PROVEEDOR */}
@@ -1154,6 +1170,20 @@ const CreditoAcumulativoPage = () => {
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base" />
                       {loteSeleccionado && <p className="text-xs text-gray-500 mt-1">Máx: {loteSeleccionado.stockRestante}</p>}
                     </div>
+                    {PRODUCTOS_VARIOS_IDS.has(productoModal?.id) && (
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Nombre descriptivo <span className="text-gray-400 font-normal">(ej: Tuerca, Perno M8...)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={nombrePersonalizado}
+                          onChange={e => setNombrePersonalizado(e.target.value)}
+                          placeholder="¿Qué producto es?"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
                       <input type="number" value={precioModal}

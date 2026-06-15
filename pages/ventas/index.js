@@ -696,27 +696,32 @@ const VentasIndexPage = () => {
         // Anular venta
         transaction.update(ventaRef, { estado: 'anulada', updatedAt: serverTimestamp() });
 
-        // Revertir stock por item
+        // Revertir stock de lotes (agrupado por loteId, varios items pueden compartir lote)
+        const cantidadesPorLote = {};
+        for (const item of items) {
+          if (!item.loteId) continue;
+          cantidadesPorLote[item.loteId] = (cantidadesPorLote[item.loteId] || 0) + parseFloat(item.cantidad || 0);
+        }
+
+        for (const [loteId, cantidadTotal] of Object.entries(cantidadesPorLote)) {
+          if (!lotesSnaps[loteId]?.snap.exists()) continue;
+          const loteData = lotesSnaps[loteId].snap.data();
+          const nuevoStock = (loteData.stockRestante || 0) + cantidadTotal;
+          transaction.update(lotesSnaps[loteId].ref, {
+            stockRestante: nuevoStock,
+            estado: 'activo',
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        // Movimientos de auditoría (uno por item)
         for (const item of items) {
           const cantidad = parseFloat(item.cantidad || 0);
-
-          // Revertir lote
-          if (item.loteId && lotesSnaps[item.loteId]?.snap.exists()) {
-            const loteData = lotesSnaps[item.loteId].snap.data();
-            const nuevoStock = (loteData.stockRestante || 0) + cantidad;
-            transaction.update(lotesSnaps[item.loteId].ref, {
-              stockRestante: nuevoStock,
-              estado: 'activo',
-              updatedAt: serverTimestamp()
-            });
-          }
-
-          // Movimiento de auditoría
           transaction.set(doc(collection(db, 'movimientosLotes')), {
             ventaId: id,
             numeroVenta: ventaSnap.data().numeroVenta,
             productoId: item.productoId,
-            nombreProducto: item.nombreProducto,
+            nombreProducto: item.nombrePersonalizado || item.nombreProducto,
             loteId: item.loteId || null,
             numeroLote: item.numeroLote || null,
             cantidadDevuelta: cantidad,

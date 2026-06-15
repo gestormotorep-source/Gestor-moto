@@ -429,6 +429,7 @@ const CotizacionesIndexPage = () => {
           transaction.set(doc(collection(newVentaRef, 'itemsVenta')), {
             productoId: itemData.productoId,
             nombreProducto: itemData.nombreProducto,
+            nombrePersonalizado: itemData.nombrePersonalizado || null,
             marca: itemData.marca || '',
             codigoTienda: itemData.codigoTienda || '',
             descripcion: itemData.descripcion || '',

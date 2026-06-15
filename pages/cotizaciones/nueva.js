@@ -82,6 +82,13 @@ const NuevaCotizacionPage = () => {
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
 
+  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
+
+  const PRODUCTOS_VARIOS_IDS = new Set([
+    '0CPwiOhioNxNZ8lLddtc',
+    'ntnhqzYi8E7yaccrivU4',
+  ]);
+
   // Estados para modales de detalles y modelos compatibles
   const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
   const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
@@ -492,6 +499,7 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
     setSelectedProduct(product);
     setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
     setQuantity(1);
+    setNombrePersonalizado('');
     setShowQuantityModal(true);
   };
 
@@ -536,6 +544,7 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
       const item = {
         productoId: producto.id,
         nombreProducto: producto.nombre,
+        nombrePersonalizado: nombrePersonalizado.trim() || null,
         marca: producto.marca || '',
         codigoTienda: producto.codigoTienda || '',
         codigoProveedor: producto.codigoProveedor || '',
@@ -577,18 +586,22 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
   };
 
   // Agregar producto a cotización - ACTUALIZADO CON SEPARACIÓN POR LOTES
-  const handleAddProductToCotizacion = async () => {
+const handleAddProductToCotizacion = async () => {
   if (!cotizacionActiva?.id || !selectedProduct) return;
 
   // NUEVA LÓGICA: Verificar si existe el MISMO producto con el MISMO precio
-  const existeConMismoPrecio = itemsCotizacionActiva.some(item => 
-    item.productoId === selectedProduct.id && 
-    parseFloat(item.precioVentaUnitario) === parseFloat(precioVenta)
-  );
+  // Se omite para "VARIOS REPUESTOS": pueden repetirse con distinto
+  // nombrePersonalizado aunque coincidan productoId y precio.
+  if (!PRODUCTOS_VARIOS_IDS.has(selectedProduct.id)) {
+    const existeConMismoPrecio = itemsCotizacionActiva.some(item => 
+      item.productoId === selectedProduct.id && 
+      parseFloat(item.precioVentaUnitario) === parseFloat(precioVenta)
+    );
 
-  if (existeConMismoPrecio) {
-    alert(`Este producto ya existe en la cotización con el mismo precio (S/. ${precioVenta.toFixed(2)}). \n\nSi deseas agregar más cantidad, edita el item existente.\nSi deseas un precio diferente, cambia el precio de venta.`);
-    return;
+    if (existeConMismoPrecio) {
+      alert(`Este producto ya existe en la cotización con el mismo precio (S/. ${precioVenta.toFixed(2)}). \n\nSi deseas agregar más cantidad, edita el item existente.\nSi deseas un precio diferente, cambia el precio de venta.`);
+      return;
+    }
   }
 
   // Calcular stock ya comprometido en esta cotización para este producto
@@ -675,6 +688,7 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
 
     setShowQuantityModal(false);
     setSearchTerm(''); // Limpiar búsqueda después de agregar
+    setNombrePersonalizado('');
     
     // Mensaje más informativo
     const precioExistente = itemsCotizacionActiva.find(item => item.productoId === selectedProduct.id);
@@ -766,6 +780,7 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
           cantidad: editQuantity,
           precioVentaUnitario: editPrecio,
           subtotal: newSubtotal,
+          nombrePersonalizado: editingItem.nombrePersonalizado ?? null,
           // ACTUALIZAR CAMPOS OCULTOS CON PRECIO FIFO REAL
           precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL ACTUALIZADO
           gananciaUnitaria: nuevaGananciaUnitaria, // GANANCIA REAL
@@ -1233,6 +1248,11 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
                                     <div className="font-medium text-gray-900 text-sm">
                                       {item.nombreProducto}
                                     </div>
+                                    {item.nombrePersonalizado && (
+                                      <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                                        → {item.nombrePersonalizado}
+                                      </div>
+                                    )}
                                   </td>
                                   {/* NUEVA COLUMNA: LOTE */}
                                   <td className="px-3 py-3 text-center whitespace-nowrap">
@@ -1439,6 +1459,21 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                           />
                         </div>
+
+                          {PRODUCTOS_VARIOS_IDS.has(selectedProduct?.id) && (
+                            <div className="col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Nombre descriptivo <span className="text-gray-400 font-normal">(ej: Tuerca, Perno M8...)</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={nombrePersonalizado}
+                                onChange={e => setNombrePersonalizado(e.target.value)}
+                                placeholder="¿Qué producto es?"
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                              />
+                            </div>
+                          )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
                           <input
@@ -1605,6 +1640,20 @@ const handleUpdatePlacaMoto = async (nuevaPlaca) => {
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base"
                           />
                         </div>
+                        {PRODUCTOS_VARIOS_IDS.has(editingItem?.productoId) && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Nombre descriptivo 
+                            </label>
+                            <input
+                              type="text"
+                              value={editingItem.nombrePersonalizado || ''}
+                              onChange={e => setEditingItem(prev => ({ ...prev, nombrePersonalizado: e.target.value }))}
+                              placeholder="¿Qué producto es?"
+                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-base"
+                            />
+                          </div>
+                        )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Precio de Venta (S/.)</label>
                           <input

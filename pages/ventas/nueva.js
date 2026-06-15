@@ -5,6 +5,7 @@ import { useSale } from '../../contexts/SaleContext';
 import ProductSearchItem from '../../components/ProductSearchItem';
 import ProductDetailsModal from '../../components/modals/ProductDetailsModal';
 import ProductModelsModal from '../../components/modals/ProductModelsModal';
+import Select from 'react-select';
 import Layout from '../../components/Layout';
 import MixedPaymentModal from '../../components/modals/MixedPaymentModal';
 import { db } from '../../lib/firebase';
@@ -69,6 +70,12 @@ const NuevaVentaPage = () => {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
+  const clienteOptions = clientes.map(cliente => ({
+    value: cliente.id,
+    label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || cliente.numeroDocumento || 'N/A'}`.trim()
+  }));
+
+  const [selectedCliente, setSelectedCliente] = useState(null);
   const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
   const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
   const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
@@ -422,6 +429,26 @@ const NuevaVentaPage = () => {
     }));
   }, [itemsVenta]);
 
+  useEffect(() => {
+    if (ventaPrincipalData.clienteId && clientes.length > 0) {
+      const cliente = clientes.find(c => c.id === ventaPrincipalData.clienteId);
+      setSelectedCliente(cliente ? {
+        value: cliente.id,
+        label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || cliente.numeroDocumento || 'N/A'}`.trim()
+      } : null);
+    } else {
+      setSelectedCliente(null);
+    }
+  }, [ventaPrincipalData.clienteId, clientes]);
+
+  const handleUpdateClienteVenta = (selectedOption) => {
+    setSelectedCliente(selectedOption);
+    setVentaPrincipalData(prev => ({
+      ...prev,
+      clienteId: selectedOption?.value || ''
+    }));
+  };
+
   const handleVentaPrincipalChange = (e) => {
     const { name, value } = e.target;
     setVentaPrincipalData(prev => ({ ...prev, [name]: value }));
@@ -469,14 +496,17 @@ const NuevaVentaPage = () => {
   const handleAddProductToVenta = async () => {
     if (!selectedProduct) return;
 
+    if (!PRODUCTOS_VARIOS_IDS.has(selectedProduct.id)) {
     const exists = itemsVenta.some(item => item.productoId === selectedProduct.id);
-    if (exists) {
-      alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
-      setShowQuantityModal(false);
-      return;
+      if (exists) {
+        alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
+        setShowQuantityModal(false);
+        return;
+      }
     }
 
     if ((selectedProduct.stockActual || 0) < quantity) {
+
       alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
       return;
     }
@@ -727,7 +757,7 @@ const handleSubmit = async (e) => {
 
   const totalVenta = itemsVenta.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0);
   const totalPagado = paymentData.paymentMethods.reduce((sum, pm) => sum + pm.amount, 0);
-  
+
   if (Math.abs(totalVenta - totalPagado) > 0.01) {
     setError('El total del pago no coincide con el total de la venta. Por favor, configure el pago correctamente.');
     setSaving(false);
@@ -737,16 +767,16 @@ const handleSubmit = async (e) => {
   try {
     await runTransaction(db, async (transaction) => {
       // ========== PHASE 1: TODOS LOS READS PRIMERO ==========
-      
+
       // 1.1 Leer todos los lotes que se van a consumir
       const lotesRefs = itemsVenta.map(item => doc(db, 'lotes', item.loteId));
       const lotesSnaps = await Promise.all(lotesRefs.map(ref => transaction.get(ref)));
-      
+
       // 1.2 Leer todos los productos que se van a actualizar
       const productosUnicos = [...new Set(itemsVenta.map(item => item.productoId))];
       const productRefs = productosUnicos.map(id => doc(db, 'productos', id));
       const productSnaps = await Promise.all(productRefs.map(ref => transaction.get(ref)));
-      
+
       // 1.3 Pre-leer los próximos lotes FIFO para cada producto (para recalcular precios)
       const proximosLotesPorProducto = new Map();
       for (const productoId of productosUnicos) {
@@ -755,7 +785,7 @@ const handleSubmit = async (e) => {
         const cantidadTotalConsumida = itemsVenta
           .filter(item => item.productoId === productoId)
           .reduce((sum, item) => sum + item.cantidad, 0);
-        
+
         const proximoLoteDisponible = simularConsumoYObtenerProximoLote(lotesActuales, cantidadTotalConsumida);
         proximosLotesPorProducto.set(productoId, proximoLoteDisponible);
       }
@@ -768,52 +798,54 @@ const handleSubmit = async (e) => {
       }
 
       // ========== PHASE 2: VALIDACIONES CON DATOS LEÍDOS ==========
-      
-      // Validar lotes
+
+      // Sumar la cantidad total consumida por cada lote (varios items —p.ej.
+      // varios "VARIOS REPUESTOS" con distinto sobrenombre— pueden apuntar al mismo loteId)
+      const cantidadPorLote = new Map();
       const productosAfectados = new Map();
+
       for (let i = 0; i < itemsVenta.length; i++) {
         const item = itemsVenta[i];
         const loteSnap = lotesSnaps[i];
-        
+
         if (!loteSnap.exists()) {
           throw new Error(`Lote ${item.numeroLote || item.loteId} no encontrado`);
         }
 
-        const loteData = loteSnap.data();
-        const nuevoStockLote = loteData.stockRestante - item.cantidad;
-        
-        if (nuevoStockLote < 0) {
-          throw new Error(`Stock insuficiente en lote ${item.numeroLote || item.loteId}. Disponible: ${loteData.stockRestante}, Solicitado: ${item.cantidad}`);
-        }
+        cantidadPorLote.set(item.loteId, (cantidadPorLote.get(item.loteId) || 0) + item.cantidad);
+        productosAfectados.set(item.productoId, (productosAfectados.get(item.productoId) || 0) + item.cantidad);
+      }
 
-        // Acumular cantidades por producto
-        if (!productosAfectados.has(item.productoId)) {
-          productosAfectados.set(item.productoId, 0);
+      // Validar stock disponible por lote (sumando todos los items que lo usan)
+      for (let i = 0; i < itemsVenta.length; i++) {
+        const item = itemsVenta[i];
+        const loteData = lotesSnaps[i].data();
+        const cantidadTotalLote = cantidadPorLote.get(item.loteId);
+
+        if (loteData.stockRestante - cantidadTotalLote < 0) {
+          throw new Error(`Stock insuficiente en lote ${item.numeroLote || item.loteId}. Disponible: ${loteData.stockRestante}, Solicitado: ${cantidadTotalLote}`);
         }
-        productosAfectados.set(item.productoId, 
-          productosAfectados.get(item.productoId) + item.cantidad
-        );
       }
 
       // Validar productos
       for (let i = 0; i < productosUnicos.length; i++) {
         const productSnap = productSnaps[i];
         const productoId = productosUnicos[i];
-        
+
         if (!productSnap.exists()) {
           throw new Error(`Producto ${productoId} no encontrado`);
         }
 
         const currentStock = productSnap.data().stockActual || 0;
         const cantidadVendida = productosAfectados.get(productoId);
-        
+
         if (currentStock < cantidadVendida) {
           throw new Error(`Stock insuficiente para producto ${productoId}. Stock actual: ${currentStock}, Cantidad solicitada: ${cantidadVendida}`);
         }
       }
 
       // ========== PHASE 3: TODOS LOS WRITES ==========
-      
+
       // 3.1 Calcular ganancia total
       const gananciaTotalVenta = itemsVenta.reduce((sum, item) => sum + (parseFloat(item.gananciaTotal) || 0), 0);
 
@@ -848,32 +880,36 @@ const handleSubmit = async (e) => {
         });
       }
 
-      // 3.3 Actualizar lotes
+      // 3.3 Actualizar lotes (un solo update por lote único, sumando todo su consumo)
+      const lotesYaActualizados = new Set();
       for (let i = 0; i < itemsVenta.length; i++) {
         const item = itemsVenta[i];
-        const loteRef = lotesRefs[i];
-        const loteSnap = lotesSnaps[i];
-        const loteData = loteSnap.data();
-        
-        const nuevoStockLote = loteData.stockRestante - item.cantidad;
-        
-        transaction.update(loteRef, {
-          stockRestante: nuevoStockLote,
-          estado: nuevoStockLote <= 0 ? 'agotado' : 'activo',
-          updatedAt: serverTimestamp()
-        });
 
-        // Crear movimiento de lote para auditoría
+        if (!lotesYaActualizados.has(item.loteId)) {
+          const loteRef = lotesRefs[i];
+          const loteData = lotesSnaps[i].data();
+          const cantidadTotalLote = cantidadPorLote.get(item.loteId);
+          const nuevoStockLote = loteData.stockRestante - cantidadTotalLote;
+
+          transaction.update(loteRef, {
+            stockRestante: nuevoStockLote,
+            estado: nuevoStockLote <= 0 ? 'agotado' : 'activo',
+            updatedAt: serverTimestamp()
+          });
+
+          lotesYaActualizados.add(item.loteId);
+        }
+
+        // Movimiento de lote por item, para auditoría detallada
         const movimientoRef = doc(collection(db, 'movimientosLotes'));
         transaction.set(movimientoRef, {
           ventaId: ventaRef.id,
           productoId: item.productoId,
-          nombreProducto: item.nombreProducto,
+          nombreProducto: item.nombrePersonalizado || item.nombreProducto,
           loteId: item.loteId,
           numeroLote: item.numeroLote,
           cantidadConsumida: item.cantidad,
           precioCompraUnitario: item.precioCompraUnitario,
-          stockRestanteLote: nuevoStockLote,
           tipoMovimiento: 'venta',
           fechaMovimiento: serverTimestamp(),
           empleadoId: user.email || user.uid,
@@ -887,13 +923,13 @@ const handleSubmit = async (e) => {
         const productRef = productRefs[i];
         const productSnap = productSnaps[i];
         const cantidadVendida = productosAfectados.get(productoId);
-        
+
         const currentStock = productSnap.data().stockActual || 0;
         const newStock = currentStock - cantidadVendida;
-        
+
         // Usar el precio pre-calculado
         const nuevoPrecioCompra = proximosLotesPorProducto.get(productoId) || 0;
-        
+
         transaction.update(productRef, {
           stockActual: newStock,
           precioCompraDefault: nuevoPrecioCompra,
@@ -1103,23 +1139,14 @@ return (
                   <label htmlFor="clienteId" className="block text-sm font-medium text-gray-700 mb-2">
                     Cliente
                   </label>
-                  <select
-                    id="clienteId"
-                    name="clienteId"
-                    value={ventaPrincipalData.clienteId}
-                    onChange={handleVentaPrincipalChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    <option value="">Seleccione un cliente</option>
-                    {clientes.map((cli) => (
-                      cli.id && (
-                        <option key={cli.id} value={cli.id}>
-                          {cli.nombre} {cli.apellido} ({cli.dni || cli.numeroDocumento || 'N/A'})
-                        </option>
-                      )
-                    ))}
-                  </select>
+                  <Select
+                    options={clienteOptions}
+                    value={selectedCliente}
+                    onChange={handleUpdateClienteVenta}
+                    placeholder="Seleccionar cliente..."
+                    className="text-sm"
+                    isClearable
+                  />
                 </div>
 
                 {/* Observaciones */}
