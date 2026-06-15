@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../contexts/AuthContext';
+import { useSucursal } from '../contexts/SucursalContext';
 import NotificationDropdown from './NotificationDropdown';
 import {
   HomeIcon,
@@ -26,6 +27,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [openSubmenu, setOpenSubmenu] = useState(null);
+  const { sucursalActiva, abrirSelectorSucursal } = useSucursal();
 
   const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
 
@@ -212,6 +214,22 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
               </div>
             </div>
           </div>
+
+          {/* Sede activa */}
+          {sucursalActiva && (
+            <div className="px-4 py-3 border-b border-gray-700 flex-shrink-0">
+              <button
+                onClick={abrirSelectorSucursal}
+                className="w-full flex items-center justify-between px-3 py-2 text-sm rounded-md bg-gray-800 hover:bg-gray-700 transition-colors"
+              >
+                <span className="flex items-center gap-2 text-gray-300">
+                  <BuildingStorefrontIcon className="h-4 w-4 text-blue-400" />
+                  {sucursalActiva.nombre}
+                </span>
+                <span className="text-xs text-blue-400">Cambiar</span>
+              </button>
+            </div>
+          )}
 
           {/* Navigation - Scrollable area */}
           <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto overflow-x-hidden min-h-0 overscroll-contain">
