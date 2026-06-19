@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { useRouter } from 'next/router';
 import {
@@ -20,21 +20,19 @@ import {
 } from '@heroicons/react/24/outline';
 
 // ─── Cache simple en módulo (sobrevive re-renders, no re-fetches) ─────────────
-let _cache = null;
-let _cacheTs = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+let _cache = {}; // { [sucursalId]: { data, ts } }
+const CACHE_TTL = 5 * 60 * 1000;
 
-const getModuleCache = () => {
-  if (_cache && Date.now() - _cacheTs < CACHE_TTL) return _cache;
+const getModuleCache = (sucursalId) => {
+  const entry = _cache[sucursalId];
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
   return null;
 };
-const setModuleCache = (data) => {
-  _cache = data;
-  _cacheTs = Date.now();
+const setModuleCache = (sucursalId, data) => {
+  _cache[sucursalId] = { data, ts: Date.now() };
 };
-const invalidateModuleCache = () => {
-  _cache = null;
-  _cacheTs = 0;
+const invalidateModuleCache = (sucursalId) => {
+  delete _cache[sucursalId];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,9 +51,10 @@ const fmt = (n) => parseFloat(n || 0).toFixed(2);
 const ProductosFaltantesPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const { db, sucursalActiva } = useSucursal();
 
   // ── Datos ──────────────────────────────────────────────────────────────────
-  const cached = getModuleCache();
+  const cached = getModuleCache(sucursalActiva.id);
   const [productos, setProductos] = useState(cached?.productos || []);
   const [proveedores, setProveedores] = useState(cached?.proveedores || []);
   const [loading, setLoading] = useState(!cached);
@@ -108,10 +107,15 @@ const ProductosFaltantesPage = () => {
   const idxLast = idxFirst + limitPerPage;
   const displayedProductos = productosFaltantes.slice(idxFirst, idxLast);
 
+  useEffect(() => {
+    setProductos([]);
+    setProveedores([]);
+  }, [sucursalActiva.id]);
+  
   // ── Carga de datos con onSnapshot ──────────────────────────────────────────
   useEffect(() => {
     if (!user) { router.push('/auth'); return; }
-    if (getModuleCache()) return; // Usar cache si existe
+    if (getModuleCache(sucursalActiva.id)) return; // ← agregar sucursalActiva.id
 
     setLoading(true);
     setError(null);
@@ -123,7 +127,7 @@ const ProductosFaltantesPage = () => {
 
     const tryCache = () => {
       if (prodData !== null && provData !== null) {
-        setModuleCache({ productos: prodData, proveedores: provData });
+        setModuleCache(sucursalActiva.id, { productos: prodData, proveedores: provData }); // ← agregar
         setLoading(false);
       }
     };
@@ -152,7 +156,7 @@ const ProductosFaltantesPage = () => {
       unsubProd?.();
       unsubProv?.();
     };
-  }, [user, router]);
+  }, [user, router, db, sucursalActiva.id]); 
 
   // Reset página cuando cambian filtros
   useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedProveedorId, selectedMarca, limitPerPage]);

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import { collection, getDocs, query, deleteDoc, doc } from 'firebase/firestore';
 import { PlusIcon, PencilIcon, TrashIcon, UserGroupIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
@@ -10,6 +10,7 @@ import { useRouter } from 'next/router';
 const EmpleadosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const { db } = useSucursal();
   const isAdmin = user?.email === 'admin@gmail.com';
   const [empleados, setEmpleados] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +69,7 @@ const EmpleadosPage = () => {
     };
 
     fetchEmpleados();
-  }, [user, router]);
+  }, [user, router, db]);
 
   useEffect(() => {
     const lowerCaseSearchTerm = searchTerm.toLowerCase();

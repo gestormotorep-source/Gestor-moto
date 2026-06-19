@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import {
   collection,
   doc,
@@ -18,6 +18,7 @@ const EmpleadoFormPage = () => {
   const router = useRouter();
   const { id } = router.query;
   const { user } = useAuth();
+  const { db } = useSucursal();
 
   const isEditing = id !== 'nuevo';
 
@@ -77,7 +78,7 @@ const EmpleadoFormPage = () => {
     };
 
     fetchData();
-  }, [id, isEditing, user, router]);
+  }, [id, isEditing, user, router, db]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

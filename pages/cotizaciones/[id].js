@@ -473,23 +473,49 @@ const EditarVerCotizacionPage = () => {
   const handleAddProductToCotizacion = async () => {
     if (!cotizacion?.id || !selectedProduct || isViewOnly) return;
 
+    // Bloquear solo si es MISMO producto + MISMO precio (igual que en nueva.js)
     if (!PRODUCTOS_VARIOS_IDS.has(selectedProduct.id)) {
-      const existsInCotizacion = itemsCotizacion.some(item => item.productoId === selectedProduct.id);
-      if (existsInCotizacion) {
-        alert('Este producto ya ha sido añadido a la cotización. Edite la cantidad en la tabla.');
+      const existeConMismoPrecio = itemsCotizacion.some(item =>
+        item.productoId === selectedProduct.id &&
+        parseFloat(item.precioVentaUnitario) === parseFloat(precioVenta)
+      );
+      if (existeConMismoPrecio) {
+        alert(`Este producto ya existe con el mismo precio (S/. ${precioVenta.toFixed(2)}). Edita el item existente o cambia el precio.`);
         setShowQuantityModal(false);
         return;
       }
     }
 
-    if ((selectedProduct.stockActual || 0) < quantity) {
-      alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
+    // Validar stock sumando lo ya reservado en itemsCotizacion
+    const stockComprometido = itemsCotizacion
+      .filter(item => item.productoId === selectedProduct.id)
+      .reduce((total, item) => total + parseFloat(item.cantidad || 0), 0);
+
+    const stockDisponible = (selectedProduct.stockActual || 0) - stockComprometido;
+
+    if (stockDisponible < quantity) {
+      alert(`Stock insuficiente. Disponible: ${stockDisponible}, ya en cotización: ${stockComprometido}`);
       return;
     }
 
     try {
       const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
-      const itemsSeparados = await crearItemsSeparadosPorLote(selectedProduct, quantity, precioVenta, lotesDisponibles);
+
+      // ── Igual que en nueva.js: restar lo ya reservado por lote ──
+      const stockReservadoPorLote = {};
+      itemsCotizacion
+        .filter(item => item.productoId === selectedProduct.id)
+        .forEach(item => {
+          if (item.loteId) {
+            stockReservadoPorLote[item.loteId] = (stockReservadoPorLote[item.loteId] || 0) + parseFloat(item.cantidad || 0);
+          }
+        });
+
+      const lotesAjustados = lotesDisponibles
+        .map(lote => ({ ...lote, stockRestante: lote.stockRestante - (stockReservadoPorLote[lote.id] || 0) }))
+        .filter(lote => lote.stockRestante > 0);
+
+      const itemsSeparados = await crearItemsSeparadosPorLote(selectedProduct, quantity, precioVenta, lotesAjustados);
 
       await runTransaction(db, async (transaction) => {
         const cotizacionRef = doc(db, 'cotizaciones', cotizacion.id);

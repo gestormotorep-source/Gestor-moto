@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import * as XLSX from 'xlsx';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import { useAppCache } from '../../contexts/AppCacheContext';
 import {
   collection,
@@ -47,11 +47,13 @@ import AlertModal from '../../components/modals/AlertModal';
 const ProductosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const { db, sucursalActiva } = useSucursal();
   const isAdmin = user?.email === 'admin@gmail.com' || user?.email === 'admin2@gmail.com';
 
   // ── Cache ────────────────────────────────────────────────────────────────
   const { getCache, setCache, invalidateCache } = useAppCache();
-  const cached = getCache('productos');
+  const cacheKey = `productos_${sucursalActiva.id}`;
+  const cached = getCache(cacheKey);
   const isFirstRender = useRef(true);
   const filtersChanged = useRef(false);
 
@@ -171,7 +173,7 @@ const ProductosPage = () => {
         setFilteredProductos(allProducts);
         setTotalProductos(allProducts.length);
         // Guardar TODO en cache solo cuando ya tenemos el array completo
-        setCache('productos', allProducts, {
+        setCache(cacheKey, allProducts, {
           filteredProductos: allProducts,
           filterNombre: '',
           filterCodigoProveedor: '',
@@ -188,7 +190,7 @@ const ProductosPage = () => {
         });
       } else {
         setTotalProductos(firstBatch.length);
-        setCache('productos', firstBatch, {
+        setCache(cacheKey, firstBatch, {
           filteredProductos: firstBatch,
           filterNombre: '',
           filterCodigoProveedor: '',
@@ -211,12 +213,15 @@ const ProductosPage = () => {
     }
   };
 
+  useEffect(() => {
+    setProductos([]);
+    setFilteredProductos([]);
+  }, [sucursalActiva.id]);
   // ── useEffect principal — solo carga si no hay cache ─────────────────────
   useEffect(() => {
     if (!user) return;
 
     if (cached && !filtersChanged.current) {
-      // Cache válido: restaurar estado sin ir a Firestore
       setProductos(cached.data);
       if (cached.filtros?.filteredProductos?.length > 0) {
         setFilteredProductos(cached.filtros.filteredProductos);
@@ -228,7 +233,7 @@ const ProductosPage = () => {
     }
 
     fetchProductos();
-  }, [user]);
+  }, [user, sucursalActiva.id]);
 
   // ── Persistir cache cuando cambia algo relevante ──────────────────────────
   // Solo persistimos cuando hay datos reales (no en el primer render vacío)
@@ -237,7 +242,7 @@ const ProductosPage = () => {
     // No sobreescribir cache con datos parciales durante la carga en background
     if (loading) return;
 
-    setCache('productos', productos, {
+    setCache(cacheKey, productos, {
       filteredProductos,
       filterNombre,
       filterCodigoProveedor,
@@ -530,7 +535,7 @@ const ProductosPage = () => {
     }
 
     // Forzar recarga y actualizar cache
-    invalidateCache('productos');
+    invalidateCache(cacheKey);
     filtersChanged.current = true;
     await fetchProductos(true);
     setAlertMessage(`Actualización completa: ${actualizados} actualizados${errores > 0 ? `, ${errores} errores` : ''}.`);
@@ -582,7 +587,7 @@ const ProductosPage = () => {
       setProductos(newProductos);
       setFilteredProductos(updater);
       // Actualizar cache tras eliminar
-      setCache('productos', newProductos, {
+      setCache(cacheKey, newProductos, {
         filteredProductos: newProductos,
         filterNombre, filterCodigoProveedor, filterMarca, filterCodigoTienda,
         filterUbicacion, filterModelosCompatibles, filterMedida,
@@ -721,7 +726,7 @@ const ProductosPage = () => {
           }
         }
         // Invalidar cache y recargar tras importar
-        invalidateCache('productos');
+        invalidateCache(cacheKey);
         filtersChanged.current = true;
         await fetchProductos(true);
         setAlertMessage(`Importación completa:\n✅ ${successCount} importados${errorCount > 0 ? `\n❌ ${errorCount} errores` : ''}`);

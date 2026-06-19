@@ -663,10 +663,39 @@ const VentasIndexPage = () => {
     router.push(`/ventas/${id}`);
   };
 
-  const handleAnularVenta = async (id) => {
+const handleAnularVenta = async (id) => {
     if (!window.confirm('¿Estás seguro de que deseas ANULAR esta venta? Se revertirá el stock. Esta acción es irreversible.')) return;
 
     try {
+      // ── Leer devoluciones aprobadas de esta venta ANTES de la transacción ──
+      const qDevoluciones = query(
+        collection(db, 'devoluciones'),
+        where('ventaId', '==', id),
+        where('estado', '==', 'aprobada')
+      );
+      const devSnap = await getDocs(qDevoluciones);
+      const itemsDevueltosPorDevId = await Promise.all(
+        devSnap.docs.map(d => getDocs(collection(db, 'devoluciones', d.id, 'itemsDevolucion')))
+      );
+
+      // Mapa: ventaItemId -> cantidad ya devuelta (match exacto)
+      // Fallback: productoId+loteId -> cantidad ya devuelta (devoluciones viejas sin ventaItemId)
+      const devueltoPorVentaItemId = new Map();
+      const devueltoPorProductoLote = new Map();
+
+      itemsDevueltosPorDevId.forEach(snap => {
+        snap.docs.forEach(docSnap => {
+          const di = docSnap.data();
+          const cant = parseFloat(di.cantidadADevolver || 0);
+          if (di.ventaItemId) {
+            devueltoPorVentaItemId.set(di.ventaItemId, (devueltoPorVentaItemId.get(di.ventaItemId) || 0) + cant);
+          } else {
+            const key = `${di.productoId}_${di.loteId || ''}`;
+            devueltoPorProductoLote.set(key, (devueltoPorProductoLote.get(key) || 0) + cant);
+          }
+        });
+      });
+
       await runTransaction(db, async (transaction) => {
         // FASE 1: READS
         const ventaRef = doc(db, 'ventas', id);
@@ -696,11 +725,21 @@ const VentasIndexPage = () => {
         // Anular venta
         transaction.update(ventaRef, { estado: 'anulada', updatedAt: serverTimestamp() });
 
-        // Revertir stock de lotes (agrupado por loteId, varios items pueden compartir lote)
+        // ── Calcular cantidad neta a revertir por item (descontando lo ya devuelto) ──
+        const cantidadNetaPorItem = items.map(item => {
+          const yaDevuelto = devueltoPorVentaItemId.has(item.id)
+            ? devueltoPorVentaItemId.get(item.id)
+            : (devueltoPorProductoLote.get(`${item.productoId}_${item.loteId || ''}`) || 0);
+          const cantidadOriginal = parseFloat(item.cantidad || 0);
+          const cantidadNeta = Math.max(0, cantidadOriginal - yaDevuelto);
+          return { ...item, cantidadNeta, yaDevuelto };
+        });
+
+        // Revertir stock de lotes (agrupado por loteId, solo lo NETO no devuelto)
         const cantidadesPorLote = {};
-        for (const item of items) {
-          if (!item.loteId) continue;
-          cantidadesPorLote[item.loteId] = (cantidadesPorLote[item.loteId] || 0) + parseFloat(item.cantidad || 0);
+        for (const item of cantidadNetaPorItem) {
+          if (!item.loteId || item.cantidadNeta <= 0) continue;
+          cantidadesPorLote[item.loteId] = (cantidadesPorLote[item.loteId] || 0) + item.cantidadNeta;
         }
 
         for (const [loteId, cantidadTotal] of Object.entries(cantidadesPorLote)) {
@@ -714,9 +753,9 @@ const VentasIndexPage = () => {
           });
         }
 
-        // Movimientos de auditoría (uno por item)
-        for (const item of items) {
-          const cantidad = parseFloat(item.cantidad || 0);
+        // Movimientos de auditoría (uno por item, reflejando lo neto revertido)
+        for (const item of cantidadNetaPorItem) {
+          if (item.cantidadNeta <= 0) continue; // ya todo devuelto, nada que revertir
           transaction.set(doc(collection(db, 'movimientosLotes')), {
             ventaId: id,
             numeroVenta: ventaSnap.data().numeroVenta,
@@ -724,7 +763,9 @@ const VentasIndexPage = () => {
             nombreProducto: item.nombrePersonalizado || item.nombreProducto,
             loteId: item.loteId || null,
             numeroLote: item.numeroLote || null,
-            cantidadDevuelta: cantidad,
+            cantidadDevuelta: item.cantidadNeta,
+            cantidadOriginalItem: item.cantidad,
+            cantidadYaDevueltaPrevio: item.yaDevuelto,
             tipoMovimiento: 'anulacion-venta',
             fechaMovimiento: serverTimestamp(),
             empleadoId: user.email || user.uid,
@@ -732,11 +773,11 @@ const VentasIndexPage = () => {
           });
         }
 
-        // Revertir stockActual por producto (acumular cantidades)
+        // Revertir stockActual por producto (acumular cantidades NETAS)
         const cantidadesPorProducto = {};
-        for (const item of items) {
-          if (!item.productoId) continue;
-          cantidadesPorProducto[item.productoId] = (cantidadesPorProducto[item.productoId] || 0) + parseFloat(item.cantidad || 0);
+        for (const item of cantidadNetaPorItem) {
+          if (!item.productoId || item.cantidadNeta <= 0) continue;
+          cantidadesPorProducto[item.productoId] = (cantidadesPorProducto[item.productoId] || 0) + item.cantidadNeta;
         }
 
         for (const [productoId, cantidad] of Object.entries(cantidadesPorProducto)) {
@@ -749,7 +790,7 @@ const VentasIndexPage = () => {
         }
       });
 
-      alert('Venta anulada y stock revertido con éxito.');
+      alert('Venta anulada y stock revertido con éxito (descontando devoluciones previas).');
     } catch (err) {
       console.error('Error al anular venta:', err);
       setError('Error al anular la venta: ' + err.message);

@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import { collection, query, deleteDoc, doc, orderBy, onSnapshot } from 'firebase/firestore';
 import { PlusIcon, PencilIcon, TrashIcon, ShoppingBagIcon, UserGroupIcon, ChevronLeftIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon, CreditCardIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
@@ -12,9 +12,11 @@ const ClientesPage = () => {
   const router = useRouter();
   const { user } = useAuth();
   const { getCache, setCache, invalidateCache } = useAppCache();
+  const { db, sucursalActiva } = useSucursal();
   const isAdmin = user?.email === 'admin@gmail.com';
 
-  const cached = getCache('clientes');
+  const cacheKey = `clientes_${sucursalActiva.id}`;
+  const cached = getCache(cacheKey);
   const filtersChanged = useRef(false);
   const isFirstRender = useRef(true);
 
@@ -28,11 +30,15 @@ const ClientesPage = () => {
 
   const clientesPerPage = 20;
 
-  // ── onSnapshot con guard de caché ──────────────────────
+  useEffect(() => {
+    setClientes([]);
+    setFilteredClientes([]);
+  }, [sucursalActiva.id]);
+
   useEffect(() => {
     if (!user) { router.push('/auth'); return; }
 
-    const hayCacheValido = getCache('clientes') && !filtersChanged.current;
+    const hayCacheValido = getCache(cacheKey) && !filtersChanged.current;
     filtersChanged.current = false;
 
     if (!hayCacheValido) setLoading(true);
@@ -54,7 +60,7 @@ const ClientesPage = () => {
     });
 
     return () => unsubscribe();
-  }, [user, router]);
+  }, [user, router, db, sucursalActiva.id]);
 
   // ── Filtros locales ─────────────────────────────────────
   useEffect(() => {
@@ -93,7 +99,7 @@ const ClientesPage = () => {
   // ── Persistir caché ─────────────────────────────────────
   useEffect(() => {
     if (clientes.length > 0) {
-      setCache('clientes', clientes, {
+      setCache(cacheKey, clientes, {
         searchTerm,
         filteredClientes,
         filterCredito,
@@ -109,7 +115,7 @@ const ClientesPage = () => {
   const currentClientes = filteredClientes.slice(indexOfFirst, indexOfLast);
 
   const clearFilters = () => {
-    invalidateCache('clientes');
+    invalidateCache(cacheKey);
     filtersChanged.current = true;
     setSearchTerm('');
     setFilterCredito('all');
@@ -127,7 +133,7 @@ const ClientesPage = () => {
     if (!window.confirm('¿Estás seguro de que quieres eliminar este cliente? Esta acción es irreversible.')) return;
     try {
       await deleteDoc(doc(db, 'cliente', clienteId));
-      invalidateCache('clientes');
+      invalidateCache(cacheKey);
     } catch (err) {
       setError('Error al eliminar el cliente: ' + err.message);
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { db } from '../../../lib/firebase';
+import { useSucursal } from '../../../contexts/SucursalContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
 import { collection, query, where, onSnapshot, doc, getDocs } from 'firebase/firestore';
@@ -17,7 +17,7 @@ const ComprasPage = () => {
   const router = useRouter();
   const { id } = router.query;
   const { user } = useAuth();
-
+  const { db } = useSucursal();
   const [cliente, setCliente] = useState(null);
   const [ventas, setVentas] = useState([]);
   const [devoluciones, setDevoluciones] = useState([]);
@@ -204,7 +204,7 @@ const ComprasPage = () => {
     );
 
     return () => { unsubCliente(); unsubVentas(); unsubDev(); };
-  }, [id, user]);
+  }, [id, user, db]);
 
   // ── Helpers ──────────────────────────────────────────────
   const getDevolucionesDeVenta = (numeroVenta) =>

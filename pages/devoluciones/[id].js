@@ -462,6 +462,11 @@ const DevolucionDetallePage = () => {
                       <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">
                           {item.nombreProducto}
+                          {item.nombrePersonalizado && (
+                            <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                              → {item.nombrePersonalizado}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                           {item.marca || <span className="text-gray-400">N/A</span>}

@@ -494,45 +494,39 @@ const NuevaVentaPage = () => {
   // Agregar producto a la venta
 
   const handleAddProductToVenta = async () => {
-    if (!selectedProduct) return;
+  if (!selectedProduct) return;
 
-    if (!PRODUCTOS_VARIOS_IDS.has(selectedProduct.id)) {
-    const exists = itemsVenta.some(item => item.productoId === selectedProduct.id);
-      if (exists) {
-        alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
-        setShowQuantityModal(false);
-        return;
-      }
-    }
+  // ❌ Ya no bloquea duplicados — se permite el mismo producto a distinto precio
+  
+  // ✅ Validar stock sumando lo ya reservado en el carrito
+  const cantidadYaEnCarrito = itemsVenta
+    .filter(item => item.productoId === selectedProduct.id)
+    .reduce((sum, item) => sum + item.cantidad, 0);
 
-    if ((selectedProduct.stockActual || 0) < quantity) {
+  if ((selectedProduct.stockActual || 0) < cantidadYaEnCarrito + quantity) {
+    alert(`Stock insuficiente para ${selectedProduct.nombre}. Disponible: ${selectedProduct.stockActual || 0}, ya en carrito: ${cantidadYaEnCarrito}`);
+    return;
+  }
 
-      alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
-      return;
-    }
+  try {
+    const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
 
-    try {
-      // OBTENER LOTES DISPONIBLES PARA SIMULAR LA DISTRIBUCIÓN
-      const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
-      
-      // CREAR ITEMS SEPARADOS POR LOTE
-      const itemsSeparados = await crearItemsSeparadosPorLote(
-        selectedProduct, 
-        quantity, 
-        precioVenta, 
-        lotesDisponibles
-      );
+    const itemsSeparados = await crearItemsSeparadosPorLote(
+      selectedProduct,
+      quantity,
+      precioVenta,
+      lotesDisponibles
+    );
 
-      // AGREGAR TODOS LOS ITEMS SEPARADOS
-      setItemsVenta(prev => [...prev, ...itemsSeparados]);
-      setShowQuantityModal(false);
-      setNombrePersonalizado('');  // ← agregar esto
-      setError(null);
-    } catch (err) {
-      console.error("Error al crear items por lote:", err);
-      setError("Error al calcular la distribución por lotes. Intente de nuevo.");
-    }
-  };
+    setItemsVenta(prev => [...prev, ...itemsSeparados]);
+    setShowQuantityModal(false);
+    setNombrePersonalizado('');
+    setError(null);
+  } catch (err) {
+    console.error("Error al crear items por lote:", err);
+    setError("Error al calcular la distribución por lotes. Intente de nuevo.");
+  }
+};
 
 // Nueva función para obtener lotes disponibles ordenados por FIFO
 const obtenerLotesDisponiblesFIFO = async (productoId) => {
@@ -544,12 +538,30 @@ const obtenerLotesDisponiblesFIFO = async (productoId) => {
       where('estado', '==', 'activo'),
       orderBy('fechaIngreso', 'asc')
     );
-    
+
     const lotesSnapshot = await getDocs(lotesQuery);
-    return lotesSnapshot.docs.map(doc => ({
+    let lotes = lotesSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
+
+    // ── CLAVE: descontar lo que YA está reservado en el carrito actual ──
+    // para que la nueva simulación no vuelva a contar el mismo stock
+    const reservadoPorLote = new Map();
+    itemsVenta
+      .filter(item => item.productoId === productoId)
+      .forEach(item => {
+        reservadoPorLote.set(item.loteId, (reservadoPorLote.get(item.loteId) || 0) + item.cantidad);
+      });
+
+    lotes = lotes
+      .map(lote => ({
+        ...lote,
+        stockRestante: lote.stockRestante - (reservadoPorLote.get(lote.id) || 0)
+      }))
+      .filter(lote => lote.stockRestante > 0);
+
+    return lotes;
   } catch (error) {
     console.error("Error al obtener lotes disponibles:", error);
     throw error;

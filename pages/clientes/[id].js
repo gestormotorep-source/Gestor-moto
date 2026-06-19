@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import {
   collection,
   doc,
@@ -18,7 +18,7 @@ const AddEditClientePage = () => {
   const router = useRouter();
   const { id } = router.query;
   const { user } = useAuth();
-
+  const { db } = useSucursal();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -76,7 +76,7 @@ const AddEditClientePage = () => {
       }
     };
     fetchData();
-  }, [id, isEditing, user, router]);
+  }, [id, isEditing, user, router, db]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;

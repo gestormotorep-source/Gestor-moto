@@ -267,8 +267,10 @@ const NuevaDevolucionPage = () => {
         for (const item of itemsADevolver) {
           const itemDevolucionRef = doc(collection(devolucionRef, 'itemsDevolucion'));
           transaction.set(itemDevolucionRef, {
+            ventaItemId: item.id,
             productoId: item.productoId,
             nombreProducto: item.nombreProducto,
+            nombrePersonalizado: item.nombrePersonalizado || null,
             marca: item.marca || '',
             medida: item.medida || '',
             codigoProveedor: item.codigoProveedor || '',

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import { db } from '../../lib/firebase';
+import { useSucursal } from '../../contexts/SucursalContext';
 import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { PlusIcon, PencilIcon, TrashIcon, BuildingOfficeIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
@@ -10,6 +10,7 @@ import { useRouter } from 'next/router';
 const ProveedoresPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const { db, sucursalActiva } = useSucursal();
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -40,6 +41,10 @@ const ProveedoresPage = () => {
   };
 
   useEffect(() => {
+    setProveedores([]);
+    setFilteredProveedores([]);
+  }, [sucursalActiva.id]);
+  useEffect(() => {
     const fetchProveedores = async () => {
       if (!user) {
         router.push('/auth');
@@ -65,7 +70,7 @@ const ProveedoresPage = () => {
     };
 
     fetchProveedores();
-  }, [user, router]);
+  }, [user, router, db]);
 
   useEffect(() => {
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
