@@ -1,638 +1,525 @@
-// utils/pdfGeneratorCotizaciones.js - VERSIÓN CON ESTILO PROFESIONAL
+// utils/pdfGeneratorCotizaciones.js
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-// Función para cargar únicamente Courier PS (igual que ventas)
+const EMPRESA = {
+    nombre: "GOYO MOTOR'S",
+    email: 'contacto.goyomotors@gmail.com',
+    direccion: 'Av. Los héroes 778 San Juan de Miraflores',
+    telefono: '993393609',
+    logoPath: '/logo.png',
+};
+
+// ============================================================================
+// FUENTE Y LOGO (idéntico a ventas)
+// ============================================================================
 const loadCourierPSFont = async (pdf) => {
-    try {
-        const courierPaths = [
-            '/fonts/Courier-PS-Regular.ttf',
-            '/fonts/CourierPS.ttf',
-            '/fonts/courier-ps.ttf',
-            '/fonts/CourierPS-Regular.ttf',
-            '/fonts/Courier PS.ttf'
-        ];
-        
-        for (const fontPath of courierPaths) {
+    const courierPaths = [
+        '/fonts/Courier-PS-Regular.ttf',
+        '/fonts/CourierPS.ttf',
+        '/fonts/courier-ps.ttf',
+        '/fonts/CourierPS-Regular.ttf',
+        '/fonts/Courier PS.ttf',
+    ];
+    for (const fontPath of courierPaths) {
+        try {
+            const response = await fetch(fontPath);
+            if (!response.ok) continue;
+            const fontData = await response.arrayBuffer();
+            if (fontData.byteLength === 0) continue;
+            const fontBase64 = arrayBufferToBase64(fontData);
             try {
-                console.log(`Intentando cargar Courier PS desde: ${fontPath}`);
-                const response = await fetch(fontPath);
-                
-                if (response.ok) {
-                    const fontData = await response.arrayBuffer();
-                    
-                    if (fontData.byteLength === 0) {
-                        console.warn(`Archivo de fuente vacío: ${fontPath}`);
-                        continue;
-                    }
-                    
-                    const fontBase64 = arrayBufferToBase64(fontData);
-                    
-                    try {
-                        const fileName = fontPath.split('/').pop();
-                        pdf.addFileToVFS(fileName, fontBase64);
-                        pdf.addFont(fileName, 'CourierPS', 'normal');
-                        pdf.addFont(fileName, 'CourierPS', 'bold');
-                        
-                        console.log(`✅ Fuente CourierPS cargada exitosamente desde: ${fontPath}`);
-                        return 'CourierPS';
-                        
-                    } catch (fontRegisterError) {
-                        console.warn(`Error registrando fuente ${fontPath}:`, fontRegisterError.message);
-                        continue;
-                    }
-                }
-            } catch (fetchError) {
-                console.warn(`No se pudo cargar ${fontPath}:`, fetchError.message);
-                continue;
-            }
-        }
-        
-        // Si no se pudo cargar Courier PS, usar Courier por defecto
-        console.log('⚠️ No se pudo cargar Courier PS, usando Courier por defecto');
-        return 'courier';
-        
-    } catch (error) {
-        console.error('Error cargando Courier PS:', error.message);
-        console.log('🔄 Usando Courier como alternativa');
-        return 'courier';
+                const fileName = fontPath.split('/').pop();
+                pdf.addFileToVFS(fileName, fontBase64);
+                pdf.addFont(fileName, 'CourierPS', 'normal');
+                pdf.addFont(fileName, 'CourierPS', 'bold');
+                return 'CourierPS';
+            } catch (_) { continue; }
+        } catch (_) { continue; }
     }
+    return 'courier';
 };
 
-// Función auxiliar para convertir ArrayBuffer a base64
 const arrayBufferToBase64 = (buffer) => {
-    try {
-        if (!buffer || buffer.byteLength === 0) {
-            throw new Error('Buffer vacío o inválido');
-        }
-        
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        const len = bytes.byteLength;
-        
-        const chunkSize = 0x8000; // 32KB chunks
-        for (let i = 0; i < len; i += chunkSize) {
-            const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
-            binary += String.fromCharCode.apply(null, chunk);
-        }
-        
-        return btoa(binary);
-    } catch (error) {
-        console.error('Error convirtiendo ArrayBuffer a base64:', error);
-        throw error;
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    const chunkSize = 0x8000;
+    for (let i = 0; i < len; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, len)));
     }
+    return btoa(binary);
 };
 
-// FUNCIÓN CORREGIDA PARA MANEJAR FECHAS DE FIRESTORE
-const formatFirestoreDate = (timestamp) => {
+const loadLogoImage = async () => {
     try {
-        if (!timestamp) {
-            return new Date().toLocaleDateString('es-PE');
-        }
-
-        // Si es un Timestamp de Firestore
-        if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-            return timestamp.toDate().toLocaleDateString('es-PE');
-        }
-        
-        // Si es un objeto con seconds y nanoseconds (formato Firestore)
-        if (timestamp.seconds !== undefined) {
-            return new Date(timestamp.seconds * 1000).toLocaleDateString('es-PE');
-        }
-        
-        // Si es una fecha estándar
-        if (timestamp instanceof Date) {
-            return timestamp.toLocaleDateString('es-PE');
-        }
-        
-        // Si es un string o número, intentar parsearlo
-        const date = new Date(timestamp);
-        if (!isNaN(date.getTime())) {
-            return date.toLocaleDateString('es-PE');
-        }
-        
-        // Si no se puede parsear, devolver fecha actual
-        console.warn('No se pudo parsear la fecha:', timestamp);
-        return new Date().toLocaleDateString('es-PE');
-        
-    } catch (error) {
-        console.error('Error formateando fecha:', error);
-        return new Date().toLocaleDateString('es-PE');
-    }
+        const response = await fetch(EMPRESA.logoPath);
+        if (!response.ok) return null;
+        const imageData = await response.arrayBuffer();
+        return `data:image/png;base64,${arrayBufferToBase64(imageData)}`;
+    } catch (_) { return null; }
 };
 
-// Función auxiliar para obtener los detalles del producto desde Firestore
+// ============================================================================
+// FIRESTORE
+// ============================================================================
+const getCotizacionItems = async (cotizacionId) => {
+    try {
+        const snap = await getDocs(collection(db, 'cotizaciones', cotizacionId, 'itemsCotizacion'));
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (_) { return []; }
+};
+
 const getProductDetails = async (productoId) => {
     if (!productoId) return {};
     try {
-        const docRef = doc(db, "productos", productoId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-            return docSnap.data();
-        } else {
-            console.log("No such document!");
-            return {};
-        }
-    } catch (error) {
-        console.error("Error al obtener detalles del producto:", error);
-        return {};
-    }
+        const snap = await getDoc(doc(db, 'productos', productoId));
+        return snap.exists() ? snap.data() : {};
+    } catch (_) { return {}; }
 };
 
-// FUNCIÓN CORREGIDA PARA OBTENER DATOS DEL EMPLEADO
-const getEmpleadoDetails = async (empleadoId) => {
-    if (!empleadoId) return null;
-    
-    try {
-        const empleadoRef = doc(db, 'empleado', empleadoId);
-        const empleadoSnap = await getDoc(empleadoRef);
-        
-        if (empleadoSnap.exists()) {
-            const data = empleadoSnap.data();
-            return {
-                nombre: data.nombre || '',
-                apellido: data.apellido || '',
-                puesto: data.puesto || '',
-                nombreCompleto: `${data.nombre || ''} ${data.apellido || ''}`.trim()
-            };
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('Error al obtener datos del empleado:', error);
-        return null;
-    }
-};
+const getMetodoPagoLabel = (metodo) => ({
+    efectivo: 'EFECTIVO',
+    tarjeta_credito: 'TARJETA DE CREDITO',
+    tarjeta_debito: 'TARJETA DE DEBITO',
+    tarjeta: 'TARJETA',
+    yape: 'YAPE',
+    plin: 'PLIN',
+    transferencia: 'TRANSFERENCIA BANCARIA',
+    deposito: 'DEPOSITO BANCARIO',
+    cheque: 'CHEQUE',
+    mixto: 'PAGO MIXTO',
+    otro: 'OTRO',
+}[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A');
 
-// Función para obtener los items de la cotización
-const getCotizacionItems = async (cotizacionId) => {
-    try {
-        const itemsRef = collection(db, 'cotizaciones', cotizacionId, 'itemsCotizacion');
-        const itemsSnapshot = await getDocs(itemsRef);
-        
-        const items = [];
-        for (const itemDoc of itemsSnapshot.docs) {
-            const itemData = itemDoc.data();
-            items.push({
-                id: itemDoc.id,
-                ...itemData
-            });
-        }
-        
-        return items;
-    } catch (error) {
-        console.error('Error al obtener items de la cotización:', error);
-        return [];
-    }
-};
-
-// Función para obtener etiqueta del método de pago
-const getMetodoPagoLabel = (metodo) => {
-    const metodos = {
-        efectivo: 'EFECTIVO',
-        tarjeta_credito: 'TARJETA DE CREDITO',
-        tarjeta_debito: 'TARJETA DE DEBITO',
-        tarjeta: 'TARJETA',
-        yape: 'YAPE',
-        plin: 'PLIN',
-        transferencia: 'TRANSFERENCIA BANCARIA',
-        deposito: 'DEPOSITO BANCARIO',
-        cheque: 'CHEQUE',
-        mixto: 'PAGO MIXTO',
-        otro: 'OTRO'
-    };
-    return metodos[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
-};
-
-// Función para obtener etiqueta del estado de cotización
-const getEstadoCotizacionLabel = (estado) => {
-    const estados = {
-        pendiente: 'PENDIENTE',
-        borrador: 'BORRADOR',
-        confirmada: 'CONFIRMADA',
-        cancelada: 'CANCELADA',
-        enviada: 'ENVIADA',
-        aprobada: 'APROBADA',
-        rechazada: 'RECHAZADA'
-    };
-    return estados[estado] || estado?.toUpperCase() || 'PENDIENTE';
-};
-
-// Función para dibujar tabla con bordes completos estilo profesional (igual que ventas)
-const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fontName) => {
+// ============================================================================
+// TABLA PROFESIONAL (idéntica a ventas — sin rowMeta/devEstado)
+// ============================================================================
+const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fontName, pageHeight, margin, logoBase64, pageWidth) => {
     let currentY = startY;
-    const lineHeight = 6;
+    const headerLineHeight = 6;
     const padding = 1;
-    
-    // Calcular posiciones X para cada columna
+    const lineHeightText = 3.2;
+    const minRowHeight = 6;
+
     const colPositions = [startX];
     for (let i = 0; i < colWidths.length - 1; i++) {
         colPositions.push(colPositions[i] + colWidths[i]);
     }
-    
-    const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
-    
-    // Dibujar encabezados con fondo gris medio (igual que el total)
-    pdf.setFillColor(200, 200, 200); // Mismo gris que "TOTAL DE LA COTIZACION"
-    pdf.setDrawColor(0, 0, 0);
-    pdf.setLineWidth(0.2); // Bordes más delgados
-    
-    // Rectángulo de fondo para encabezados
-    pdf.rect(startX, currentY, tableWidth, lineHeight, 'FD');
-    
-    // Texto de encabezados en negro y negrita
-    pdf.setTextColor(0, 0, 0); // Texto negro
-    pdf.setFont(fontName, 'bold');
-    pdf.setFontSize(7);
-    
-    // Dibujar líneas verticales y texto de encabezados
-    headers.forEach((header, index) => {
-        const x = colPositions[index];
-        const width = colWidths[index];
-        
-        // Línea vertical izquierda de cada columna
-        if (index === 0) {
-            pdf.line(x, currentY, x, currentY + lineHeight);
-        }
-        pdf.line(x + width, currentY, x + width, currentY + lineHeight);
-        
-        // Texto del encabezado centrado
-        let displayText = header;
-        const maxWidth = width - (padding * 2);
-        
-        // Truncar texto si es muy largo
-        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-            displayText = displayText.slice(0, -1);
-        }
-        
-        pdf.text(displayText, x + width/2, currentY + lineHeight/2 + 1, { align: 'center' });
-    });
-    
-    currentY += lineHeight;
-    
-    // Resetear color de texto para el contenido
+    const tableWidth = colWidths.reduce((s, w) => s + w, 0);
+
+    const drawHeader = (y) => {
+        pdf.setFillColor(200, 200, 200);
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.2);
+        pdf.rect(startX, y, tableWidth, headerLineHeight, 'FD');
+        pdf.setTextColor(0, 0, 0);
+        pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(7);
+        headers.forEach((header, index) => {
+            const x = colPositions[index];
+            const width = colWidths[index];
+            if (index === 0) pdf.line(x, y, x, y + headerLineHeight);
+            pdf.line(x + width, y, x + width, y + headerLineHeight);
+            let displayText = header;
+            const maxWidth = width - padding * 2;
+            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1)
+                displayText = displayText.slice(0, -1);
+            pdf.text(displayText, x + width / 2, y + headerLineHeight / 2 + 1, { align: 'center' });
+        });
+        return y + headerLineHeight;
+    };
+
+    currentY = drawHeader(currentY);
     pdf.setTextColor(0, 0, 0);
     pdf.setFont(fontName, 'normal');
     pdf.setFontSize(7);
-    
-    // Dibujar filas de datos
+
     data.forEach((row, rowIndex) => {
-        // Alternar colores de fila para mejor legibilidad
-        if (rowIndex % 2 === 0) {
-            pdf.setFillColor(248, 248, 248); // Gris muy claro
-            pdf.rect(startX, currentY, tableWidth, lineHeight, 'F');
+        const wrappedCells = row.map((cellData, colIndex) => {
+            const maxWidth = colWidths[colIndex] - padding * 2;
+            return pdf.splitTextToSize(String(cellData || ''), maxWidth);
+        });
+        const maxLines = Math.max(...wrappedCells.map(l => l.length), 1);
+        const rowH = Math.max(minRowHeight, maxLines * lineHeightText + 2.5);
+
+        if (currentY + rowH > pageHeight - margin - 15) {
+            pdf.addPage();
+            drawWatermark(pdf, logoBase64, pageWidth, pageHeight);
+            currentY = margin;
+            currentY = drawHeader(currentY);
+            pdf.setFont(fontName, 'normal');
+            pdf.setFontSize(7);
         }
-        
-        // Dibujar bordes de la fila
-        pdf.rect(startX, currentY, tableWidth, lineHeight, 'S');
-        
-        row.forEach((cellData, colIndex) => {
+
+        if (rowIndex % 2 === 0) {
+            pdf.setFillColor(248, 248, 248);
+            pdf.rect(startX, currentY, tableWidth, rowH, 'F');
+        }
+        pdf.rect(startX, currentY, tableWidth, rowH, 'S');
+
+        row.forEach((_, colIndex) => {
             const x = colPositions[colIndex];
             const width = colWidths[colIndex];
-            
-            // Líneas verticales
-            pdf.line(x, currentY, x, currentY + lineHeight);
-            if (colIndex === row.length - 1) {
-                pdf.line(x + width, currentY, x + width, currentY + lineHeight);
-            }
-            
-            // Contenido de la celda
-            let displayText = String(cellData || '');
-            const maxWidth = width - (padding * 2);
-            
-            // Truncar texto si es muy largo
-            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-                displayText = displayText.slice(0, -1);
-            }
-            
-            // Alineación según el tipo de contenido
+            pdf.line(x, currentY, x, currentY + rowH);
+            if (colIndex === row.length - 1)
+                pdf.line(x + width, currentY, x + width, currentY + rowH);
+
+            const lines = wrappedCells[colIndex];
             let textAlign = 'left';
             let textX = x + padding;
-            
-            // Centrar números de cantidad
-            if (colIndex === 6) { // CANT.
-                textAlign = 'center';
-                textX = x + width/2;
-            }
-            // Alinear a la derecha precios
-            else if (colIndex >= 7) { // P. UNITARIO y P. TOTAL
-                textAlign = 'right';
-                textX = x + width - padding;
-            }
-            
-            pdf.text(displayText, textX, currentY + lineHeight/2 + 1, { align: textAlign });
+            if (colIndex === 6) { textAlign = 'center'; textX = x + width / 2; }
+            else if (colIndex >= 7) { textAlign = 'right'; textX = x + width - padding; }
+
+            const textBlockHeight = lines.length * lineHeightText;
+            const startTextY = currentY + (rowH - textBlockHeight) / 2 + lineHeightText - 0.5;
+            lines.forEach((lineText, li) => {
+                pdf.text(lineText, textX, startTextY + li * lineHeightText, { align: textAlign });
+            });
         });
-        
-        currentY += lineHeight;
+
+        currentY += rowH;
     });
-    
+
     return currentY;
 };
 
-// FUNCIÓN PRINCIPAL CORREGIDA PARA GENERAR EL PDF DE COTIZACIÓN CON ESTILO PROFESIONAL
+// ============================================================================
+// ENCABEZADO Y MARCA DE AGUA (idénticos a ventas)
+// ============================================================================
+const drawEmpresaHeader = (pdf, fontName, logoBase64, margin, pageWidth) => {
+    let y = 15;
+    const logoSize = 18;
+    if (logoBase64) {
+        try { pdf.addImage(logoBase64, 'PNG', margin, y - 10, logoSize, logoSize); }
+        catch (e) { console.warn('No se pudo dibujar el logo:', e.message); }
+    }
+    const textX = logoBase64 ? margin + logoSize + 4 : margin;
+    pdf.setFont(fontName, 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(EMPRESA.nombre.toUpperCase(), textX, y);
+    return y;
+};
+
+const drawWatermark = (pdf, logoBase64, pageWidth, pageHeight) => {
+    if (!logoBase64) return;
+    try {
+        pdf.saveGraphicsState();
+        const gState = new pdf.GState({ opacity: 0.08 });
+        pdf.setGState(gState);
+        const size = 120;
+        pdf.addImage(logoBase64, 'PNG', (pageWidth - size) / 2, (pageHeight - size) / 2, size, size);
+        pdf.setGState(new pdf.GState({ opacity: 1 }));
+        pdf.restoreGraphicsState();
+    } catch (e) { console.warn('No se pudo dibujar marca de agua:', e.message); }
+};
+
+const drawInfoLine = (pdf, fontName, label, value, x, y) => {
+    pdf.setFont(fontName, 'bold');
+    pdf.text(label, x, y);
+    pdf.setFont(fontName, 'normal');
+    pdf.text(String(value || 'N/A'), x + pdf.getTextWidth(label) + 2, y);
+};
+
+// ============================================================================
+// GENERADOR PRINCIPAL
+// ============================================================================
 const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
     try {
         const { jsPDF } = await import('jspdf');
-        
-        const pdf = new jsPDF({
-            orientation: 'p',
-            unit: 'mm',
-            format: 'a4',
-        });
-        
-        // Cargar fuente Courier PS (igual que ventas)
-        const fontName = await loadCourierPSFont(pdf);
-        
+
+        const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+
+        const [fontName, logoBase64] = await Promise.all([
+            loadCourierPSFont(pdf),
+            loadLogoImage(),
+        ]);
+
         const pageWidth = pdf.internal.pageSize.width;
         const pageHeight = pdf.internal.pageSize.height;
+        drawWatermark(pdf, logoBase64, pageWidth, pageHeight);
+
         const margin = 10;
         const totalWidth = pageWidth - 2 * margin;
-        
-        let currentY = 15;
 
-        // =========================================================================
-        // ENCABEZADO LIMPIO - DISTRIBUIDO EN DOS COLUMNAS SIN FONDO GRIS (IGUAL QUE VENTAS)
-        // =========================================================================
+        let currentY = drawEmpresaHeader(pdf, fontName, logoBase64, margin, pageWidth);
 
+        // Número de cotización (derecha)
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(12);
-        pdf.setTextColor(0, 0, 0);
-        
-        // Título de la empresa (izquierda) - TODO EN MAYÚSCULAS
-        pdf.text('MOTORES & REPUESTOS SAC', margin, currentY);
-        
-        // Número de cotización (derecha) - TODO EN MAYÚSCULAS
         const numeroCotizacion = cotizacionData.numeroCotizacion || `COT-${cotizacionData.id?.slice(-8) || 'N/A'}`;
         pdf.text(`COTIZACION NRO. ${numeroCotizacion}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 8;
+        currentY += 9;
 
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        
-        // COLUMNA IZQUIERDA - Información principal
-        pdf.text('R.U.C: 20123456789', margin, currentY);
-        pdf.text('EMAIL: MOTORESREPUESTOS@MAIL.COM', margin, currentY + 4);
-        pdf.text('COTIZACION GENERADA EN TIENDA AV.LOS MOTORES 456 SAN BORJA', margin, currentY + 8);
-        
-        // COLUMNA DERECHA - Información de contacto
-        pdf.text('DIRECCION: AV. LOS MOTORES 456, SAN BORJA', pageWidth / 2, currentY);
-        pdf.text('TELEFONO: 999 888 777', pageWidth / 2, currentY + 4);
-        
-        currentY += 18;
-        
-        // INFORMACIÓN DE LA COTIZACIÓN MEJORADA
-        pdf.setFontSize(8);
-        pdf.setFont(fontName, 'normal');
-        
-        // CORREGIR EL MANEJO DE FECHAS
-        const fechaCotizacion = formatFirestoreDate(cotizacionData.fechaCreacion);
-        
-        pdf.text('FECHA DE COTIZACION:', margin, currentY);
-        pdf.text(fechaCotizacion, margin + 35, currentY);
 
-        pdf.text('ESTADO:', pageWidth / 2, currentY);
-        pdf.text(getEstadoCotizacionLabel(cotizacionData.estado), pageWidth / 2 + 15, currentY);
+        // Dirección y contacto (igual layout que ventas)
+        pdf.text(`DIRECCION: ${EMPRESA.direccion}`, margin, currentY);
+        pdf.text(`EMAIL: ${EMPRESA.email}`, margin, currentY + 4);
+        pdf.text(`TELEFONO: ${EMPRESA.telefono}`, pageWidth * 0.6, currentY);
+        currentY += 13;
+
+        // Fecha de cotización
+        const fechaCotizacion = (() => {
+            const f = cotizacionData.fechaCreacion;
+            if (!f) return new Date().toLocaleDateString('es-PE');
+            if (f?.toDate) return f.toDate().toLocaleDateString('es-PE');         // Timestamp real
+            if (f?.seconds) return new Date(f.seconds * 1000).toLocaleDateString('es-PE'); // objeto plano
+            const parsed = new Date(f);
+            return isNaN(parsed) ? new Date().toLocaleDateString('es-PE') : parsed.toLocaleDateString('es-PE'); // string
+        })();
+
+        drawInfoLine(pdf, fontName, 'FECHA DE COTIZACION: ', fechaCotizacion, margin, currentY);
+
+        // Estado
+        const estadoLabels = {
+            pendiente: 'PENDIENTE', borrador: 'BORRADOR', confirmada: 'CONFIRMADA',
+            cancelada: 'CANCELADA', enviada: 'ENVIADA',
+        };
+        const estadoTexto = estadoLabels[cotizacionData.estado] || cotizacionData.estado?.toUpperCase() || 'PENDIENTE';
+        drawInfoLine(pdf, fontName, 'ESTADO: ', estadoTexto, pageWidth * 0.6, currentY);
         currentY += 5;
 
-        // Método de pago preferido
-        pdf.text('METODO DE PAGO:', margin, currentY);
-        const metodoPagoTexto = getMetodoPagoLabel(cotizacionData.metodoPago);
-        pdf.text(metodoPagoTexto, margin + 35, currentY);
-
-        // Validez de la cotización en la misma línea
-        if (cotizacionData.validezDias) {
-            pdf.text('VALIDA POR:', pageWidth / 2, currentY);
-            pdf.text(`${cotizacionData.validezDias} DIAS`, pageWidth / 2 + 25, currentY);
+        // Método de pago
+        let metodoPagoTexto = '';
+        let esPagoMixto = false;
+        if (cotizacionData.paymentData?.isMixedPayment && cotizacionData.paymentData.paymentMethods) {
+            metodoPagoTexto = cotizacionData.paymentData.paymentMethods
+                .filter(pm => pm.amount > 0)
+                .map(pm => `${getMetodoPagoLabel(pm.method)}: S/. ${pm.amount.toFixed(2)}`)
+                .join(', ') || 'PAGO MIXTO';
+            esPagoMixto = true;
+        } else if (cotizacionData.paymentData?.paymentMethods?.length > 0) {
+            metodoPagoTexto = getMetodoPagoLabel(cotizacionData.paymentData.paymentMethods[0].method);
+        } else {
+            metodoPagoTexto = getMetodoPagoLabel(cotizacionData.metodoPago);
         }
-        currentY += 5;
 
-        // Línea divisora
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 5;
+        const anchoMetodoPago = pdf.getTextWidth(`METODO DE PAGO: ${metodoPagoTexto}`);
+        const espacioDisponible = pageWidth / 2 - margin - 4;
 
-        // =========================================================================
-        // INFORMACIÓN DEL CLIENTE (IGUAL QUE VENTAS)
-        // =========================================================================
-
-        pdf.setFontSize(8);
-        pdf.setFont(fontName, 'bold');
-        pdf.text('CLIENTE:', margin, currentY);
-        pdf.setFont(fontName, 'normal');
-        
-        const clienteNombre = clienteData ? 
-            `${clienteData.nombre} ${clienteData.apellido || ''}` : 
-            cotizacionData.clienteNombre || 'Cliente General';
-        pdf.text(clienteNombre.toUpperCase(), margin + 15, currentY);
-        currentY += 5;
-        
-        if (clienteData && clienteData.dni) {
-            pdf.setFont(fontName, 'bold');
-            pdf.text('DNI:', margin, currentY);
-            pdf.setFont(fontName, 'normal');
-            pdf.text(String(clienteData.dni), margin + 15, currentY);
+        if (esPagoMixto || anchoMetodoPago > espacioDisponible) {
+            drawInfoLine(pdf, fontName, 'METODO DE PAGO: ', metodoPagoTexto, margin, currentY);
+            currentY += 5;
+        } else {
+            drawInfoLine(pdf, fontName, 'METODO DE PAGO: ', metodoPagoTexto, margin, currentY);
+            if (cotizacionData.validezDias)
+                drawInfoLine(pdf, fontName, 'VALIDA POR: ', `${cotizacionData.validezDias} DIAS`, pageWidth * 0.6, currentY);
             currentY += 5;
         }
 
-        // CORREGIR LA INFORMACIÓN DEL EMPLEADO
-        // Usar empleadoAsignadoId para obtener los datos del empleado
-        if (cotizacionData.empleadoAsignadoId) {
-            const empleadoData = await getEmpleadoDetails(cotizacionData.empleadoAsignadoId);
-            
-            if (empleadoData) {
+        pdf.line(margin, currentY, pageWidth - margin, currentY);
+        currentY += 5;
+
+        // =====================================================================
+        // CLIENTE (mismo layout que ventas)
+        // =====================================================================
+        pdf.setFontSize(8);
+
+        const clienteNombre = clienteData
+            ? `${clienteData.nombre} ${clienteData.apellido || ''}`.trim()
+            : cotizacionData.clienteNombre || 'Cliente General';
+
+        const tieneEmpleado = !!cotizacionData.empleadoAsignadoNombre;
+        const tienePlaca = !!cotizacionData.placaMoto;
+        const tieneExtras = tieneEmpleado || tienePlaca;
+
+        const dniVal = clienteData?.dni || cotizacionData.clienteDNI;
+        drawInfoLine(pdf, fontName, 'CLIENTE: ', clienteNombre.toUpperCase(), margin, currentY);
+        if (dniVal) drawInfoLine(pdf, fontName, 'DNI: ', String(dniVal), margin, currentY + 5);
+        if (cotizacionData.empleadoId)
+            drawInfoLine(pdf, fontName, 'REGISTRADO POR: ', cotizacionData.empleadoId, margin, currentY + 10);
+
+        const colDerecha = pageWidth * 0.6;
+        const maxWidthDerecha = pageWidth - margin - colDerecha - 2;
+        const obsLineHeight = 3.5;
+        let alturaIzquierda = 12;
+        let alturaDerecha = 0;
+
+        if (tieneExtras) {
+            if (tieneEmpleado) {
+                drawInfoLine(pdf, fontName, 'EMPLEADO: ', cotizacionData.empleadoAsignadoNombre.toUpperCase(), colDerecha, currentY);
+                alturaDerecha = Math.max(alturaDerecha, 5);
+            }
+            if (tienePlaca) {
+                drawInfoLine(pdf, fontName, 'PLACA MOTO: ', cotizacionData.placaMoto.toUpperCase(), colDerecha, currentY + 5);
+                alturaDerecha = Math.max(alturaDerecha, 10);
+            }
+            if (cotizacionData.observaciones) {
+                const labelObs = 'OBSERVACIONES: ';
+                const labelObsW = pdf.getTextWidth(labelObs);
+                const obsLines = pdf.splitTextToSize(cotizacionData.observaciones.toUpperCase(), maxWidthDerecha - labelObsW);
                 pdf.setFont(fontName, 'bold');
-                pdf.text('EMPLEADO ASIGNADO:', margin, currentY);
+                pdf.text(labelObs, colDerecha, currentY + 10);
                 pdf.setFont(fontName, 'normal');
-                pdf.text(empleadoData.nombreCompleto.toUpperCase(), margin + 40, currentY);
-                currentY += 5;
+                pdf.text(obsLines, colDerecha + labelObsW, currentY + 10);
+                alturaDerecha = Math.max(alturaDerecha, 10 + obsLines.length * obsLineHeight);
+            }
+        } else {
+            if (cotizacionData.observaciones) {
+                const labelObs = 'OBSERVACIONES: ';
+                const labelObsW = pdf.getTextWidth(labelObs);
+                const obsLines = pdf.splitTextToSize(cotizacionData.observaciones.toUpperCase(), maxWidthDerecha - labelObsW);
+                pdf.setFont(fontName, 'bold');
+                pdf.text(labelObs, colDerecha, currentY);
+                pdf.setFont(fontName, 'normal');
+                pdf.text(obsLines, colDerecha + labelObsW, currentY);
+                alturaDerecha = Math.max(alturaDerecha, obsLines.length * obsLineHeight);
             }
         }
 
-        if (cotizacionData.placaMoto) {
-            pdf.setFont(fontName, 'bold');
-            pdf.text('PLACA MOTO:', pageWidth / 2, currentY - 5);
-            pdf.setFont(fontName, 'normal');
-            pdf.text(cotizacionData.placaMoto.toUpperCase(), pageWidth / 2 + 25, currentY - 5);
-        }
+        currentY += Math.max(alturaIzquierda, alturaDerecha) + 2;
 
-        if (cotizacionData.observaciones) {
-            pdf.setFont(fontName, 'bold');
-            pdf.text('OBSERVACIONES:', margin, currentY);
-            pdf.setFont(fontName, 'normal');
-            // Dividir texto largo en múltiples líneas si es necesario
-            const maxWidth = totalWidth - 30;
-            const lines = pdf.splitTextToSize(cotizacionData.observaciones.toUpperCase(), maxWidth);
-            pdf.text(lines, margin + 30, currentY);
-            currentY += lines.length * 4;
-        }
-        
-        currentY += 5;
-        
-        // =========================================================================
-        // TABLA PROFESIONAL CON BORDES COMPLETOS (IGUAL QUE VENTAS)
-        // =========================================================================
-
-        // Obtener items de la cotización
+        // =====================================================================
+        // TABLA DE PRODUCTOS
+        // =====================================================================
         const items = await getCotizacionItems(cotizacionData.id);
-        
-        // Headers de la tabla - TODO EN MAYÚSCULAS
+
+        // Detalles de producto en paralelo, deduplicados por productoId
+        const productosUnicos = [...new Set(items.map(i => i.productoId).filter(Boolean))];
+        const detallesPorProducto = {};
+        await Promise.all(productosUnicos.map(async (productoId) => {
+            detallesPorProducto[productoId] = await getProductDetails(productoId);
+        }));
+
         const tableHeaders = ['COD.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
-        
-        // Anchos de columnas optimizados para el estilo profesional
         const colWidths = [
-            totalWidth * 0.10, // Código
-            totalWidth * 0.32, // Descripción
-            totalWidth * 0.08, // Color
-            totalWidth * 0.10, // Marca
-            totalWidth * 0.12, // Ubicación
-            totalWidth * 0.08, // Medida
-            totalWidth * 0.06, // Cant.
-            totalWidth * 0.07, // P.U.
-            totalWidth * 0.07  // P.T.
+            totalWidth * 0.10,
+            totalWidth * 0.30,
+            totalWidth * 0.08,
+            totalWidth * 0.10,
+            totalWidth * 0.12,
+            totalWidth * 0.08,
+            totalWidth * 0.06,
+            totalWidth * 0.08,
+            totalWidth * 0.08,
         ];
 
-        // Preparar datos para la tabla
         const tableData = [];
         let totalCotizacion = 0;
 
-        // Procesar items
         for (const item of items) {
-            // Obtener los detalles del producto
-            const productDetails = await getProductDetails(item.productoId);
-            
-            // Datos del item - TODO EN MAYÚSCULAS
-            const itemRow = [
-                (productDetails.codigoTienda || item.codigoTienda || 'N/A').toString().toUpperCase(),
-                (item.nombreProducto || 'N/A').toString().toUpperCase(),
-                (productDetails.color || item.color || 'N/A').toString().toUpperCase(),
-                (productDetails.marca || item.marca || 'N/A').toString().toUpperCase(),
-                (productDetails.ubicacion || 'N/A').toString().toUpperCase(),
-                (productDetails.medida || 'N/A').toString().toUpperCase(),
+            const det = detallesPorProducto[item.productoId] || {};
+
+            // nombrePersonalizado tiene prioridad (igual que ventas)
+            const nombreAMostrar = item.nombrePersonalizado
+                ? item.nombrePersonalizado
+                : (item.nombreProducto || 'N/A');
+
+            tableData.push([
+                (det.codigoTienda || item.codigoTienda || 'N/A').toString().toUpperCase(),
+                nombreAMostrar.toString().toUpperCase(),
+                (det.color || item.color || 'N/A').toString().toUpperCase(),
+                (det.marca || item.marca || 'N/A').toString().toUpperCase(),
+                (det.ubicacion || 'N/A').toString().toUpperCase(),
+                (det.medida || 'N/A').toString().toUpperCase(),
                 String(item.cantidad || 0),
-                `${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
-                `${parseFloat(item.subtotal || 0).toFixed(2)}`
-            ];
-            
-            tableData.push(itemRow);
+                parseFloat(item.precioVentaUnitario || 0).toFixed(2),
+                parseFloat(item.subtotal || 0).toFixed(2),
+            ]);
             totalCotizacion += parseFloat(item.subtotal || 0);
         }
 
-        // Dibujar la tabla profesional
-        currentY = drawProfessionalTable(pdf, tableData, tableHeaders, colWidths, margin, currentY, fontName);
-        
-        currentY += 5;
+        currentY = drawProfessionalTable(
+            pdf, tableData, tableHeaders, colWidths,
+            margin, currentY, fontName,
+            pageHeight, margin, logoBase64, pageWidth
+        );
 
-        // =========================================================================
-        // FILA DE TOTAL CON ESTILO PROFESIONAL (IGUAL QUE VENTAS)
-        // =========================================================================
-        
+        currentY += 3;
+
+        // =====================================================================
+        // TOTAL
+        // =====================================================================
+        if (currentY + 8 > pageHeight - margin - 30) {
+            pdf.addPage();
+            drawWatermark(pdf, logoBase64, pageWidth, pageHeight);
+            currentY = margin;
+        }
+
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(9);
-        
-        // Fondo para la fila de total
         pdf.setFillColor(200, 200, 200);
         pdf.setDrawColor(0, 0, 0);
         pdf.rect(margin, currentY, totalWidth, 8, 'FD');
-        
-        // Texto "TOTAL DE LA COTIZACION"
         pdf.text('TOTAL DE LA COTIZACION:', margin + 5, currentY + 5);
-        
-        // Monto total alineado a la derecha
         pdf.text(`S/. ${(cotizacionData.totalCotizacion || totalCotizacion).toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
-        
-        currentY += 15;
-        
-        // Resetear color del texto
-        pdf.setTextColor(0, 0, 0);
+        currentY += 13;
 
-        // =========================================================================
-        // INFORMACIÓN ADICIONAL DE COTIZACIÓN (MEJORADA)
-        // =========================================================================
-        
-        if (currentY > pageHeight - 50) {
+        // =====================================================================
+        // TÉRMINOS Y CONDICIONES
+        // =====================================================================
+        if (currentY > pageHeight - 45) {
             pdf.addPage();
-            currentY = 15;
+            drawWatermark(pdf, logoBase64, pageWidth, pageHeight);
+            currentY = margin;
         }
-        
+
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(8);
         pdf.text('TERMINOS Y CONDICIONES:', margin, currentY);
         currentY += 6;
-        
+
         pdf.setFont(fontName, 'normal');
         pdf.setFontSize(8);
-        pdf.text('• ESTA COTIZACION TIENE UNA VALIDEZ DE 7 DIAS DESDE LA FECHA DE EMISION.', margin + 5, currentY);
-        currentY += 4;
-        pdf.text('• LOS PRECIOS ESTAN SUJETOS A CAMBIOS SIN PREVIO AVISO.', margin + 5, currentY);
-        currentY += 4;
-        pdf.text('• PARA CONFIRMAR SU PEDIDO, COMUNIQUESE CON NOSOTROS.', margin + 5, currentY);
-        currentY += 4;
-        
-        if (cotizacionData.validezDias) {
-            pdf.text(`• ESTA COTIZACION ES VALIDA POR ${cotizacionData.validezDias} DIAS.`, margin + 5, currentY);
+        const terminos = [
+            `• ESTA COTIZACION TIENE UNA VALIDEZ DE ${cotizacionData.validezDias || 7} DIAS DESDE LA FECHA DE EMISION.`,
+            '• LOS PRECIOS ESTAN SUJETOS A CAMBIOS SIN PREVIO AVISO.',
+            '• PARA CONFIRMAR SU PEDIDO, COMUNIQUESE CON NOSOTROS.',
+        ];
+        if (cotizacionData.estado === 'confirmada')
+            terminos.push('• ESTA COTIZACION HA SIDO CONFIRMADA Y CONVERTIDA EN VENTA.');
+
+        terminos.forEach(t => {
+            pdf.text(t, margin + 5, currentY);
             currentY += 4;
-        }
-        
-        if (cotizacionData.estado === 'confirmada') {
-            pdf.text('• ESTA COTIZACION HA SIDO CONFIRMADA Y CONVERTIDA EN VENTA.', margin + 5, currentY);
-            currentY += 4;
-        }
-        
-        currentY += 4;
+        });
 
         // Pie de página
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`COTIZACION GENERADA EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-        
-        // Generar nombre de archivo profesional
+        pdf.text(
+            `COTIZACION GENERADA EL ${new Date().toLocaleString('es-PE')}`,
+            pageWidth / 2, pageHeight - 10, { align: 'center' }
+        );
+
         const fechaSufijo = new Date().toISOString().split('T')[0];
-        const clienteSufijo = clienteNombre.replace(/\s+/g, '-').toLowerCase();
+        const clienteSufijo = clienteNombre.replace(/\s+/g, '-').toLowerCase().substring(0, 15);
         const fileName = `cotizacion-${numeroCotizacion.replace(/[^a-zA-Z0-9]/g, '-')}-${clienteSufijo}-${fechaSufijo}.pdf`;
+
         const pdfBlob = pdf.output('blob');
-        const pdfUrl = URL.createObjectURL(pdfBlob);
-        return { url: pdfUrl, fileName };
-        
+        return { url: URL.createObjectURL(pdfBlob), fileName };
+
     } catch (error) {
         console.error('Error al generar PDF de cotización:', error);
         throw error;
     }
 };
 
-// FUNCIÓN PRINCIPAL EXPORTADA CORREGIDA
+// ============================================================================
+// EXPORT
+// ============================================================================
 export const generarPDFCotizacionCompleta = async (cotizacionId, cotizacionData = null, clienteData = null) => {
     try {
-        // Si no se proporciona cotizacionData, obtenerla desde Firestore
         let cotizacion = cotizacionData;
         if (!cotizacion && cotizacionId) {
-            const cotizacionDoc = await getDoc(doc(db, 'cotizaciones', cotizacionId));
-            if (cotizacionDoc.exists()) {
-                cotizacion = { id: cotizacionDoc.id, ...cotizacionDoc.data() };
-            } else {
-                throw new Error('Cotización no encontrada');
-            }
+            const snap = await getDoc(doc(db, 'cotizaciones', cotizacionId));
+            if (snap.exists()) cotizacion = { id: snap.id, ...snap.data() };
+            else throw new Error('Cotización no encontrada');
         }
-        
-        if (!cotizacion) {
-            throw new Error('No se pudo obtener la información de la cotización');
-        }
-        
-        // CORREGIR LA REFERENCIA A LA COLECCIÓN DE CLIENTES
+        if (!cotizacion) throw new Error('No se pudo obtener la información de la cotización');
+
         let cliente = clienteData;
         if (!cliente && cotizacion.clienteId && cotizacion.clienteId !== 'general') {
             try {
-                const clienteDoc = await getDoc(doc(db, 'cliente', cotizacion.clienteId)); // CAMBIÉ 'clientes' por 'cliente'
-                if (clienteDoc.exists()) {
-                    cliente = clienteDoc.data();
-                }
-            } catch (error) {
-                console.warn('No se pudo obtener información del cliente:', error);
-            }
+                const snap = await getDoc(doc(db, 'clientes', cotizacion.clienteId));
+                if (snap.exists()) cliente = snap.data();
+            } catch (_) {}
         }
-        
-        const result = await generarPDFCotizacion(cotizacion, cliente);
-        return result;
-        
+
+        return await generarPDFCotizacion(cotizacion, cliente);
     } catch (error) {
         console.error('Error al generar PDF de cotización:', error);
         throw new Error('Error al generar la cotización. Por favor, inténtalo de nuevo.');

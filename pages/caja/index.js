@@ -227,6 +227,7 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
     const totalDevuelto = devolucionesCredito.reduce((s, d) => s + parseFloat(d.montoADevolver || 0), 0);
     const excedente = parseFloat(ventaCredito?.excedentePagoCliente || 0);
     const netoCobrado = totalAbonado - excedente;
+    
 
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -711,6 +712,11 @@ const CajaPage = () => {
   const unsubsRef = useRef([]);
   const [excedentesCredito, setExcedentesCredito] = useState([]);
 
+  const [filterMetodoPago, setFilterMetodoPago] = useState('all');
+  const [totalesBrutosPorMetodo, setTotalesBrutosPorMetodo] = useState({
+    efectivo: 0, yape: 0, plin: 0, tarjeta: 0
+  });
+
   const [dineroInicial, setDineroInicial] = useState(0);
   const [dineroInicialFijo, setDineroInicialFijo] = useState(0);
   const [showDineroInicialModal, setShowDineroInicialModal] = useState(false);
@@ -800,7 +806,7 @@ const CajaPage = () => {
     } finally { setProcessingDineroInicial(false); }
   };
 
-  const cerrarCaja = async () => {
+const cerrarCaja = async () => {
     if (!isAdmin) { alert('Solo el administrador puede cerrar la caja'); return; }
     if (!window.confirm('¿Está seguro de que desea cerrar la caja del día? Esta acción no se puede deshacer.')) return;
     setLoadingCierreCaja(true);
@@ -822,43 +828,113 @@ const CajaPage = () => {
       const ventasReales = ventas.filter(v => v.tipoVenta !== 'abono');
       const abonosDelDia = ventas.filter(v => v.tipoVenta === 'abono');
 
+      // NOTA: para saber si una devolución es "del mismo día" (afecta ganancia real)
+      // o de "días anteriores" (solo afecta caja), se compara contra las ventas
+      // reales del día — misma lógica que usa calcularTodo() en pantalla.
+      const devolucionesConFlag = devoluciones.map(d => ({
+        ...d,
+        esMismoDia: ventasReales.some(v => v.numeroVenta === d.numeroVenta),
+      }));
+
       const cierreData = limpiar({
         fecha: Timestamp.fromDate(selectedDate), fechaString,
         dineroInicial: dineroInicial || 0,
+
+        // Totales NETOS (después de descontar devoluciones, retiros y excedentes)
         totales: {
           efectivo: totalesDelDia.efectivo || 0, yape: totalesDelDia.yape || 0,
           plin: totalesDelDia.plin || 0, tarjeta: totalesDelDia.tarjeta || 0,
           total: totalesDelDia.total || 0, gananciaBruta: totalesDelDia.gananciaBruta || 0,
           gananciaReal: totalesDelDia.gananciaReal || 0,
         },
-        devoluciones: devoluciones.map(d => limpiar({
+
+        // Totales BRUTOS por método (solo ventas, sin ningún descuento)
+        totalesBrutos: {
+          efectivo: totalesBrutosPorMetodo.efectivo || 0,
+          yape: totalesBrutosPorMetodo.yape || 0,
+          plin: totalesBrutosPorMetodo.plin || 0,
+          tarjeta: totalesBrutosPorMetodo.tarjeta || 0,
+        },
+
+        devoluciones: devolucionesConFlag.map(d => limpiar({
           id: d.id || '', numeroVenta: d.numeroVenta || 'N/A',
           clienteNombre: d.clienteNombre || '', montoADevolver: d.montoADevolver || 0,
-          metodoPagoOriginal: d.metodoPagoOriginal || 'efectivo', estado: d.estado || 'pendiente',
+          metodoPagoOriginal: d.metodoPagoOriginal || 'efectivo',
+          metodoPagoDevolucion: d.metodoPagoDevolucion || d.metodoPagoOriginal || 'efectivo',
+          estado: d.estado || 'pendiente',
+          esMismoDia: !!d.esMismoDia,
+          gananciaRealAfectada: d.gananciaRealAfectada || 0,
         })),
+
+        // Resumen de devoluciones (igual que devolucionesDelDia en pantalla)
+        devolucionesResumen: {
+          totalDevuelto: devolucionesDelDia.totalDevuelto || 0,
+          efectivo: devolucionesDelDia.efectivo || 0,
+          yape: devolucionesDelDia.yape || 0,
+          plin: devolucionesDelDia.plin || 0,
+          tarjeta: devolucionesDelDia.tarjeta || 0,
+          delMismoDia: devolucionesDelDia.delMismoDia || 0,
+          deDiasAnteriores: devolucionesDelDia.deDiasAnteriores || 0,
+          gananciaRealDescontada: devolucionesDelDia.gananciaRealDescontada || 0,
+        },
+
         retiros: retiros.map(r => limpiar({
           id: r.id || '', monto: r.monto || 0, tipo: r.tipo || 'efectivo',
           motivo: r.motivo || '', realizadoPor: r.realizadoPor || '',
+          fecha: r.fecha instanceof Date ? Timestamp.fromDate(r.fecha) : (r.fecha || null),
         })),
+
+        // Excedentes de créditos acumulativos saldados (negocio debe al cliente)
+        excedentes: excedentesCredito.map(c => limpiar({
+          id: c.id || '', clienteNombre: c.clienteNombre || 'N/A',
+          numeroCredito: c.numeroCredito || 'N/A',
+          monto: parseFloat(c.excedentePagoCliente || 0),
+          metodoPago: c.excedenteMetodoPago || 'efectivo',
+        })),
+
         ventas: ventasReales.map(v => limpiar({
           id: v.id || '', numeroVenta: v.numeroVenta || 'N/A',
           clienteNombre: v.clienteNombre || '', totalVenta: v.totalVenta || 0,
           metodoPago: v.metodoPago || 'efectivo',
+          fechaVenta: v.fechaVenta instanceof Date ? Timestamp.fromDate(v.fechaVenta) : (v.fechaVenta || null),
+          paymentData: v.paymentData ? {
+            isMixedPayment: !!v.paymentData.isMixedPayment,
+            paymentMethods: (v.paymentData.paymentMethods || []).map(pm => ({
+              method: pm.method || 'efectivo', amount: parseFloat(pm.amount || 0),
+            })),
+          } : null,
         })),
+
         abonos: abonosDelDia.map(a => limpiar({
           id: a.id || '', ventaId: a.ventaId || a.numeroVenta || 'N/A',
+          creditoId: a.creditoId || null,
           clienteNombre: a.clienteNombre || '', monto: a.totalVenta || 0,
           metodoPago: a.metodoPago || 'efectivo',
+          fechaVenta: a.fechaVenta instanceof Date ? Timestamp.fromDate(a.fechaVenta) : (a.fechaVenta || null),
         })),
+
+        // Desglose de dinero en caja (lo que se ve en las cards de pantalla)
+        dineroEnCaja: {
+          efectivoFisico: dineroEnCaja.efectivoFisico || 0,
+          yape: dineroEnCaja.digital?.yape || 0,
+          plin: dineroEnCaja.digital?.plin || 0,
+          tarjeta: dineroEnCaja.digital?.tarjeta || 0,
+          totalRetiros: dineroEnCaja.totalRetiros || 0,
+        },
+
         resumenFinal: {
           totalVentas: ventasReales.length || 0,
           totalAbonos: abonosDelDia.length || 0,
           totalDevoluciones: devoluciones.length || 0,
-          totalRetiros: retiros.length || 0, dineroInicial: dineroInicial || 0,
+          totalRetiros: retiros.length || 0,
+          totalExcedentes: excedentesCredito.length || 0,
+          dineroInicial: dineroInicial || 0,
           efectivoFinal: Math.max(0, (dineroInicial || 0) + (totalesDelDia.efectivo || 0) - (dineroEnCaja.totalRetiros || 0)),
           digitalTotal: (totalesDelDia.yape || 0) + (totalesDelDia.plin || 0) + (totalesDelDia.tarjeta || 0),
           totalDevuelto: devolucionesDelDia.totalDevuelto || 0,
+          totalExcedentePendiente: excedentesCredito.reduce((s, c) => s + parseFloat(c.excedentePagoCliente || 0), 0),
         },
+
         cerradoPor: user?.email || '', fechaCierre: serverTimestamp(),
       });
       await setDoc(doc(db, 'cierresCaja', fechaString), cierreData);
@@ -887,6 +963,39 @@ const CajaPage = () => {
   };
 
   const calcularTodo = (ventasList = [], devolucionesList = [], retirosList = [], dineroInicialActual = 0, excedentesList = []) => {
+    let brutoEfectivo = 0, brutoYape = 0, brutoPlin = 0, brutoTarjeta = 0;
+    
+    ventasList.forEach(venta => {
+      if (venta.tipoVenta === 'abono' || venta.tipoVenta === 'credito') return; // excluir abonos y créditos
+      
+      const totalVenta = parseFloat(venta.totalVenta || 0);
+      
+      if (venta.paymentData?.paymentMethods) {
+        venta.paymentData.paymentMethods.forEach(pm => {
+          const a = parseFloat(pm.amount || 0);
+          switch (pm.method?.toLowerCase()) {
+            case 'efectivo': brutoEfectivo += a; break;
+            case 'yape': brutoYape += a; break;
+            case 'plin': brutoPlin += a; break;
+            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': brutoTarjeta += a; break;
+          }
+        });
+      } else {
+        switch (venta.metodoPago?.toLowerCase()) {
+          case 'efectivo': brutoEfectivo += totalVenta; break;
+          case 'yape': brutoYape += totalVenta; break;
+          case 'plin': brutoPlin += totalVenta; break;
+          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': brutoTarjeta += totalVenta; break;
+        }
+      }
+    });
+    
+    setTotalesBrutosPorMetodo({
+      efectivo: brutoEfectivo,
+      yape: brutoYape,
+      plin: brutoPlin,
+      tarjeta: brutoTarjeta,
+    });
     let efectivo = 0, yape = 0, plin = 0, tarjeta = 0;
     let gananciaBruta = 0, gananciaReal = 0;
 
@@ -1312,11 +1421,29 @@ const CajaPage = () => {
     };
   }, [user, router, selectedDate]);
 
+  useEffect(() => {
+    setCurrentPageVentas(1);
+  }, [filterMetodoPago]);
+
   // ── Paginación ───────────────────────────────────────────────────────────
-  const totalPagesVentas = Math.ceil(ventas.length / ventasPerPageCaja);
+  const ventasFiltradas = filterMetodoPago === 'all'
+    ? ventas
+    : filterMetodoPago === 'abono'
+      ? ventas.filter(v => v.tipoVenta === 'abono')
+      : ventas.filter(v => {
+          if (v.tipoVenta === 'abono') return false;
+          if (v.paymentData?.paymentMethods) {
+            return v.paymentData.paymentMethods.some(
+              pm => pm.method?.toLowerCase() === filterMetodoPago && pm.amount > 0
+            );
+          }
+          return v.metodoPago?.toLowerCase() === filterMetodoPago;
+        });
+
+  const totalPagesVentas  = Math.ceil(ventasFiltradas.length / ventasPerPageCaja);
   const indexOfLastVenta  = currentPageVentas * ventasPerPageCaja;
   const indexOfFirstVenta = indexOfLastVenta - ventasPerPageCaja;
-  const currentVentasCaja = ventas.slice(indexOfFirstVenta, indexOfLastVenta);
+  const currentVentasCaja = ventasFiltradas.slice(indexOfFirstVenta, indexOfLastVenta);
 
   const totalVentasReales = ventas.filter(v => v.tipoVenta !== 'abono').length;
   const totalAbonosDia    = ventas.filter(v => v.tipoVenta === 'abono').length;
@@ -1466,45 +1593,62 @@ const CajaPage = () => {
           <p className="text-xs text-blue-500">Efectivo disponible para vuelto</p>
         </div>
 
-        {/* Cards métodos de pago */}
+        {/* Cards métodos de pago — NETO (con descuentos) + BRUTO (solo ventas) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          
+          {/* EFECTIVO */}
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 text-sm font-medium">Efectivo Físico</p>
-                <p className="text-2xl font-bold">{formatCurrency(dineroEnCaja.efectivoFisico)}</p>
-                {dineroInicialFijo > 0 && <p className="text-green-200 text-xs mt-1">Incluye inicial: {formatCurrency(dineroInicialFijo)}</p>}
-              </div>
-              <BanknotesIcon className="h-12 w-12 text-green-200" />
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-green-100 text-sm font-medium">Efectivo Físico</p>
+              <BanknotesIcon className="h-10 w-10 text-green-200" />
+            </div>
+            <p className="text-2xl font-bold">{formatCurrency(dineroEnCaja.efectivoFisico)}</p>
+            {/* Línea separadora */}
+            <div className="border-t border-green-400 mt-3 pt-3">
+              <p className="text-green-100 text-xs font-medium">Solo ventas (bruto):</p>
+              <p className="text-lg font-bold text-green-100">{formatCurrency(totalesBrutosPorMetodo.efectivo)}</p>
             </div>
           </div>
+
+          {/* YAPE */}
           <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 text-sm font-medium">Yape Digital</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.yape)}</p>
-              </div>
-              <DevicePhoneMobileIcon className="h-12 w-12 text-purple-200" />
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-purple-100 text-sm font-medium">Yape Digital</p>
+              <DevicePhoneMobileIcon className="h-10 w-10 text-purple-200" />
+            </div>
+            <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.yape)}</p>
+            <div className="border-t border-purple-400 mt-3 pt-3">
+              <p className="text-purple-100 text-xs font-medium">Solo ventas (bruto):</p>
+              <p className="text-lg font-bold text-purple-100">{formatCurrency(totalesBrutosPorMetodo.yape)}</p>
             </div>
           </div>
+
+          {/* PLIN */}
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm font-medium">Plin Digital</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.plin)}</p>
-              </div>
-              <DevicePhoneMobileIcon className="h-12 w-12 text-blue-200" />
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-blue-100 text-sm font-medium">Plin Digital</p>
+              <DevicePhoneMobileIcon className="h-10 w-10 text-blue-200" />
+            </div>
+            <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.plin)}</p>
+            <div className="border-t border-blue-400 mt-3 pt-3">
+              <p className="text-blue-100 text-xs font-medium">Solo ventas (bruto):</p>
+              <p className="text-lg font-bold text-blue-100">{formatCurrency(totalesBrutosPorMetodo.plin)}</p>
             </div>
           </div>
+
+          {/* TARJETA */}
           <div className="bg-gradient-to-br from-gray-600 to-gray-700 rounded-xl p-6 text-white shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-100 text-sm font-medium">Tarjetas</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.tarjeta)}</p>
-              </div>
-              <CreditCardIcon className="h-12 w-12 text-gray-300" />
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-gray-100 text-sm font-medium">Tarjetas</p>
+              <CreditCardIcon className="h-10 w-10 text-gray-300" />
+            </div>
+            <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.tarjeta)}</p>
+            <div className="border-t border-gray-500 mt-3 pt-3">
+              <p className="text-gray-100 text-xs font-medium">Solo ventas (bruto):</p>
+              <p className="text-lg font-bold text-gray-100">{formatCurrency(totalesBrutosPorMetodo.tarjeta)}</p>
             </div>
           </div>
+
         </div>
 
         {/* Ganancias */}
@@ -1617,11 +1761,35 @@ const CajaPage = () => {
 
         <DevolucionesDelDiaComponenteMejorado />
 
+        {/* Filtro de método de pago */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[
+            { value: 'all', label: 'Todos' },
+            { value: 'efectivo', label: 'Efectivo' },
+            { value: 'yape', label: 'Yape' },
+            { value: 'plin', label: 'Plin' },
+            { value: 'tarjeta', label: 'Tarjeta' },
+            { value: 'abono', label: 'Abonos' },
+          ].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setFilterMetodoPago(opt.value)}
+              className={`px-3 py-1 rounded-lg text-sm font-medium transition ${
+                filterMetodoPago === opt.value
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
         {/* Tabla Movimientos */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-1 flex items-center">
             <EyeIcon className="h-6 w-6 text-blue-600 mr-2" />
-            Movimientos del Día ({ventas.length})
+            Movimientos del Día ({ventasFiltradas.length}{filterMetodoPago !== 'all' ? ` de ${ventas.length}` : ''})
           </h3>
           <div className="flex items-center gap-3 mb-4">
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -1857,7 +2025,10 @@ const CajaPage = () => {
           formatCurrency={formatCurrency}
         />
 
+        
+
       </div>
+      
     </Layout>
   );
 };

@@ -410,6 +410,8 @@ const CotizacionesIndexPage = () => {
             paymentMethods: [{ method: currentCotizacionData.metodoPago || 'efectivo', amount: currentCotizacionData.totalCotizacion, label: (currentCotizacionData.metodoPago || 'efectivo').toUpperCase(), icon: '💵' }],
             isMixedPayment: false
           },
+          empleadoAsignadoNombre: currentCotizacionData.empleadoAsignadoNombre || null,
+          placaMoto: currentCotizacionData.placaMoto || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

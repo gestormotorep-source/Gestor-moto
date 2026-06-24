@@ -1,11 +1,12 @@
 // pages/clientes/activos.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useRef } from 'react';
 import { useRouter } from 'next/router';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
+import { Calendar } from '../../components/ui/calendar';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { generarPDFCliente, generarPDFPorPeriodo } from '../../components/utils/pdfGeneratorCredito';
 import {
     collection,
@@ -17,7 +18,8 @@ import {
     doc,
     getDoc,
     Timestamp,
-    limit
+    limit,
+    
 } from 'firebase/firestore';
 import {
     UsersIcon,
@@ -25,7 +27,10 @@ import {
     DocumentTextIcon,
     XMarkIcon,
     PrinterIcon,
-    PlusIcon
+    PlusIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    CalendarIcon
 } from '@heroicons/react/24/outline';
 
 
@@ -220,6 +225,14 @@ const ClientesConCreditoActivos = () => {
     };
 
     // Filtrar clientes según el período seleccionado
+    const getFechaComparable = (c) => {
+        const f = c.fechaApertura || c.fechaCreacion || c.createdAt;
+        if (!f) return null;
+        if (f.toDate) return f.toDate();
+        if (f.seconds) return new Date(f.seconds * 1000);
+        return new Date(f);
+    };
+
     useEffect(() => {
         const filterClientsByDate = async () => {
             if (filterPeriod === 'all' || (!startDate && !endDate)) {
@@ -233,22 +246,20 @@ const ClientesConCreditoActivos = () => {
             }
 
             const clientesFiltradosPromises = clientes.map(async (cliente) => {
-                // Buscar créditos del cliente en el rango de fechas
                 const qCreditos = query(
                     collection(db, 'creditos'),
                     where('clienteId', '==', cliente.id),
-                    where('estado', '==', 'activo'),
-                    where('fechaCreacion', '>=', Timestamp.fromDate(startDate)),
-                    where('fechaCreacion', '<=', Timestamp.fromDate(endDate))
+                    where('estado', '==', 'activo')
                 );
 
                 const creditosSnapshot = await getDocs(qCreditos);
-                
-                if (creditosSnapshot.empty) {
-                    return null; // No incluir este cliente
-                }
 
-                return cliente;
+                const tieneCreditoEnRango = creditosSnapshot.docs.some(d => {
+                    const fecha = getFechaComparable(d.data());
+                    return fecha && fecha >= startDate && fecha <= endDate;
+                });
+
+                return tieneCreditoEnRango ? cliente : null;
             });
 
             const resultados = await Promise.all(clientesFiltradosPromises);
@@ -259,31 +270,115 @@ const ClientesConCreditoActivos = () => {
         filterClientsByDate();
     }, [clientes, filterPeriod, startDate, endDate, limitPerPage]);
 
+    const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
+    const [open, setOpen] = useState(false);
+    const [month, setMonth] = useState(selected || new Date());
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handler = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handler);
+      return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const prevMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    const nextMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i);
+
+    return (
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen(prev => !prev)}
+          className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        >
+          <CalendarIcon className="h-4 w-4 text-gray-400" />
+          {selected
+            ? format(selected, 'dd/MM/yyyy', { locale: es })
+            : <span className="text-gray-400">{placeholder}</span>
+          }
+        </button>
+
+        {open && (
+          <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-xl">
+            <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
+              <button
+                onClick={prevMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-1">
+                <select
+                  value={month.getMonth()}
+                  onChange={(e) => setMonth(m => new Date(m.getFullYear(), parseInt(e.target.value), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {meses.map((mes, i) => (
+                    <option key={i} value={i}>{mes}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={month.getFullYear()}
+                  onChange={(e) => setMonth(m => new Date(parseInt(e.target.value), m.getMonth(), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {years.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={nextMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <Calendar
+              mode="single"
+              selected={selected}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={(date) => {
+                if (date) {
+                  onChange(date);
+                  setOpen(false);
+                }
+              }}
+              disabled={minDate ? { before: minDate } : undefined}
+              captionLayout="label"
+              classNames={{
+                month_caption: "hidden",
+                nav: "hidden",
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
     // Generar PDF detallado para un cliente específico - ACTUALIZADA PARA INCLUIR ABONOS
     const generarPDFClienteHandler = async (cliente) => {
         setGeneratingPDF(true);
         try {
-            let qCreditos;
-            if (filterPeriod === 'all' || (!startDate && !endDate)) {
-                qCreditos = query(
-                    collection(db, 'creditos'),
-                    where('clienteId', '==', cliente.id),
-                    where('estado', '==', 'activo'),
-                    orderBy('fechaCreacion', 'desc')
-                );
-            } else {
-                qCreditos = query(
-                    collection(db, 'creditos'),
-                    where('clienteId', '==', cliente.id),
-                    where('estado', '==', 'activo'),
-                    where('fechaCreacion', '>=', Timestamp.fromDate(startDate)),
-                    where('fechaCreacion', '<=', Timestamp.fromDate(endDate)),
-                    orderBy('fechaCreacion', 'desc')
-                );
-            }
+            const qCreditos = query(
+                collection(db, 'creditos'),
+                where('clienteId', '==', cliente.id),
+                where('estado', '==', 'activo')
+            );
 
             const creditosSnapshot = await getDocs(qCreditos);
-            const creditos = [];
+            let creditos = [];
 
             for (const creditoDoc of creditosSnapshot.docs) {
                 const creditoData = { id: creditoDoc.id, ...creditoDoc.data() };
@@ -295,6 +390,18 @@ const ClientesConCreditoActivos = () => {
                 const items = itemsSnapshot.docs.map(itemDoc => ({ id: itemDoc.id, ...itemDoc.data() }));
                 creditos.push({ ...creditoData, items });
             }
+
+            // Filtrar por rango de fechas en JS (solo si NO es "Todas")
+            if (filterPeriod !== 'all' && startDate && endDate) {
+                const startMs = startDate.getTime();
+                const endMs = endDate.getTime();
+                creditos = creditos.filter(c => {
+                    const t = getFechaComparable(c);
+                    return t >= startMs && t <= endMs;
+                });
+            }
+
+            creditos.sort((a, b) => getFechaComparable(b) - getFechaComparable(a));
 
             if (creditos.length === 0) {
                 showAlert('Este cliente no tiene créditos activos para el período seleccionado.');
@@ -342,10 +449,52 @@ const ClientesConCreditoActivos = () => {
     const generarPDFPorPeriodoHandler = async () => {
         setGeneratingPDF(true);
         try {
-            if (clientesFiltrados.length === 0) {
-                showAlert('No hay clientes con crédito para el período seleccionado.');
+            const qCreditosActivos = query(
+                collection(db, 'creditos'),
+                where('estado', '==', 'activo')
+            );
+            const snap = await getDocs(qCreditosActivos);
+            let creditosActivos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // Si hay un período específico (no "Todas"), filtrar por fecha de apertura/creación.
+            // Los créditos acumulativos usan fechaApertura; los legacy usan fechaCreacion.
+            if (filterPeriod !== 'all' && startDate && endDate) {
+                creditosActivos = creditosActivos.filter(c => {
+                    const f = c.fechaApertura || c.fechaCreacion;
+                    if (!f) return false;
+                    const fecha = f.toDate ? f.toDate() : new Date(f.seconds ? f.seconds * 1000 : f);
+                    return fecha >= startDate && fecha <= endDate;
+                });
+            }
+
+            if (creditosActivos.length === 0) {
+                showAlert('No hay créditos activos para el período seleccionado.');
                 return;
             }
+
+            // Agrupar por cliente (un cliente legacy podría tener más de un crédito activo)
+            const porCliente = {};
+            creditosActivos.forEach(c => {
+                const cid = c.clienteId;
+                if (!cid) return;
+                if (!porCliente[cid]) {
+                    porCliente[cid] = {
+                        id: cid,
+                        clienteNombre: c.clienteNombre || 'N/A',
+                        dni: c.clienteDNI || '',
+                        montoTotal: 0,
+                        montoPagado: 0,
+                        saldoPendiente: 0,
+                    };
+                }
+                porCliente[cid].montoTotal     += parseFloat(c.montoTotal || 0);
+                porCliente[cid].montoPagado    += parseFloat(c.montoPagado || 0);
+                porCliente[cid].saldoPendiente += parseFloat(c.saldoPendiente || 0);
+            });
+
+            const clientesEnriquecidos = Object.values(porCliente).sort((a, b) =>
+                (a.clienteNombre || '').localeCompare(b.clienteNombre || '')
+            );
 
             const getPeriodoNombre = () => {
                 switch (filterPeriod) {
@@ -357,7 +506,7 @@ const ClientesConCreditoActivos = () => {
                 }
             };
 
-            const result = await generarPDFPorPeriodo(clientesFiltrados, getPeriodoNombre());
+            const result = await generarPDFPorPeriodo(clientesEnriquecidos, getPeriodoNombre());
             setModalPDF({ url: result.url, fileName: result.fileName });
 
         } catch (error) {
@@ -434,37 +583,31 @@ const ClientesConCreditoActivos = () => {
 
     {/* Selectores de Fecha */}
     <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2 lg:flex-shrink-0">
-        <DatePicker
+        <DatePickerPopover
             selected={startDate}
             onChange={(date) => {
-                setStartDate(date);
+                const startOfDay = new Date(date);
+                startOfDay.setHours(0, 0, 0, 0);
+                setStartDate(startOfDay);
                 setFilterPeriod('custom');
             }}
-            selectsStart
-            startDate={startDate}
-            endDate={endDate}
-            placeholderText="Fecha de inicio"
-            className="w-full sm:w-40 lg:w-36 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+            placeholder="Fecha inicio"
         />
-        <DatePicker
+        <DatePickerPopover
             selected={endDate}
             onChange={(date) => {
-                setEndDate(date);
+                const endOfDay = new Date(date);
+                endOfDay.setHours(23, 59, 59, 999);
+                setEndDate(endOfDay);
                 setFilterPeriod('custom');
             }}
-            selectsEnd
-            startDate={startDate}
-            endDate={endDate}
+            placeholder="Fecha fin"
             minDate={startDate}
-            placeholderText="Fecha de fin"
-            className="w-full sm:w-40 lg:w-36 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
         />
     </div>
 
-    {/* Fila inferior en móvil - horizontal en desktop */}
     <div className="flex flex-wrap gap-2 lg:flex-nowrap lg:items-center lg:space-x-2">
         
-        {/* Selector de límite por página */}
         <div className="flex-shrink-0">
             <select
                 id="limit-per-page"
@@ -484,7 +627,7 @@ const ClientesConCreditoActivos = () => {
         {/* Botón de Reporte por Período */}
         <button
             onClick={generarPDFPorPeriodoHandler}
-            disabled={clientesFiltrados.length === 0 || generatingPDF}
+            disabled={generatingPDF}
             className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
             <DocumentTextIcon className="h-4 w-4 mr-2" />
