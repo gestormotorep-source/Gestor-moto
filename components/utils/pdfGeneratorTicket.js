@@ -4,8 +4,8 @@ import { db } from '../../lib/firebase';
 
 const EMPRESA = {
     nombre: "GOYO MOTOR'S",
-    email: 'contacto.goyomotors@gmail.com',
-    direccion: 'Av. Los Heroes 778 - San Juan de Miraflores',
+    email: 'CONTATO.GOYOMOTORS@GMAIL.COM',       
+    direccion: 'AV. LOS HEROES 778 SAN JUAN DE MIRAFLORES',   
     telefono: '993393609',
     logoPath: '/logo.png',
 };
@@ -200,9 +200,9 @@ const generarTicket = async (ventaData, clienteData) => {
     setCN(pdf, fn, 7.5);
     pdf.text(`N\u00BA ${numeroVenta}`, ML, y);
     y += 4;
-    y = kvLine(pdf, 'Tipo',  getTipoVentaLabel(ventaData.tipoVenta), y, fn, 7.5);
-    y = kvLine(pdf, 'Fecha', fechaVenta,  y, fn, 7.5);
-    y = kvLine(pdf, 'Hora',  horaVenta,   y, fn, 7.5);
+    y = kvLine(pdf, 'TIPO',  getTipoVentaLabel(ventaData.tipoVenta).toUpperCase(), y, fn, 7.5);
+    y = kvLine(pdf, 'FECHA', fechaVenta.toUpperCase(),  y, fn, 7.5);
+    y = kvLine(pdf, 'HORA',  horaVenta.toUpperCase(),   y, fn, 7.5);
     y += 0.5;
     y = dashedLine(pdf, y, fn);
     y += 1.5;
@@ -215,12 +215,14 @@ const generarTicket = async (ventaData, clienteData) => {
         : ventaData.clienteNombre || 'Cliente General';
     const dniVal = clienteData?.dni || ventaData.clienteDNI;
 
-    y = kvLine(pdf, 'Cliente',  clienteNombre,  y, fn, 7.5);
-    if (dniVal) y = kvLine(pdf, 'DNI', String(dniVal), y, fn, 7.5);
+    y = kvLine(pdf, 'CLIENTE',  clienteNombre.toUpperCase(),  y, fn, 7.5);
+    if (dniVal) y = kvLine(pdf, 'DNI', String(dniVal).toUpperCase(), y, fn, 7.5);
     if (ventaData.empleadoAsignadoNombre)
-        y = kvLine(pdf, 'Atendido', ventaData.empleadoAsignadoNombre, y, fn, 7.5);
+        y = kvLine(pdf, 'ATENDIDO', ventaData.empleadoAsignadoNombre.toUpperCase(), y, fn, 7.5);
     if (ventaData.placaMoto)
-        y = kvLine(pdf, 'Placa', ventaData.placaMoto.toUpperCase(), y, fn, 7.5);
+        y = kvLine(pdf, 'PLACA', ventaData.placaMoto.toUpperCase(), y, fn, 7.5);
+    if (ventaData.modeloMoto)
+        y = kvLine(pdf, 'MODELO', ventaData.modeloMoto.toUpperCase(), y, fn, 7.5);
     y += 0.5;
     y = dashedLine(pdf, y, fn);
     y += 2.5;
@@ -319,8 +321,8 @@ const generarTicket = async (ventaData, clienteData) => {
     pdf.text(`S/ ${descuento}`, C4 - dsW, y);
     y += 3;
 
-    y = hLine(pdf, y, 0.4);
-    y += 2.5;  // un pelín más de espacio antes del total
+    y = hLine(pdf, y, 0.5);
+    y += 2.5;
 
     // TOTAL A PAGAR — centrado completo
     setCB(pdf, fn, 11);
@@ -341,11 +343,11 @@ const generarTicket = async (ventaData, clienteData) => {
         metodoPagoTexto = getMetodoPagoLabel(ventaData.metodoPago);
     }
 
-    y = hLine(pdf, y, 0.5);
+    y = dashedLine(pdf, y, fn);
     y += 3;
     y = cText(pdf, `PAGO:  ${metodoPagoTexto}`, y, fn, 9, true);
     y += 1;
-    y = hLine(pdf, y, 0.5);
+    y = dashedLine(pdf, y, fn);
     y += 2.5;
 
     // Detalle pago mixto
@@ -387,11 +389,8 @@ const generarTicket = async (ventaData, clienteData) => {
     // =========================================================================
     y += 1;
     y = cText(pdf, '!GRACIAS POR SU COMPRA!', y, fn, 10, true);
-    y += 1;
-    y = cText(pdf, `WhatsApp: ${EMPRESA.telefono}`, y, fn, 7.5);
-    y = cText(pdf, EMPRESA.email, y, fn, 7.5);
     y += 2;
-    y = hLine(pdf, y, 0.3);
+    y = dashedLine(pdf, y, fn);
     y += 1.5;
     y = cText(pdf, 'Conserve este comprobante', y, fn, 7);
     y = cText(pdf, 'para cualquier cambio o consulta.', y, fn, 7);
@@ -401,7 +400,7 @@ const generarTicket = async (ventaData, clienteData) => {
         day: '2-digit', month: '2-digit', year: '2-digit',
         hour: '2-digit', minute: '2-digit'
     });
-    y = cText(pdf, `Generado: ${fechaGen}`, y, fn, 6);
+    y = cText(pdf, `Generado: ${fechaGen}`, y, fn, 7);
 
     const fechaSufijo = new Date().toISOString().split('T')[0];
     const clienteSufijo = clienteNombre.replace(/\s+/g, '-').toLowerCase().substring(0, 10);

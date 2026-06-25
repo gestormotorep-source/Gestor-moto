@@ -367,25 +367,37 @@ const VentaDetailPage = () => {
               <p><span className="font-semibold">Registrado por:</span> {venta.empleadoId || 'Desconocido'}</p>
             </div>
 
-            {cotizacionData?.empleadoAsignadoNombre && (
+            {venta.empleadoAsignadoNombre && (
               <div className="flex items-center text-gray-700">
                 <IdentificationIcon className="h-5 w-5 mr-2 text-blue-500" />
                 <p>
                   <span className="font-semibold">Empleado Asignado:</span>
                   <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {cotizacionData.empleadoAsignadoNombre}
+                    {venta.empleadoAsignadoNombre}
                   </span>
                 </p>
               </div>
             )}
 
-            {cotizacionData?.placaMoto && (
+            {venta.placaMoto && (
               <div className="flex items-center text-gray-700">
                 <TruckIcon className="h-5 w-5 mr-2 text-green-500" />
                 <p>
                   <span className="font-semibold">Placa de Moto:</span>
                   <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 font-mono">
-                    {cotizacionData.placaMoto}
+                    {venta.placaMoto}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            {venta.modeloMoto && (
+              <div className="flex items-center text-gray-700">
+                <TruckIcon className="h-5 w-5 mr-2 text-gray-500" />
+                <p>
+                  <span className="font-semibold">Modelo de Moto:</span>
+                  <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    {venta.modeloMoto}
                   </span>
                 </p>
               </div>

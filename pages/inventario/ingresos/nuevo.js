@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
+import Select from 'react-select';
 import { db } from '../../../lib/firebase';
 import { 
   collection,
@@ -36,6 +37,7 @@ const NuevoIngresoPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [proveedores, setProveedores] = useState([]);
+  const [selectedProveedor, setSelectedProveedor] = useState(null);
 
   // Estado para mostrar el modal de umbral
   const [showUmbralEdit, setShowUmbralEdit] = useState(false);
@@ -218,6 +220,27 @@ const NuevoIngresoPage = () => {
     setIngresoPrincipalData(prev => ({ ...prev, [name]: value }));
   };
 
+  const proveedorOptions = proveedores.map(prov => ({
+    value: prov.id,
+    label: prov.nombreEmpresa
+  }));
+
+  useEffect(() => {
+    if (ingresoPrincipalData.proveedorId && proveedores.length > 0) {
+      const prov = proveedores.find(p => p.id === ingresoPrincipalData.proveedorId);
+      setSelectedProveedor(prov ? { value: prov.id, label: prov.nombreEmpresa } : null);
+    } else {
+      setSelectedProveedor(null);
+    }
+  }, [ingresoPrincipalData.proveedorId, proveedores]);
+
+  const handleUpdateProveedor = (selectedOption) => {
+    setSelectedProveedor(selectedOption);
+    setIngresoPrincipalData(prev => ({
+      ...prev,
+      proveedorId: selectedOption?.value || ''
+    }));
+  };
   // Abrir modal de cantidad para agregar producto
   const handleSelectProduct = (product) => {
     setSelectedProduct(product);
@@ -726,21 +749,14 @@ const NuevoIngresoPage = () => {
                       <label htmlFor="proveedorId" className="block text-sm font-medium text-gray-700 mb-2">
                         Proveedor
                       </label>
-                      <select
-                        id="proveedorId"
-                        name="proveedorId"
-                        value={ingresoPrincipalData.proveedorId}
-                        onChange={handleIngresoPrincipalChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">Seleccione un proveedor</option>
-                        {proveedores.map((prov) => (
-                          <option key={prov.id} value={prov.id}>
-                            {prov.nombreEmpresa}
-                          </option>
-                        ))}
-                      </select>
+                      <Select
+                        options={proveedorOptions}
+                        value={selectedProveedor}
+                        onChange={handleUpdateProveedor}
+                        placeholder="Seleccionar proveedor..."
+                        className="text-sm"
+                        isClearable
+                      />
                     </div>
 
                     {/* Observaciones */}

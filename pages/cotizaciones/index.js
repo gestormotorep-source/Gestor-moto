@@ -412,6 +412,7 @@ const CotizacionesIndexPage = () => {
           },
           empleadoAsignadoNombre: currentCotizacionData.empleadoAsignadoNombre || null,
           placaMoto: currentCotizacionData.placaMoto || null,
+          modeloMoto: currentCotizacionData.modeloMoto || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

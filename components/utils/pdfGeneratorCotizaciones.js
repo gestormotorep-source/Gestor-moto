@@ -4,8 +4,8 @@ import { db } from '../../lib/firebase';
 
 const EMPRESA = {
     nombre: "GOYO MOTOR'S",
-    email: 'contacto.goyomotors@gmail.com',
-    direccion: 'Av. Los héroes 778 San Juan de Miraflores',
+    email: 'CONTATO.GOYOMOTORS@GMAIL.COM',       
+    direccion: 'AV. LOS HEROES 778 SAN JUAN DE MIRAFLORES',   
     telefono: '993393609',
     logoPath: '/logo.png',
 };
@@ -347,16 +347,22 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
                 drawInfoLine(pdf, fontName, 'PLACA MOTO: ', cotizacionData.placaMoto.toUpperCase(), colDerecha, currentY + 5);
                 alturaDerecha = Math.max(alturaDerecha, 10);
             }
+            if (cotizacionData.modeloMoto) {
+                drawInfoLine(pdf, fontName, 'MODELO MOTO: ', cotizacionData.modeloMoto.toUpperCase(), colDerecha, currentY + 10);
+                alturaDerecha = Math.max(alturaDerecha, 15);
+            }
             if (cotizacionData.observaciones) {
                 const labelObs = 'OBSERVACIONES: ';
                 const labelObsW = pdf.getTextWidth(labelObs);
                 const obsLines = pdf.splitTextToSize(cotizacionData.observaciones.toUpperCase(), maxWidthDerecha - labelObsW);
+                const obsOffsetY = currentY + (cotizacionData.modeloMoto ? 15 : 10);
                 pdf.setFont(fontName, 'bold');
-                pdf.text(labelObs, colDerecha, currentY + 10);
+                pdf.text(labelObs, colDerecha, obsOffsetY);
                 pdf.setFont(fontName, 'normal');
-                pdf.text(obsLines, colDerecha + labelObsW, currentY + 10);
-                alturaDerecha = Math.max(alturaDerecha, 10 + obsLines.length * obsLineHeight);
+                pdf.text(obsLines, colDerecha + labelObsW, obsOffsetY);
+                alturaDerecha = Math.max(alturaDerecha, (cotizacionData.modeloMoto ? 15 : 10) + obsLines.length * obsLineHeight);
             }
+            
         } else {
             if (cotizacionData.observaciones) {
                 const labelObs = 'OBSERVACIONES: ';

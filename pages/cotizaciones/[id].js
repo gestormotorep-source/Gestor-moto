@@ -72,6 +72,7 @@ const EditarVerCotizacionPage = () => {
   const [selectedCliente, setSelectedCliente] = useState(null);
   const [selectedEmpleado, setSelectedEmpleado] = useState(null);
   const [placaMoto, setPlacaMoto] = useState('');
+  const [modeloMoto, setModeloMoto] = useState('');
   const [metodoPago, setMetodoPago] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
@@ -158,6 +159,7 @@ const EditarVerCotizacionPage = () => {
 
       // Sincronizar campos simples
       setPlacaMoto(cotizacionData.placaMoto || '');
+      setModeloMoto(cotizacionData.modeloMoto || '');
       setMetodoPago(cotizacionData.metodoPago || '');
       setObservaciones(cotizacionData.observaciones || '');
       if (cotizacionData.paymentData) setPaymentData(cotizacionData.paymentData);
@@ -386,6 +388,18 @@ const EditarVerCotizacionPage = () => {
     } catch (err) {
       console.error("Error al actualizar método de pago:", err);
       setError("Error al actualizar método de pago");
+    }
+  };
+
+  const handleUpdateModeloMoto = async (nuevoModelo) => {
+    if (!cotizacion?.id || isViewOnly) return;
+    try {
+      await updateDoc(doc(db, 'cotizaciones', cotizacion.id), {
+        modeloMoto: nuevoModelo || null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Error al actualizar modelo moto:", err);
     }
   };
 
@@ -724,6 +738,7 @@ const handleGuardarCotizacion = async () => {
       metodoPago: paymentData.isMixedPayment ? 'mixto' : (paymentData.paymentMethods[0]?.method || metodoPago || 'efectivo'),
       paymentData: paymentData,
       placaMoto: placaMoto || null, // ← SE GUARDA AQUÍ
+      modeloMoto: modeloMoto || null,
       observaciones: observaciones || '', // ← SE GUARDA AQUÍ
       fechaGuardado: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1018,6 +1033,25 @@ const handleGuardarCotizacion = async () => {
                             : 'focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                         }`}
                       />
+                    </div>
+
+                    {/* Modelo de Moto */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Modelo de Moto:</label>
+                      {isViewOnly ? (
+                        <div className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900">
+                          {cotizacion.modeloMoto || 'No especificado'}
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={modeloMoto}
+                          onChange={(e) => setModeloMoto(e.target.value)}
+                          onBlur={() => handleUpdateModeloMoto(modeloMoto)}
+                          placeholder="Ej: Honda Wave 110, Yamaha YBR..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      )}
                     </div>
 
                     {/* Configuración de Pago */}

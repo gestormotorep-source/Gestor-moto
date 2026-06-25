@@ -966,7 +966,7 @@ const cerrarCaja = async () => {
     let brutoEfectivo = 0, brutoYape = 0, brutoPlin = 0, brutoTarjeta = 0;
     
     ventasList.forEach(venta => {
-      if (venta.tipoVenta === 'abono' || venta.tipoVenta === 'credito') return; // excluir abonos y créditos
+      if (venta.tipoVenta === 'credito') return;// excluir abonos y créditos
       
       const totalVenta = parseFloat(venta.totalVenta || 0);
       
@@ -989,7 +989,7 @@ const cerrarCaja = async () => {
         }
       }
     });
-    
+    brutoEfectivo += dineroInicialActual;
     setTotalesBrutosPorMetodo({
       efectivo: brutoEfectivo,
       yape: brutoYape,
@@ -1605,7 +1605,6 @@ const cerrarCaja = async () => {
             <p className="text-2xl font-bold">{formatCurrency(dineroEnCaja.efectivoFisico)}</p>
             {/* Línea separadora */}
             <div className="border-t border-green-400 mt-3 pt-3">
-              <p className="text-green-100 text-xs font-medium">Solo ventas (bruto):</p>
               <p className="text-lg font-bold text-green-100">{formatCurrency(totalesBrutosPorMetodo.efectivo)}</p>
             </div>
           </div>
@@ -1618,7 +1617,6 @@ const cerrarCaja = async () => {
             </div>
             <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.yape)}</p>
             <div className="border-t border-purple-400 mt-3 pt-3">
-              <p className="text-purple-100 text-xs font-medium">Solo ventas (bruto):</p>
               <p className="text-lg font-bold text-purple-100">{formatCurrency(totalesBrutosPorMetodo.yape)}</p>
             </div>
           </div>
@@ -1631,7 +1629,6 @@ const cerrarCaja = async () => {
             </div>
             <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.plin)}</p>
             <div className="border-t border-blue-400 mt-3 pt-3">
-              <p className="text-blue-100 text-xs font-medium">Solo ventas (bruto):</p>
               <p className="text-lg font-bold text-blue-100">{formatCurrency(totalesBrutosPorMetodo.plin)}</p>
             </div>
           </div>
@@ -1644,7 +1641,6 @@ const cerrarCaja = async () => {
             </div>
             <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.tarjeta)}</p>
             <div className="border-t border-gray-500 mt-3 pt-3">
-              <p className="text-gray-100 text-xs font-medium">Solo ventas (bruto):</p>
               <p className="text-lg font-bold text-gray-100">{formatCurrency(totalesBrutosPorMetodo.tarjeta)}</p>
             </div>
           </div>

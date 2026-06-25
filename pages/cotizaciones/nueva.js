@@ -67,6 +67,7 @@ const NuevaCotizacionPage = () => {
   const [selectedCliente, setSelectedCliente] = useState(null);
   const [selectedEmpleado, setSelectedEmpleado] = useState(null);
   const [placaMoto, setPlacaMoto] = useState('');
+  const [modeloMoto, setModeloMoto] = useState('');
   const [metodoPago, setMetodoPago] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
@@ -305,6 +306,7 @@ const NuevaCotizacionPage = () => {
 
       setPlacaMoto(cotizacionActiva.placaMoto || '');
       setMetodoPago(cotizacionActiva.metodoPago || '');
+      setModeloMoto(cotizacionActiva.modeloMoto || '');
       setObservaciones(cotizacionActiva.observaciones || '');
     }
   }, [cotizacionActiva, clientes, empleados]);
@@ -461,38 +463,48 @@ const NuevaCotizacionPage = () => {
     }
   };
   // Actualizar observaciones
-const handleUpdateObservaciones = async (nuevasObservaciones) => {
-  if (!cotizacionActiva?.id) return;
+  const handleUpdateObservaciones = async (nuevasObservaciones) => {
+    if (!cotizacionActiva?.id) return;
 
-  try {
-    const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-    await updateDoc(cotizacionRef, {
-      observaciones: nuevasObservaciones || '',
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.error("Error al actualizar observaciones:", err);
-    setError("Error al actualizar observaciones");
-  }
-};
+    try {
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+      await updateDoc(cotizacionRef, {
+        observaciones: nuevasObservaciones || '',
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Error al actualizar observaciones:", err);
+      setError("Error al actualizar observaciones");
+    }
+  };
 
-// Actualizar placa de moto
-const handleUpdatePlacaMoto = async (nuevaPlaca) => {
-  if (!cotizacionActiva?.id) return;
+  // Actualizar placa de moto
+  const handleUpdatePlacaMoto = async (nuevaPlaca) => {
+    if (!cotizacionActiva?.id) return;
 
-  try {
-    const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-    await updateDoc(cotizacionRef, {
-      placaMoto: nuevaPlaca || null,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.error("Error al actualizar placa:", err);
-    setError("Error al actualizar placa");
-  }
-};
+    try {
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+      await updateDoc(cotizacionRef, {
+        placaMoto: nuevaPlaca || null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Error al actualizar placa:", err);
+      setError("Error al actualizar placa");
+    }
+  };
 
-
+  const handleUpdateModeloMoto = async (nuevoModelo) => {
+    if (!cotizacionActiva?.id) return;
+    try {
+      await updateDoc(doc(db, 'cotizaciones', cotizacionActiva.id), {
+        modeloMoto: nuevoModelo || null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Error al actualizar modelo moto:", err);
+    }
+  };
 
   // Abrir modal de cantidad
   const handleSelectProduct = (product) => {
@@ -884,6 +896,7 @@ const handleAddProductToCotizacion = async () => {
         metodoPago: paymentData.isMixedPayment ? 'mixto' : (paymentData.paymentMethods[0]?.method || metodoPago || 'efectivo'),
         paymentData: paymentData,
         placaMoto: placaMoto || null,
+        modeloMoto: modeloMoto || null,
         observaciones: observaciones || '', // ← SE GUARDA AQUÍ
         fechaGuardado: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1028,6 +1041,19 @@ const handleAddProductToCotizacion = async () => {
                           onChange={(e) => setPlacaMoto(e.target.value)}
                           onBlur={() => handleUpdatePlacaMoto(placaMoto)}
                           placeholder="Ej: ABC-123"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      {/* Modelo de Moto */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Modelo de Moto:</label>
+                        <input
+                          type="text"
+                          value={modeloMoto}
+                          onChange={(e) => setModeloMoto(e.target.value)}
+                          onBlur={() => handleUpdateModeloMoto(modeloMoto)}
+                          placeholder="Ej: Honda Wave 110, Yamaha YBR..."
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                       </div>

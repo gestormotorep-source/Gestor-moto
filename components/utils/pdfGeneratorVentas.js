@@ -4,8 +4,8 @@
 
     const EMPRESA = {
         nombre: 'GOYO MOTOR\'S',                                 
-        email: 'contacto.goyomotors@gmail.com',       
-        direccion: 'Av. Los héroes 778 San Juan de Miraflores',       
+        email: 'CONTATO.GOYOMOTORS@GMAIL.COM',       
+        direccion: 'AV. LOS HEROES 778 SAN JUAN DE MIRAFLORES',       
         telefono: '993393609',              
         logoPath: '/logo.png',                              };
 
@@ -520,8 +520,9 @@ const clienteNombre = clienteData ?
     ventaData.clienteNombre || 'Cliente General';
 
 const tieneEmpleado = !!ventaData.empleadoAsignadoNombre;
-const tienePlaca = !!ventaData.placaMoto;
-const tieneExtras = tieneEmpleado || tienePlaca;
+const tienePlaca    = !!ventaData.placaMoto;
+const tieneModelo   = !!ventaData.modeloMoto;
+const tieneExtras   = tieneEmpleado || tienePlaca || tieneModelo;
 
 const dniVal = clienteData?.dni || ventaData.clienteDNI;
 drawInfoLine(pdf, fontName, 'CLIENTE: ', clienteNombre.toUpperCase(), margin, currentY);
@@ -546,16 +547,20 @@ if (tieneExtras) {
         drawInfoLine(pdf, fontName, 'PLACA MOTO: ', ventaData.placaMoto.toUpperCase(), colDerecha, currentY + 5);
         alturaDerecha = Math.max(alturaDerecha, 10);
     }
+    if (tieneModelo) {
+        drawInfoLine(pdf, fontName, 'MODELO MOTO: ', ventaData.modeloMoto.toUpperCase(), colDerecha, currentY + 10);
+        alturaDerecha = Math.max(alturaDerecha, 15);
+    }
     if (ventaData.observaciones) {
         const labelObs = 'OBSERVACIONES: ';
         const labelObsW = pdf.getTextWidth(labelObs);
         const obsLines = pdf.splitTextToSize(ventaData.observaciones.toUpperCase(), maxWidthDerecha - labelObsW);
+        const obsOffsetY = currentY + (tieneModelo ? 15 : tienePlaca ? 10 : 5);
         pdf.setFont(fontName, 'bold');
-        pdf.text(labelObs, colDerecha, currentY + 10);
+        pdf.text(labelObs, colDerecha, obsOffsetY);
         pdf.setFont(fontName, 'normal');
-        pdf.text(obsLines, colDerecha + labelObsW, currentY + 10);
-        // la obs empieza en +10 y ocupa obsLines.length líneas
-        alturaDerecha = Math.max(alturaDerecha, 10 + (obsLines.length * obsLineHeight));
+        pdf.text(obsLines, colDerecha + labelObsW, obsOffsetY);
+        alturaDerecha = Math.max(alturaDerecha, (tieneModelo ? 15 : tienePlaca ? 10 : 5) + obsLines.length * obsLineHeight);
     }
 } else {
     if (ventaData.observaciones) {

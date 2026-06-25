@@ -4,8 +4,8 @@ import { db } from '../../lib/firebase';
 
 const EMPRESA = {
     nombre: "GOYO MOTOR'S",
-    email: 'contacto.goyomotors@gmail.com',
-    direccion: 'Av. Los héroes 778 San Juan de Miraflores',
+    email: 'CONTATO.GOYOMOTORS@GMAIL.COM',       
+    direccion: 'AV. LOS HEROES 778 SAN JUAN DE MIRAFLORES',   
     telefono: '993393609',
     logoPath: '/logo.png',
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../../lib/firebase';
 import {
   collection, getDocs, updateDoc, doc,
@@ -40,6 +40,10 @@ export default function EditarPreciosMasivo() {
 
   // ─── Map producto ────────────────────────────────────────────
   const mapProducto = (d) => ({ id: d.id, ...d.data() });
+
+  const productoRefs = useRef({});
+  const [indiceAfectado, setIndiceAfectado] = useState(0);
+  const [ordenAfectadosPrimero, setOrdenAfectadosPrimero] = useState(false);
 
   // ─── Inicializar inputs de lotes ─────────────────────────────
   const inicializarInputs = (lotes) => {
@@ -179,6 +183,53 @@ export default function EditarPreciosMasivo() {
     }
   };
 
+  const [cargandoTodos, setCargandoTodos] = useState(false);
+
+  const cargarTodosLosAfectados = async () => {
+    setCargandoTodos(true);
+    try {
+      // Trae TODOS los productos donde precioVentaDefault == 0 O precioVentaMinimo == 0
+      const [snapVenta, snapMinimo] = await Promise.all([
+        getDocs(query(collection(db, 'productos'), where('precioVentaDefault', '==', 0))),
+        getDocs(query(collection(db, 'productos'), where('precioVentaMinimo',  '==', 0))),
+      ]);
+
+      // Deduplicar por id
+      const mapaExistentes = new Map(productos.map(p => [p.id, p]));
+      const mapaYaCargados = new Set(productos.map(p => p.id));
+
+      const nuevosIds = new Map();
+      [...snapVenta.docs, ...snapMinimo.docs].forEach(d => {
+        if (!mapaYaCargados.has(d.id)) {
+          nuevosIds.set(d.id, mapProducto(d));
+        }
+      });
+
+      if (nuevosIds.size === 0) {
+        alert('No hay afectados nuevos fuera de los ya cargados.');
+        return;
+      }
+
+      const nuevosConLotes = await Promise.all(
+        [...nuevosIds.values()].map(cargarLotesDeProducto)
+      );
+
+      const newInputs = {};
+      nuevosConLotes.forEach(p => {
+        Object.assign(newInputs, inicializarInputs(p._lotes || []));
+      });
+      setInputValues(prev => ({ ...prev, ...newInputs }));
+      setProductos(prev => [...prev, ...nuevosConLotes]);
+
+      alert(`Se cargaron ${nuevosConLotes.length} productos afectados adicionales.`);
+    } catch (err) {
+      console.error('Error cargando afectados:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      setCargandoTodos(false);
+    }
+  };
+
   // ─── Guardar un lote ─────────────────────────────────────────
   const guardarLote = async (productoId, lote) => {
     const vals = inputValues[lote.id] || {};
@@ -275,15 +326,41 @@ export default function EditarPreciosMasivo() {
   const tieneStockActivo = (p) =>
     (p._lotes || []).some(l => esEditable(l));
 
-  const productosFiltrados = productos.filter(p => {
-    const coincide = !busqueda.trim() ||
-      (p.nombre || '').toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.codigoTienda || '').toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.marca || '').toLowerCase().includes(busqueda.toLowerCase());
-    if (!coincide) return false;
-    if (soloAfectados) return tieneStockActivo(p) && esAfectado(p);
-    return true;
-  });
+  const irAlSiguienteAfectado = () => {
+    const afectados = productosFiltrados.filter(esAfectado);
+    if (!afectados.length) { alert('No hay productos afectados visibles.'); return; }
+
+    const idx = indiceAfectado % afectados.length;
+    const prod = afectados[idx];
+    const el = productoRefs.current[prod.id];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Abre los lotes si están cerrados
+      if (!prod._showLotes) toggleLotes(prod.id);
+    }
+    setIndiceAfectado(idx + 1);
+  };
+  const productosFiltrados = useMemo(() => {
+    let lista = productos.filter(p => {
+      const coincide = !busqueda.trim() ||
+        (p.nombre || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+        (p.codigoTienda || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+        (p.marca || '').toLowerCase().includes(busqueda.toLowerCase());
+      if (!coincide) return false;
+      if (soloAfectados) return tieneStockActivo(p) && esAfectado(p);
+      return true;
+    });
+
+    if (ordenAfectadosPrimero) {
+      lista = [...lista].sort((a, b) => {
+        const aA = esAfectado(a) ? 0 : 1;
+        const bA = esAfectado(b) ? 0 : 1;
+        return aA - bA;
+      });
+    }
+
+    return lista;
+  }, [productos, busqueda, soloAfectados, ordenAfectadosPrimero, inputValues]);
 
   const totalAfectados = productos.filter(esAfectado).length;
 
@@ -350,6 +427,36 @@ export default function EditarPreciosMasivo() {
             {loadingMore ? 'Cargando...' : 'Cargar más'}
           </button>
         )}
+
+        {/* Botón nuevo: trae SOLO los afectados que faltan */}
+        <button
+          onClick={cargarTodosLosAfectados}
+          disabled={cargandoTodos}
+          className="px-3 py-2 text-sm bg-red-600 text-white font-semibold border border-red-700 rounded-lg hover:bg-red-700 disabled:opacity-50"
+          title="Carga directamente desde Firestore todos los productos con precio 0, sin paginar"
+        >
+          {cargandoTodos ? 'Cargando afectados...' : '⚡ Cargar todos los afectados'}
+        </button>
+
+        <button
+          onClick={() => setOrdenAfectadosPrimero(v => !v)}
+          className={`px-3 py-2 text-sm border rounded-lg ${
+            ordenAfectadosPrimero
+              ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
+              : 'bg-white border-gray-300 hover:bg-gray-50'
+          }`}
+          title="Mueve los productos con precio 0 al inicio de la lista"
+        >
+          {ordenAfectadosPrimero ? '🔴 Afectados arriba (ON)' : 'Afectados arriba'}
+        </button>
+
+        <button
+          onClick={irAlSiguienteAfectado}
+          className="px-3 py-2 text-sm bg-orange-100 border border-orange-300 text-orange-700 font-semibold rounded-lg hover:bg-orange-200"
+          title="Salta al siguiente producto afectado en la lista"
+        >
+          → Siguiente afectado
+        </button>
         <button
           onClick={guardarTodo}
           className="px-4 py-2 text-sm bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 ml-auto"
@@ -383,6 +490,7 @@ export default function EditarPreciosMasivo() {
           return (
             <div
               key={producto.id}
+              ref={el => { productoRefs.current[producto.id] = el; }}
               className={`border rounded-lg overflow-hidden ${prodAfectado ? 'border-red-300' : 'border-gray-200'}`}
             >
               {/* Cabecera producto */}

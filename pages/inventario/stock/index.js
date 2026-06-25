@@ -6,7 +6,7 @@ import Layout from '../../../components/Layout';
 import { db } from '../../../lib/firebase';
 import { useAppCache } from '../../../contexts/AppCacheContext';
 import {
-  collection, getDocs, query, orderBy, where,
+  collection, getDocs, query, orderBy, where,updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import {
   MagnifyingGlassIcon,
@@ -44,6 +44,10 @@ const LotesPage = () => {
   const [sortBy, setSortBy] = useState(cached?.filtros?.sortBy || 'nombre');
   const [currentPage, setCurrentPage] = useState(cached?.filtros?.currentPage || 1);
   const [gruposPerPage, setGruposPerPage] = useState(cached?.filtros?.gruposPerPage || 20);
+
+  const [editValues, setEditValues] = useState({}); // { [loteId]: { venta, minimo } }
+  const [guardandoLote, setGuardandoLote] = useState(new Set());
+  const [guardadoLote, setGuardadoLote] = useState(new Set());
 
   // Vista expandida — rehidratada desde cache (Set serializado como Array)
   const [expandedProducts, setExpandedProducts] = useState(() => {
@@ -226,9 +230,73 @@ const LotesPage = () => {
   const toggleExpand = (pid) => {
     setExpandedProducts(prev => {
       const next = new Set(prev);
-      next.has(pid) ? next.delete(pid) : next.add(pid);
+      if (next.has(pid)) {
+        next.delete(pid);
+      } else {
+        next.add(pid);
+        // Inicializar inputs de los lotes de este grupo si no existen aún
+        const grupo = lotesAgrupados.find(g => g.productoId === pid);
+        if (grupo) {
+          setEditValues(prev => {
+            const newVals = { ...prev };
+            grupo.lotes.forEach(l => {
+              if (!newVals[l.id]) {
+                newVals[l.id] = {
+                  venta:  parseFloat(l.precioVentaUnitario || 0).toFixed(2),
+                  minimo: parseFloat(l.precioVentaMinimoUnitario || 0).toFixed(2),
+                };
+              }
+            });
+            return newVals;
+          });
+        }
+      }
       return next;
     });
+  };
+  const guardarPreciosLote = async (lote, grupoProductoId) => {
+    const vals = editValues[lote.id];
+    if (!vals) return;
+    const venta  = parseFloat(vals.venta)  || 0;
+    const minimo = parseFloat(vals.minimo) || 0;
+
+    if (venta <= 0) {
+      alert('El precio de venta debe ser mayor a 0.');
+      return;
+    }
+
+    setGuardandoLote(prev => new Set(prev).add(lote.id));
+    try {
+      await updateDoc(doc(db, 'lotes', lote.id), {
+        precioVentaUnitario:       venta,
+        precioVentaMinimoUnitario: minimo,
+        updatedAt:                 serverTimestamp(),
+      });
+
+      // Actualizar estado local para que la UI refleje el cambio
+      setLotesAgrupados(prev => prev.map(g => {
+        if (g.productoId !== grupoProductoId) return g;
+        return {
+          ...g,
+          lotes: g.lotes.map(l =>
+            l.id !== lote.id ? l : {
+              ...l,
+              precioVentaUnitario:       venta,
+              precioVentaMinimoUnitario: minimo,
+            }
+          ),
+        };
+      }));
+
+      setGuardadoLote(prev => new Set(prev).add(lote.id));
+      setTimeout(() => {
+        setGuardadoLote(prev => { const s = new Set(prev); s.delete(lote.id); return s; });
+      }, 2500);
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    } finally {
+      setGuardandoLote(prev => { const s = new Set(prev); s.delete(lote.id); return s; });
+    }
   };
 
   const clearFilters = () => {
@@ -523,24 +591,48 @@ const LotesPage = () => {
 
                                   {/* P. Venta */}
                                   <td className="px-3 py-2.5 text-center">
-                                    {lote.precioVentaUnitario > 0 ? (
-                                      <span className="text-sm font-semibold text-blue-700">
-                                        S/. {parseFloat(lote.precioVentaUnitario).toFixed(2)}
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-gray-400">—</span>
-                                    )}
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span className="text-gray-400 text-xs">S/.</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editValues[lote.id]?.venta ?? parseFloat(lote.precioVentaUnitario || 0).toFixed(2)}
+                                        onChange={e => setEditValues(prev => ({
+                                          ...prev,
+                                          [lote.id]: { ...prev[lote.id], venta: e.target.value }
+                                        }))}
+                                        onFocus={e => e.target.select()}
+                                        className={`w-24 px-2 py-1 border rounded text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+                                          parseFloat(editValues[lote.id]?.venta) !== parseFloat(lote.precioVentaUnitario || 0)
+                                            ? 'border-amber-400 bg-amber-50'
+                                            : 'border-gray-300 bg-white'
+                                        }`}
+                                      />
+                                    </div>
                                   </td>
 
                                   {/* P. Venta Mínimo */}
                                   <td className="px-3 py-2.5 text-center">
-                                    {lote.precioVentaMinimoUnitario > 0 ? (
-                                      <span className="text-sm font-medium text-orange-600">
-                                        S/. {parseFloat(lote.precioVentaMinimoUnitario).toFixed(2)}
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-gray-400">—</span>
-                                    )}
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span className="text-gray-400 text-xs">S/.</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editValues[lote.id]?.minimo ?? parseFloat(lote.precioVentaMinimoUnitario || 0).toFixed(2)}
+                                        onChange={e => setEditValues(prev => ({
+                                          ...prev,
+                                          [lote.id]: { ...prev[lote.id], minimo: e.target.value }
+                                        }))}
+                                        onFocus={e => e.target.select()}
+                                        className={`w-24 px-2 py-1 border rounded text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+                                          parseFloat(editValues[lote.id]?.minimo) !== parseFloat(lote.precioVentaMinimoUnitario || 0)
+                                            ? 'border-amber-400 bg-amber-50'
+                                            : 'border-gray-300 bg-white'
+                                        }`}
+                                      />
+                                    </div>
                                   </td>
 
                                   {/* Fecha ingreso */}
@@ -555,15 +647,33 @@ const LotesPage = () => {
 
                                   {/* Ver detalle */}
                                   <td className="px-3 py-2.5 text-center">
-                                    {lote.ingresoId && (
+                                    <div className="flex items-center justify-center gap-1">
+                                      {/* Botón guardar precios */}
                                       <button
-                                        onClick={e => { e.stopPropagation(); router.push(`/inventario/ingresos/${lote.ingresoId}`); }}
-                                        className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                                        title="Ver ingreso"
+                                        onClick={e => { e.stopPropagation(); guardarPreciosLote(lote, grupo.productoId); }}
+                                        disabled={guardandoLote.has(lote.id)}
+                                        className={`px-2 py-1 text-xs rounded font-semibold transition-colors ${
+                                          guardadoLote.has(lote.id)
+                                            ? 'bg-green-500 text-white'
+                                            : guardandoLote.has(lote.id)
+                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                                        }`}
                                       >
-                                        <EyeIcon className="h-4 w-4" />
+                                        {guardadoLote.has(lote.id) ? '✓' : guardandoLote.has(lote.id) ? '...' : 'Guardar'}
                                       </button>
-                                    )}
+
+                                      {/* Botón ver ingreso — igual que antes */}
+                                      {lote.ingresoId && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); router.push(`/inventario/ingresos/${lote.ingresoId}`); }}
+                                          className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                          title="Ver ingreso"
+                                        >
+                                          <EyeIcon className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               ))}

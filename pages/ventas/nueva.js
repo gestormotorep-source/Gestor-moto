@@ -44,6 +44,8 @@ const NuevaVentaPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [clientes, setClientes] = useState([]);
+  const [empleados, setEmpleados] = useState([]);
+  const [selectedEmpleado, setSelectedEmpleado] = useState(null);
 
   const [ventaPrincipalData, setVentaPrincipalData] = useState({
     id: null,
@@ -73,6 +75,10 @@ const NuevaVentaPage = () => {
   const clienteOptions = clientes.map(cliente => ({
     value: cliente.id,
     label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || cliente.numeroDocumento || 'N/A'}`.trim()
+  }));
+  const empleadoOptions = empleados.map(e => ({
+    value: e.id,
+    label: `${e.nombre} ${e.apellido || ''} - ${e.puesto || ''}`.trim()
   }));
 
   const [selectedCliente, setSelectedCliente] = useState(null);
@@ -114,6 +120,11 @@ const NuevaVentaPage = () => {
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
 
+  const [placaMoto, setPlacaMoto] = useState('');
+  const [modeloMoto, setModeloMoto] = useState('');
+  const [empleadoAsignadoNombre, setEmpleadoAsignadoNombre] = useState('');
+
+
   const [nombrePersonalizado, setNombrePersonalizado] = useState('');
 
   // ID del producto "Varios" para ventas sin producto específico
@@ -133,6 +144,9 @@ const NuevaVentaPage = () => {
     try {
       // ✅ Solo carga clientes - son pocos y se necesitan al inicio
       const qClientes = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
+      const qEmpleados = query(collection(db, 'empleado'), orderBy('nombre', 'asc'));
+      const empleadosSnapshot = await getDocs(qEmpleados);
+      setEmpleados(empleadosSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
       const clienteSnapshot = await getDocs(qClientes);
       const clientesList = clienteSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -874,6 +888,13 @@ const handleSubmit = async (e) => {
         fechaVenta: serverTimestamp(),
         fechaVentaCliente: new Date(),
         empleadoId: user.email || user.uid,
+        placaMoto: placaMoto || null,
+        modeloMoto: modeloMoto || null,
+        empleadoAsignadoNombre: selectedEmpleado
+          ? empleados.find(e => e.id === selectedEmpleado.value)
+            ? `${empleados.find(e=>e.id===selectedEmpleado.value).nombre} ${empleados.find(e=>e.id===selectedEmpleado.value).apellido||''}`.trim()
+            : null
+          : null,
         estado: 'completada',
         tipoVenta: 'ventaDirecta',
         paymentData: paymentData,
@@ -1160,7 +1181,43 @@ return (
                     isClearable
                   />
                 </div>
+                
+                {/* Empleado asignado */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Empleado asignado:</label>
+                  <Select
+                    options={empleadoOptions}
+                    value={selectedEmpleado}
+                    onChange={setSelectedEmpleado}
+                    placeholder="Seleccionar empleado..."
+                    className="text-sm"
+                    isClearable
+                  />
+                </div>
 
+                {/* Placa de moto */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Placa Moto:</label>
+                  <input
+                    type="text"
+                    value={placaMoto}
+                    onChange={e => setPlacaMoto(e.target.value)}
+                    placeholder="Ej: ABC-123"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Modelo de moto */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Modelo de Moto:</label>
+                  <input
+                    type="text"
+                    value={modeloMoto}
+                    onChange={e => setModeloMoto(e.target.value)}
+                    placeholder="Ej: Honda Wave 110..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
                 {/* Observaciones */}
                 <div>
                   <label htmlFor="observaciones" className="block text-sm font-medium text-gray-700 mb-2">
