@@ -1245,8 +1245,8 @@ const handleAddProductToCotizacion = async () => {
                             <thead className="bg-blue-50">
                               <tr className="border-b border-gray-400">
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. TIENDA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">C. PROV.</th>
                                 <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide min-w-48">PRODUCTO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">LOTE</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MARCA</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">MEDIDA</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">COLOR</th>
@@ -1269,6 +1269,11 @@ const handleAddProductToCotizacion = async () => {
                                       {item.codigoTienda || 'N/A'}
                                     </span>
                                   </td>
+                                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.codigoProveedor || 'N/A'}
+                                    </span>
+                                  </td>
                                   {/* Nombre */}
                                   <td className="px-4 py-3 min-w-48">
                                     <div className="font-medium text-gray-900 text-sm">
@@ -1280,13 +1285,6 @@ const handleAddProductToCotizacion = async () => {
                                       </div>
                                     )}
                                   </td>
-                                  {/* NUEVA COLUMNA: LOTE */}
-                                  <td className="px-3 py-3 text-center whitespace-nowrap">
-                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
-                                      {item.numeroLote || 'N/A'}
-                                    </span>
-                                  </td>
-
                                   {/* Marca */}
                                   <td className="px-3 py-3 text-center whitespace-nowrap">
                                     <span className="text-sm text-gray-700">

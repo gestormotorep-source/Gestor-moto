@@ -84,7 +84,7 @@ const drawWatermark = (pdf, logoBase64, pageWidth, pageHeight) => {
         pdf.saveGraphicsState();
         pdf.setGState(new pdf.GState({ opacity: 0.08 }));
         const size = 120;
-        pdf.addImage(logoBase64, 'PNG', (pageWidth - size) / 2, (pageHeight - size) / 2, size, size);
+        pdf.addImage(logoBase64, 'PNG', (pageWidth - size) / 2, (pageHeight - size) / 2, size, size, 'logoEmpresa');
         pdf.setGState(new pdf.GState({ opacity: 1 }));
         pdf.restoreGraphicsState();
     } catch (_) {}
@@ -94,7 +94,7 @@ const drawEmpresaHeader = (pdf, fontName, logoBase64, margin, pageWidth) => {
     let y = 15;
     const logoSize = 18;
     if (logoBase64) {
-        try { pdf.addImage(logoBase64, 'PNG', margin, y - 10, logoSize, logoSize); }
+        try { pdf.addImage(logoBase64, 'PNG', margin, y - 10, logoSize, logoSize, 'logoEmpresa'); }
         catch (_) {}
     }
     const textX = logoBase64 ? margin + logoSize + 4 : margin;
@@ -189,8 +189,8 @@ const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fo
             const lines = wrappedCells[colIndex];
             let textAlign = 'left';
             let textX = x + padding;
-            if (colIndex === 6) { textAlign = 'center'; textX = x + width / 2; }
-            else if (colIndex >= 7) { textAlign = 'right'; textX = x + width - padding; }
+            if (colIndex === 7) { textAlign = 'center'; textX = x + width / 2; }
+            else if (colIndex >= 8) { textAlign = 'right'; textX = x + width - padding; }
 
             const textBlockHeight = lines.length * lineHeightText;
             const startTextY = currentY + (rowH - textBlockHeight) / 2 + lineHeightText - 0.5;
@@ -269,14 +269,15 @@ const generarPDFCredito = async (cliente, creditos, abonos = [], periodo = '') =
 
     // ── Tabla de productos ─────────────────────────────────────────────
     // Recopilar todos los items de todos los créditos (para el caso de reporte multi-crédito)
-    const tableHeaders = ['COD.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
+    const tableHeaders = ['COD. T.', 'COD.PROV.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
     const colWidths = [
-        totalWidth * 0.10,
-        totalWidth * 0.30,
         totalWidth * 0.08,
         totalWidth * 0.10,
-        totalWidth * 0.12,
-        totalWidth * 0.08,
+        totalWidth * 0.27,
+        totalWidth * 0.07,
+        totalWidth * 0.09,
+        totalWidth * 0.10,
+        totalWidth * 0.07,
         totalWidth * 0.06,
         totalWidth * 0.08,
         totalWidth * 0.08,
@@ -302,6 +303,7 @@ const generarPDFCredito = async (cliente, creditos, abonos = [], periodo = '') =
 
         const row = [
             (det.codigoTienda || item.codigoTienda || 'N/A').toString().toUpperCase(),
+            (det.codigoProveedor || item.codigoProveedor || 'N/A').toString().toUpperCase(),
             nombreAMostrar.toString().toUpperCase(),
             (det.color || item.color || 'N/A').toString().toUpperCase(),
             (det.marca || item.marca || 'N/A').toString().toUpperCase(),

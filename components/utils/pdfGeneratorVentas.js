@@ -338,10 +338,10 @@
 
                 let textAlign = 'left';
                 let textX = x + padding;
-                if (colIndex === 6) { // CANT.
+                if (colIndex === 7) { // CANT.
                     textAlign = 'center';
                     textX = x + width / 2;
-                } else if (colIndex >= 7) { // P.U. y P.T.
+                } else if (colIndex >= 8) { // P.U. y P.T.
                     textAlign = 'right';
                     textX = x + width - padding;
                 }
@@ -368,7 +368,7 @@
 
         if (logoBase64) {
             try {
-                pdf.addImage(logoBase64, 'PNG', margin, y - 10, logoSize, logoSize);
+                pdf.addImage(logoBase64, 'PNG', margin, y - 10, logoSize, logoSize, 'logoEmpresa');
             } catch (e) {
                 console.warn('No se pudo dibujar el logo:', e.message);
             }
@@ -384,7 +384,7 @@
         return y;
     };
 
-    const drawWatermark = (pdf, logoBase64, pageWidth, pageHeight) => {
+        const drawWatermark = (pdf, logoBase64, pageWidth, pageHeight) => {
         if (!logoBase64) return;
         try {
             pdf.saveGraphicsState();
@@ -394,7 +394,7 @@
             const size = 120; // tamaño grande centrado
             const x = (pageWidth - size) / 2;
             const y = (pageHeight - size) / 2;
-            pdf.addImage(logoBase64, 'PNG', x, y, size, size);
+            pdf.addImage(logoBase64, 'PNG', x, y, size, size, 'logoEmpresa');
             // Restaurar opacidad normal
             const gStateNormal = new pdf.GState({ opacity: 1 });
             pdf.setGState(gStateNormal);
@@ -602,15 +602,16 @@ currentY += Math.max(alturaIzquierda, alturaDerecha) + 2;
                 detallesPorProducto[productoId] = await getProductDetails(productoId);
             }));
 
-            const tableHeaders = ['COD.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
+            const tableHeaders = ['COD. T.', 'COD.PROV.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
 
             const colWidths = [
-                totalWidth * 0.10,
-                totalWidth * 0.30,
                 totalWidth * 0.08,
                 totalWidth * 0.10,
-                totalWidth * 0.12,
-                totalWidth * 0.08,
+                totalWidth * 0.27,
+                totalWidth * 0.07,
+                totalWidth * 0.09,
+                totalWidth * 0.10,
+                totalWidth * 0.07,
                 totalWidth * 0.06,
                 totalWidth * 0.08,
                 totalWidth * 0.08
@@ -632,7 +633,8 @@ currentY += Math.max(alturaIzquierda, alturaDerecha) + 2;
                     : (item.nombreProducto || 'N/A');
 
                 const itemRow = [
-                    (productDetails.codigoTienda || 'N/A').toString().toUpperCase(),
+                    (productDetails.codigoTienda || item.codigoTienda || 'N/A').toString().toUpperCase(),
+                    (productDetails.codigoProveedor || item.codigoProveedor || 'N/A').toString().toUpperCase(),
                     nombreAMostrar.toString().toUpperCase(),
                     (productDetails.color || 'N/A').toString().toUpperCase(),
                     (productDetails.marca || 'N/A').toString().toUpperCase(),

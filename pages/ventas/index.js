@@ -44,6 +44,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ArrowTrendingDownIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 
 const VentasIndexPage = () => {
@@ -985,6 +986,48 @@ const handleAnularVenta = async (id) => {
       console.error('Error:', error);
     }
   };
+  
+  const handleDescargarVenta = async (venta) => {
+    try {
+      let clienteData = null;
+      if (venta.clienteId && venta.clienteId !== 'general') {
+        try {
+          const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
+          if (clienteDoc.exists()) clienteData = clienteDoc.data();
+        } catch (e) {}
+      }
+
+      const result = await generarPDFVentaCompleta(venta.id, venta, clienteData);
+      const link = document.createElement('a');
+      link.href = result.url;
+      link.download = result.fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(result.url), 1000);
+    } catch (error) {
+      console.error('Error al descargar PDF:', error);
+    }
+  };
+
+  const handleDescargarTicket = async (venta) => {
+    try {
+      let clienteData = null;
+      if (venta.clienteId && venta.clienteId !== 'general') {
+        try {
+          const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
+          if (clienteDoc.exists()) clienteData = clienteDoc.data();
+        } catch (e) {}
+      }
+
+      const result = await generarTicketVentaCompleta(venta.id, venta, clienteData);
+      const link = document.createElement('a');
+      link.href = result.url;
+      link.download = result.fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(result.url), 1000);
+    } catch (error) {
+      console.error('Error al descargar ticket:', error);
+    }
+  };
 
   // 4. OPCIONAL: Si quieres un botón de impresión masiva, añade esto antes de tu tabla:
   const [selectedVentas, setSelectedVentas] = useState(new Set());
@@ -1484,27 +1527,44 @@ const handleAnularVenta = async (id) => {
                             >
                               <EyeIcon className="h-5 w-5" />
                             </button>
-                            {/* NUEVO BOTÓN - Añade este botón */}
+                            {/* Vista previa PDF */}
                             <button
                               onClick={() => handleImprimirVenta(venta)}
                               className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
-                              title="Imprimir Comprobante PDF"
+                              title="Vista Previa Comprobante PDF"
                               disabled={venta.estado === 'anulada'}
                             >
                               <PrinterIcon className="h-5 w-5" />
                             </button>
-                            {/* Botón Ticket */}
+                            {/* Descarga directa PDF */}
+                            <button
+                              onClick={() => handleDescargarVenta(venta)}
+                              className="text-green-700 hover:text-green-900 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                              title="Descargar Comprobante PDF Directo"
+                              disabled={venta.estado === 'anulada'}
+                            >
+                              <ArrowDownTrayIcon className="h-5 w-5" />
+                            </button>
+                            {/* Vista previa Ticket */}
                             <button
                               onClick={() => handleImprimirTicket(venta)}
                               className="text-purple-600 hover:text-purple-800 p-2 rounded-full hover:bg-purple-50 transition duration-150 ease-in-out"
-                              title="Imprimir Ticket de Venta"
+                              title="Vista Previa Ticket de Venta"
                               disabled={venta.estado === 'anulada'}
                             >
-                              {/* Icono de ticket personalizado */}
                               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
                                       d="M9 12h6m-6 4h6m2 5l-2-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12l2 2h8z" />
                               </svg>
+                            </button>
+                            {/* Descarga directa Ticket */}
+                            <button
+                              onClick={() => handleDescargarTicket(venta)}
+                              className="text-purple-700 hover:text-purple-900 p-2 rounded-full hover:bg-purple-50 transition duration-150 ease-in-out"
+                              title="Descargar Ticket Directo"
+                              disabled={venta.estado === 'anulada'}
+                            >
+                              <ArrowDownTrayIcon className="h-5 w-5" />
                             </button>
                             {venta.estado === 'completada' && (
                               <button

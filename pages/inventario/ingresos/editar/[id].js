@@ -1172,7 +1172,25 @@ const EditarIngresoPage = () => {
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
                       </div>
                     </div>
-
+                    
+                    {/* Preview ganancia con precio ingresado */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview con precio ingresado</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Ganancia unit.:</span>
+                          <span className={`font-bold ${(precioVenta - precioCompra) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            S/. {(precioVenta - precioCompra).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Ganancia total:</span>
+                          <span className={`font-bold ${(quantity * (precioVenta - precioCompra)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            S/. {(quantity * (precioVenta - precioCompra)).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                     {/* Subtotal + botones al fondo */}
                     <div className="mt-auto flex flex-col gap-4">
                       <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-5 rounded-lg border border-blue-200">
@@ -1331,6 +1349,23 @@ const EditarIngresoPage = () => {
                     </div>
                   </div>
 
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview con nuevo precio</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ganancia unit.:</span>
+                        <span className={`font-bold ${(editPrecioVenta - editPrecio) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          S/. {(editPrecioVenta - editPrecio).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ganancia total:</span>
+                        <span className={`font-bold ${(editQuantity * (editPrecioVenta - editPrecio)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          S/. {(editQuantity * (editPrecioVenta - editPrecio)).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                   <div className="mt-auto flex flex-col gap-4">
                     <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-5 rounded-lg border border-yellow-200">
                       <div className="flex justify-between items-center">
@@ -1507,6 +1542,24 @@ const EditarIngresoPage = () => {
                       <input type="number" value={editLotePrecioVentaMinimo} onChange={(e) => setEditLotePrecioVentaMinimo(parseFloat(e.target.value) || 0)}
                         min="0" step="0.01" onWheel={(e) => e.target.blur()}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base" />
+                    </div>
+                  </div>
+
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Preview con nuevo precio</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ganancia unit.:</span>
+                        <span className={`font-bold ${(editLotePrecioVenta - editLotePrecio) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          S/. {(editLotePrecioVenta - editLotePrecio).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Ganancia total:</span>
+                        <span className={`font-bold ${(editLoteQuantity * (editLotePrecioVenta - editLotePrecio)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          S/. {(editLoteQuantity * (editLotePrecioVenta - editLotePrecio)).toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

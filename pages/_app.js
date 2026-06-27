@@ -1,3 +1,4 @@
+import Head from 'next/head';
 import { AuthProvider } from '../contexts/AuthContext';
 import { SaleProvider } from '../contexts/SaleContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
@@ -13,6 +14,10 @@ function MyApp({ Component, pageProps }) {
         <SaleProvider>
           <NotificationProvider>
             <AppCacheProvider>
+              <Head>
+                <title>GestorMoto</title>
+                <link rel="icon" type="image/png" href="/logo2.png" />
+              </Head>
               <SucursalSelectorModal />
               <Component {...pageProps} />
             </AppCacheProvider>

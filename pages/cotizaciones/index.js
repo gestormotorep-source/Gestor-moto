@@ -1,10 +1,12 @@
 // pages/cotizaciones/index.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { Calendar } from '../../components/ui/calendar';
 import { generarPDFCotizacionCompleta } from '../../components/utils/pdfGeneratorCotizaciones';
-import CustomDatePicker from '../../components/CustomDatePicker';
 import {
   collection,
   getDocs,
@@ -36,7 +38,9 @@ import {
   PrinterIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  XMarkIcon
+  XMarkIcon,
+  CalendarIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 
 const CotizacionesIndexPage = () => {
@@ -300,6 +304,47 @@ const CotizacionesIndexPage = () => {
     setLimitFirestore(20);
     setCurrentPage(1);
   };
+  const getMetodoPagoLabel = (metodo) => {
+    const metodos = {
+      efectivo: 'EFECTIVO',
+      tarjeta_credito: 'T. CRÉDITO',
+      tarjeta_debito: 'T. DÉBITO',
+      tarjeta: 'TARJETA',
+      yape: 'YAPE',
+      plin: 'PLIN',
+      transferencia: 'TRANSFERENCIA',
+      deposito: 'DEPÓSITO',
+      cheque: 'CHEQUE',
+      mixto: 'MIXTO',
+      otro: 'OTRO'
+    };
+    return metodos[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
+  };
+
+  const getMetodoPagoIcon = (metodo) => {
+    switch (metodo?.toLowerCase()) {
+      case 'yape':
+        return '💜';
+      case 'plin':
+        return '💙';
+      case 'efectivo':
+        return '💵';
+      case 'tarjeta':
+      case 'tarjeta_credito':
+      case 'tarjeta_debito':
+        return '💳';
+      case 'transferencia':
+        return '🏦';
+      case 'deposito':
+        return '🏛️';
+      case 'cheque':
+        return '📄';
+      case 'mixto':
+        return '🔀';
+      default:
+        return '💰';
+    }
+  };
 
   // Función FIFO
   const consumirStockFIFO = async (productoId, cantidadVendida, transaction) => {
@@ -435,6 +480,7 @@ const CotizacionesIndexPage = () => {
             nombrePersonalizado: itemData.nombrePersonalizado || null,
             marca: itemData.marca || '',
             codigoTienda: itemData.codigoTienda || '',
+            codigoProveedor: itemData.codigoProveedor || '', 
             descripcion: itemData.descripcion || '',
             color: itemData.color || '',
             cantidad: itemData.cantidad,
@@ -579,6 +625,26 @@ const CotizacionesIndexPage = () => {
       console.error('Error al generar PDF:', error);
     }
   };
+  const handleDescargarCotizacion = async (cotizacion) => {
+    try {
+      let clienteData = null;
+      if (cotizacion.clienteId && cotizacion.clienteId !== 'general') {
+        try {
+          const clienteDoc = await getDoc(doc(db, 'cliente', cotizacion.clienteId));
+          if (clienteDoc.exists()) clienteData = clienteDoc.data();
+        } catch (e) {}
+      }
+
+      const result = await generarPDFCotizacionCompleta(cotizacion.id, cotizacion, clienteData);
+      const link = document.createElement('a');
+      link.href = result.url;
+      link.download = result.fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(result.url), 1000);
+    } catch (error) {
+      console.error('Error al descargar PDF:', error);
+    }
+  };
 
   const [selectedCotizaciones, setSelectedCotizaciones] = useState(new Set());
 
@@ -595,6 +661,103 @@ const CotizacionesIndexPage = () => {
       if (cot) { await handleImprimirCotizacion(cot); await new Promise(r => setTimeout(r, 1000)); }
     }
     setSelectedCotizaciones(new Set());
+  };
+
+  const DatePickerPopover = ({ selected, onChange, placeholder, minDate }) => {
+    const [open, setOpen] = useState(false);
+    const [month, setMonth] = useState(selected || new Date());
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handler = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handler);
+      return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const prevMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    const nextMonth = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i);
+
+    return (
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen(prev => !prev)}
+          className="flex items-center gap-2 px-3 py-1 border border-gray-300 rounded bg-white text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        >
+          <CalendarIcon className="h-4 w-4 text-gray-400" />
+          {selected
+            ? format(selected, 'dd/MM/yyyy', { locale: es })
+            : <span className="text-gray-400">{placeholder}</span>
+          }
+        </button>
+
+        {open && (
+          <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-xl">
+            <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
+              <button
+                onClick={prevMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-1">
+                <select
+                  value={month.getMonth()}
+                  onChange={(e) => setMonth(m => new Date(m.getFullYear(), parseInt(e.target.value), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {meses.map((mes, i) => (
+                    <option key={i} value={i}>{mes}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={month.getFullYear()}
+                  onChange={(e) => setMonth(m => new Date(parseInt(e.target.value), m.getMonth(), 1))}
+                  className="text-sm font-semibold text-gray-800 bg-transparent border-none outline-none cursor-pointer rounded px-1 py-0.5"
+                >
+                  {years.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={nextMonth}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 shrink-0"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <Calendar
+              mode="single"
+              selected={selected}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={(date) => {
+                if (date) {
+                  onChange(date);
+                  setOpen(false);
+                }
+              }}
+              disabled={minDate ? { before: minDate } : undefined}
+              captionLayout="label"
+              classNames={{
+                month_caption: "hidden",
+                nav: "hidden",
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (!user) return null;
@@ -659,7 +822,7 @@ const CotizacionesIndexPage = () => {
                   </button>
                 ))}
 
-                <CustomDatePicker
+                <DatePickerPopover
                   selected={dateRange.start}
                   onChange={(date) => {
                     setFilterPeriod('custom');
@@ -668,7 +831,7 @@ const CotizacionesIndexPage = () => {
                   }}
                   placeholder="Fecha inicio"
                 />
-                <CustomDatePicker
+                <DatePickerPopover
                   selected={dateRange.end}
                   onChange={(date) => {
                     setFilterPeriod('custom');
@@ -795,7 +958,12 @@ const CotizacionesIndexPage = () => {
                             </span>
                           )}
                         </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{cotizacion.metodoPago || 'N/A'}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            <span className="mr-1">{getMetodoPagoIcon(cotizacion.metodoPago)}</span>
+                            {getMetodoPagoLabel(cotizacion.metodoPago)}
+                          </span>
+                        </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{cotizacion.empleadoId || 'Desconocido'}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
                           <div className="flex items-center space-x-1 justify-center">
@@ -820,8 +988,12 @@ const CotizacionesIndexPage = () => {
                               <EyeIcon className="h-5 w-5" />
                             </button>
                             <button onClick={() => handleImprimirCotizacion(cotizacion)}
-                              className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition-colors" title="Imprimir PDF">
+                              className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition-colors" title="Vista Previa PDF">
                               <PrinterIcon className="h-5 w-5" />
+                            </button>
+                            <button onClick={() => handleDescargarCotizacion(cotizacion)}
+                              className="text-green-700 hover:text-green-900 p-2 rounded-full hover:bg-green-50 transition-colors" title="Descargar PDF Directo">
+                              <ArrowDownTrayIcon className="h-5 w-5" />
                             </button>
                             <button onClick={() => handleDeleteCotizacion(cotizacion.id, cotizacion.estado)}
                               className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition-colors" title="Eliminar">

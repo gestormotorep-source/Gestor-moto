@@ -452,6 +452,7 @@ const EditarVerCotizacionPage = () => {
         nombrePersonalizado: nombrePersonalizado.trim() || null,
         marca: producto.marca || '',
         codigoTienda: producto.codigoTienda || '',
+        codigoProveedor: producto.codigoProveedor || '',
         color: producto.color || '',
         medida: producto.medida || 'N/A',
         precioCompraDefault: parseFloat(producto.precioCompraDefault || 0),
@@ -1228,8 +1229,8 @@ const handleGuardarCotizacion = async () => {
                             <thead className="bg-blue-50">
                               <tr className="border-b border-gray-300">
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. PROV.</th>
                                 <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
@@ -1252,6 +1253,11 @@ const handleGuardarCotizacion = async () => {
                                       {item.codigoTienda || 'N/A'}
                                     </span>
                                   </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.codigoProveedor || 'N/A'}
+                                    </span>
+                                  </td>
                                   <td className="px-4 py-3 min-w-48">
                                     <div className="font-medium text-gray-900 text-sm">
                                       {item.nombreProducto}
@@ -1261,11 +1267,6 @@ const handleGuardarCotizacion = async () => {
                                         → {item.nombrePersonalizado}
                                       </div>
                                     )}
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
-                                      {item.numeroLote || 'N/A'}
-                                    </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
                                     <span className="text-sm text-gray-700">
