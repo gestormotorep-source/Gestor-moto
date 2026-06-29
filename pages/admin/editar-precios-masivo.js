@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../../lib/firebase';
 import {
   collection, getDocs, updateDoc, doc,
-  query, where, orderBy, limit, startAfter, serverTimestamp
+  query, where, orderBy, limit, startAfter, serverTimestamp,documentId
 } from 'firebase/firestore';
 
 const BATCH_SIZE = 50;
@@ -184,29 +184,81 @@ export default function EditarPreciosMasivo() {
   };
 
   const [cargandoTodos, setCargandoTodos] = useState(false);
+  const [tamPaginaAfectados, setTamPaginaAfectados] = useState(50);
+  const [cursorAfectVenta, setCursorAfectVenta] = useState(null);
+  const [cursorAfectMinimo, setCursorAfectMinimo] = useState(null);
+  const [hasMoreAfectVenta, setHasMoreAfectVenta] = useState(true);
+  const [hasMoreAfectMinimo, setHasMoreAfectMinimo] = useState(true);
+  const [afectadosBotonCargados, setAfectadosBotonCargados] = useState(0);
+  const [iniciadoCargaAfectados, setIniciadoCargaAfectados] = useState(false);
 
-  const cargarTodosLosAfectados = async () => {
+  const cargarTodosLosAfectados = async (reset = false) => {
     setCargandoTodos(true);
     try {
-      // Trae TODOS los productos donde precioVentaDefault == 0 O precioVentaMinimo == 0
+      let cVenta = reset ? null : cursorAfectVenta;
+      let cMinimo = reset ? null : cursorAfectMinimo;
+      let masVenta = reset ? true : hasMoreAfectVenta;
+      let masMinimo = reset ? true : hasMoreAfectMinimo;
+
+      if (reset) {
+        cVenta = null; cMinimo = null; masVenta = true; masMinimo = true;
+        setCursorAfectVenta(null);
+        setCursorAfectMinimo(null);
+        setHasMoreAfectVenta(true);
+        setHasMoreAfectMinimo(true);
+        setAfectadosBotonCargados(0);
+        setIniciadoCargaAfectados(true);
+      }
+
+      if (!masVenta && !masMinimo) {
+        alert('Ya se cargaron todos los productos afectados.');
+        return;
+      }
+
       const [snapVenta, snapMinimo] = await Promise.all([
-        getDocs(query(collection(db, 'productos'), where('precioVentaDefault', '==', 0))),
-        getDocs(query(collection(db, 'productos'), where('precioVentaMinimo',  '==', 0))),
+        masVenta
+          ? getDocs(query(
+              collection(db, 'productos'),
+              where('precioVentaDefault', '==', 0),
+              orderBy(documentId()),
+              ...(cVenta ? [startAfter(cVenta)] : []),
+              limit(tamPaginaAfectados)
+            ))
+          : Promise.resolve({ docs: [] }),
+        masMinimo
+          ? getDocs(query(
+              collection(db, 'productos'),
+              where('precioVentaMinimo', '==', 0),
+              orderBy(documentId()),
+              ...(cMinimo ? [startAfter(cMinimo)] : []),
+              limit(tamPaginaAfectados)
+            ))
+          : Promise.resolve({ docs: [] }),
       ]);
 
-      // Deduplicar por id
-      const mapaExistentes = new Map(productos.map(p => [p.id, p]));
-      const mapaYaCargados = new Set(productos.map(p => p.id));
+      if (masVenta) {
+        setHasMoreAfectVenta(snapVenta.docs.length === tamPaginaAfectados);
+        if (snapVenta.docs.length > 0) setCursorAfectVenta(snapVenta.docs[snapVenta.docs.length - 1]);
+      }
+      if (masMinimo) {
+        setHasMoreAfectMinimo(snapMinimo.docs.length === tamPaginaAfectados);
+        if (snapMinimo.docs.length > 0) setCursorAfectMinimo(snapMinimo.docs[snapMinimo.docs.length - 1]);
+      }
 
+      const mapaYaCargados = new Set(productos.map(p => p.id));
       const nuevosIds = new Map();
       [...snapVenta.docs, ...snapMinimo.docs].forEach(d => {
-        if (!mapaYaCargados.has(d.id)) {
+        if (!mapaYaCargados.has(d.id) && !nuevosIds.has(d.id)) {
           nuevosIds.set(d.id, mapProducto(d));
         }
       });
 
       if (nuevosIds.size === 0) {
-        alert('No hay afectados nuevos fuera de los ya cargados.');
+        alert(
+          (!masVenta && !masMinimo)
+            ? 'No hay más afectados por cargar.'
+            : 'Este lote no trajo afectados nuevos. Prueba "Cargar más afectados" otra vez.'
+        );
         return;
       }
 
@@ -220,8 +272,7 @@ export default function EditarPreciosMasivo() {
       });
       setInputValues(prev => ({ ...prev, ...newInputs }));
       setProductos(prev => [...prev, ...nuevosConLotes]);
-
-      alert(`Se cargaron ${nuevosConLotes.length} productos afectados adicionales.`);
+      setAfectadosBotonCargados(prev => prev + nuevosConLotes.length);
     } catch (err) {
       console.error('Error cargando afectados:', err);
       alert('Error: ' + err.message);
@@ -428,15 +479,42 @@ export default function EditarPreciosMasivo() {
           </button>
         )}
 
-        {/* Botón nuevo: trae SOLO los afectados que faltan */}
-        <button
-          onClick={cargarTodosLosAfectados}
+        <select
+          value={tamPaginaAfectados}
+          onChange={e => setTamPaginaAfectados(Number(e.target.value))}
           disabled={cargandoTodos}
-          className="px-3 py-2 text-sm bg-red-600 text-white font-semibold border border-red-700 rounded-lg hover:bg-red-700 disabled:opacity-50"
-          title="Carga directamente desde Firestore todos los productos con precio 0, sin paginar"
+          className="px-2 py-2 text-sm border border-gray-300 rounded-lg"
+          title="Tamaño de lote al cargar afectados"
         >
-          {cargandoTodos ? 'Cargando afectados...' : '⚡ Cargar todos los afectados'}
+          <option value={50}>50 x lote</option>
+          <option value={100}>100 x lote</option>
+        </select>
+
+        <button
+          onClick={() => cargarTodosLosAfectados(!iniciadoCargaAfectados)}
+          disabled={cargandoTodos || (iniciadoCargaAfectados && !hasMoreAfectVenta && !hasMoreAfectMinimo)}
+          className="px-3 py-2 text-sm bg-red-600 text-white font-semibold border border-red-700 rounded-lg hover:bg-red-700 disabled:opacity-50"
+          title="Carga los productos afectados en lotes, sin sobrecargar la página"
+        >
+          {cargandoTodos
+            ? 'Cargando...'
+            : !iniciadoCargaAfectados
+              ? `⚡ Cargar afectados (${tamPaginaAfectados})`
+              : (!hasMoreAfectVenta && !hasMoreAfectMinimo)
+                ? `✓ Todos cargados (${afectadosBotonCargados})`
+                : `Cargar más afectados (+${tamPaginaAfectados})`}
         </button>
+
+        {iniciadoCargaAfectados && (
+          <button
+            onClick={() => cargarTodosLosAfectados(true)}
+            disabled={cargandoTodos}
+            className="px-2 py-2 text-xs text-gray-500 hover:text-gray-700 underline"
+            title="Reinicia la paginación de afectados desde cero"
+          >
+            ↺ reiniciar
+          </button>
+        )}
 
         <button
           onClick={() => setOrdenAfectadosPrimero(v => !v)}
