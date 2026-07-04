@@ -407,7 +407,13 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         const tableData = [];
         let totalCotizacion = 0;
 
-        for (const item of items) {
+        const itemsOrdenados = [...items].sort((a, b) => {
+            const nombreA = a.nombrePersonalizado || a.nombreProducto || '';
+            const nombreB = b.nombrePersonalizado || b.nombreProducto || '';
+            return nombreA.localeCompare(nombreB, 'es');
+        });
+
+        for (const item of itemsOrdenados) {
             const det = detallesPorProducto[item.productoId] || {};
 
             // nombrePersonalizado tiene prioridad (igual que ventas)

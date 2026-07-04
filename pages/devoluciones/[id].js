@@ -353,6 +353,10 @@ const DevolucionDetallePage = () => {
                 )}
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Método de Pago Devolución</label>
+                <p className="mt-0.5 text-sm text-gray-900 capitalize font-semibold">{devolucion.metodoPagoDevolucion || 'N/A'}</p>
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">Motivo</label>
                 <p className="mt-0.5 text-sm text-gray-900">{getMotivoBadge(devolucion.motivo)}</p>
               </div>

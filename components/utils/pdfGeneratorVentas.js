@@ -621,7 +621,13 @@ currentY += Math.max(alturaIzquierda, alturaDerecha) + 2;
             const rowMeta = [];
             let totalVenta = 0;
 
-            for (const item of items) {
+            const itemsOrdenados = [...items].sort((a, b) => {
+                const nombreA = a.nombrePersonalizado || a.nombreProducto || '';
+                const nombreB = b.nombrePersonalizado || b.nombreProducto || '';
+                return nombreA.localeCompare(nombreB, 'es');
+            });
+
+            for (const item of itemsOrdenados) {
                 const productDetails = detallesPorProducto[item.productoId] || {};
                 const devEstado = getEstadoDevolucionItem(item, devolucionesVenta);
 

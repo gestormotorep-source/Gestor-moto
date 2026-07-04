@@ -261,7 +261,13 @@ const generarTicket = async (ventaData, clienteData) => {
 
     let totalVenta = 0;
 
-    for (const item of items) {
+    const itemsOrdenados = [...items].sort((a, b) => {
+        const nombreA = a.nombrePersonalizado || a.nombreProducto || '';
+        const nombreB = b.nombrePersonalizado || b.nombreProducto || '';
+        return nombreA.localeCompare(nombreB, 'es');
+    });
+
+    for (const item of itemsOrdenados) {
         const det    = detallesPorProducto[item.productoId] || {};
         const nombre = (item.nombrePersonalizado || item.nombreProducto || 'N/A');
         const codigo = det.codigoTienda || '';

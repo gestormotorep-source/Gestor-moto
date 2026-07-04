@@ -765,6 +765,7 @@ const DevolucionesIndexPage = () => {
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° VENTA ORIGINAL</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CLIENTE</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA SOLICITUD</th>
+                      <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MÉTODO PAGO</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MONTO A DEVOLVER</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MOTIVO</th>
                       <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
@@ -786,6 +787,7 @@ const DevolucionesIndexPage = () => {
                         </td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{devolucion.clienteNombre}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black">{devolucion.fechaSolicitudFormatted}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black capitalize">{devolucion.metodoPagoDevolucion || 'N/A'}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium">S/. {parseFloat(devolucion.montoADevolver || 0).toFixed(2)}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">{getMotivoBadge(devolucion.motivo)}</td>
                         <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">{getEstadoBadge(devolucion.estado)}</td>

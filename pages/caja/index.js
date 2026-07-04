@@ -562,7 +562,14 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
 
                         return (
                           <tr key={item.id || idx} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{item.nombreProducto || 'N/A'}</td>
+                            <td className="px-3 py-2.5">
+                              <div className="font-medium text-gray-900 whitespace-nowrap">{item.nombreProducto || 'N/A'}</div>
+                              {item.nombrePersonalizado && (
+                                <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                                  → {item.nombrePersonalizado}
+                                </div>
+                              )}
+                            </td>
                             <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{item.marca || <span className="text-gray-400">N/A</span>}</td>
                             <td className="px-3 py-2.5 text-gray-600 font-mono whitespace-nowrap">{item.codigoTienda || <span className="text-gray-400">N/A</span>}</td>
                             <td className="px-3 py-2.5 text-gray-600 font-mono whitespace-nowrap">{item.codigoProveedor || <span className="text-gray-400">N/A</span>}</td>

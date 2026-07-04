@@ -294,7 +294,13 @@ const generarPDFCredito = async (cliente, creditos, abonos = [], periodo = '') =
         detallesPorProducto[pid] = await getProductDetails(pid);
     }));
 
-    for (const item of todosLosItems) {
+    const todosLosItemsOrdenados = [...todosLosItems].sort((a, b) => {
+        const nombreA = a.nombrePersonalizado || a.nombreProducto || '';
+        const nombreB = b.nombrePersonalizado || b.nombreProducto || '';
+        return nombreA.localeCompare(nombreB, 'es');
+    });
+
+    for (const item of todosLosItemsOrdenados) {
         const det = detallesPorProducto[item.productoId] || {};
         const esDevuelto = item.estado === 'devuelto';
         const nombreAMostrar = item.nombrePersonalizado
