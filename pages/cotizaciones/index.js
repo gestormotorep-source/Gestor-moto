@@ -516,7 +516,9 @@ const CotizacionesIndexPage = () => {
           const lotesDisponibles = Array.from(lotesData.entries())
             .filter(([, li]) => li.data.productoId === productoId && (li.data.stockRestante - li.stockUsado) > 0)
             .sort((a, b) => new Date(a[1].data.fechaIngreso.seconds * 1000) - new Date(b[1].data.fechaIngreso.seconds * 1000));
-          const nuevoPrecioCompra = lotesDisponibles.length > 0 ? parseFloat(lotesDisponibles[0][1].data.precioCompraUnitario || 0) : 0;
+          const nuevoPrecioCompra = lotesDisponibles.length > 0
+            ? parseFloat(lotesDisponibles[0][1].data.precioCompraUnitario || 0)
+            : parseFloat(productoInfo.currentProductoData.precioCompraDefault || 0);
 
           transaction.update(productoInfo.productoRef, {
             stockActual: newStock,

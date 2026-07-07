@@ -510,7 +510,16 @@ const NuevoCreditoPage = () => {
       orderBy('fechaIngreso', 'asc'),
       limit(1)
     ));
-    const nuevoPrecio = snap.empty ? 0 : parseFloat(snap.docs[0].data().precioCompraUnitario || 0);
+    let nuevoPrecio = 0;
+    if (!snap.empty) {
+      nuevoPrecio = parseFloat(snap.docs[0].data().precioCompraUnitario || 0);
+    } else {
+      // Sin stock activo: conservar el precio actual del producto
+      const productoSnap = await getDoc(doc(db, 'productos', productoId));
+      if (productoSnap.exists()) {
+        nuevoPrecio = parseFloat(productoSnap.data().precioCompraDefault || 0);
+      }
+    }
     transaction.update(doc(db, 'productos', productoId), { precioCompraDefault: nuevoPrecio, updatedAt: serverTimestamp() });
   };
 

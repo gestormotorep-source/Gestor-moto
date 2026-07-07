@@ -488,17 +488,18 @@ const NuevaVentaPage = () => {
       if (!snap.empty) {
         const lote = snap.docs[0].data();
         setPrecioVenta(parseFloat(lote.precioVentaUnitario || product.precioVentaDefault || 0));
-        setPrecioCompraFIFOModal(parseFloat(lote.precioCompraUnitario || 0));
+        setPrecioCompraFIFOModal(parseFloat(lote.precioCompraUnitario || product.precioCompraDefault || 0));
         setPrecioVentaMinimoFIFO(parseFloat(lote.precioVentaMinimoUnitario || product.precioVentaMinimo || 0));
       } else {
+        // Sin stock activo: usar precios actuales del producto
         setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
-        setPrecioCompraFIFOModal(0);
-        setPrecioVentaMinimoFIFO(0);
+        setPrecioCompraFIFOModal(parseFloat(product.precioCompraDefault || 0));
+        setPrecioVentaMinimoFIFO(parseFloat(product.precioVentaMinimo || 0));
       }
     } catch {
       setPrecioVenta(parseFloat(product.precioVentaDefault || 0));
-      setPrecioCompraFIFOModal(0);
-      setPrecioVentaMinimoFIFO(0);
+      setPrecioCompraFIFOModal(parseFloat(product.precioCompraDefault || 0));
+      setPrecioVentaMinimoFIFO(parseFloat(product.precioVentaMinimo || 0));
     }
 
     // ── Abrir modal DESPUÉS de tener los datos listos ──
@@ -731,6 +732,12 @@ const recalcularPrecioCompraProducto = async (productoId, transaction) => {
     if (!lotesSnapshot.empty) {
       const primerLoteDisponible = lotesSnapshot.docs[0].data();
       nuevoPrecioCompra = parseFloat(primerLoteDisponible.precioCompraUnitario || 0);
+    } else {
+      // Sin stock activo: conservar el precio actual del producto
+      const productoSnap = await getDoc(doc(db, 'productos', productoId));
+      if (productoSnap.exists()) {
+        nuevoPrecioCompra = parseFloat(productoSnap.data().precioCompraDefault || 0);
+      }
     }
     
     // Actualizar el precio de compra del producto
@@ -960,8 +967,8 @@ const handleSubmit = async (e) => {
         const currentStock = productSnap.data().stockActual || 0;
         const newStock = currentStock - cantidadVendida;
 
-        // Usar el precio pre-calculado
-        const nuevoPrecioCompra = proximosLotesPorProducto.get(productoId) || 0;
+        // Usar el precio pre-calculado, o conservar el actual si no hay más lotes
+        const nuevoPrecioCompra = proximosLotesPorProducto.get(productoId) || parseFloat(productSnap.data().precioCompraDefault || 0);
 
         transaction.update(productRef, {
           stockActual: newStock,

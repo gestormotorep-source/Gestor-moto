@@ -135,6 +135,10 @@ export default function EditarPreciosMasivo() {
         l => l.estado === 'activo' && (l.stockRestante || 0) > 0
       );
 
+      // Leer precios actuales del producto para usar como fallback
+      const productoSnap = await getDoc(doc(db, 'productos', productoId));
+      const productoActual = productoSnap.exists() ? productoSnap.data() : {};
+
       let precioCompra = 0, precioVenta = 0, precioMinimo = 0, stockTotal = 0;
 
       if (lotesConStock.length > 0) {
@@ -143,6 +147,10 @@ export default function EditarPreciosMasivo() {
         precioVenta  = n(primer.precioVentaUnitario);
         precioMinimo = n(primer.precioVentaMinimoUnitario);
         lotesConStock.forEach(l => { stockTotal += parseInt(l.stockRestante || 0); });
+
+        // Si algún precio quedó en 0, usar el del producto actual
+        if (precioVenta === 0) precioVenta = parseFloat(productoActual.precioVentaDefault || 0);
+        if (precioMinimo === 0) precioMinimo = parseFloat(productoActual.precioVentaMinimo || 0);
       } else {
         // Sin stock activo: buscar el lote editable más reciente con precios cargados
         // (agotado o activo-vacío) para mantener los precios visibles en el producto
@@ -155,6 +163,11 @@ export default function EditarPreciosMasivo() {
           precioCompra = n(conPrecios.precioCompraUnitario);
           precioVenta  = n(conPrecios.precioVentaUnitario);
           precioMinimo = n(conPrecios.precioVentaMinimoUnitario);
+        } else {
+          // Sin lotes con precios: conservar precios actuales del producto
+          precioCompra = parseFloat(productoActual.precioCompraDefault || 0);
+          precioVenta  = parseFloat(productoActual.precioVentaDefault || 0);
+          precioMinimo = parseFloat(productoActual.precioVentaMinimo || 0);
         }
         stockTotal = 0;
       }

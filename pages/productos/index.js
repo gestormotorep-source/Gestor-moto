@@ -472,6 +472,10 @@ const ProductosPage = () => {
       // Lotes con stock > 0 (independiente del estado)
       const lotesActivos = todosLotes.filter(d => parseFloat(d.stockRestante || 0) > 0);
 
+      // Leer precios actuales del producto para usar como fallback
+      const productoSnap = await getDoc(doc(db, 'productos', productoId));
+      const productoActual = productoSnap.exists() ? productoSnap.data() : {};
+
       let nuevoPrecioCompra = 0, nuevoPrecioVenta = 0,
           nuevoPrecioVentaMinimo = 0, stockTotal = 0;
 
@@ -487,6 +491,10 @@ const ProductosPage = () => {
         if (loteConPrecios) {
           nuevoPrecioVenta       = parseFloat(loteConPrecios.precioVentaUnitario || 0);
           nuevoPrecioVentaMinimo = parseFloat(loteConPrecios.precioVentaMinimoUnitario || 0);
+        } else {
+          // Sin precios en lotes activos → conservar precios actuales del producto
+          nuevoPrecioVenta       = parseFloat(productoActual.precioVentaDefault || 0);
+          nuevoPrecioVentaMinimo = parseFloat(productoActual.precioVentaMinimo || 0);
         }
       } else if (todosLotes.length > 0) {
         // Sin stock — buscar en el lote más reciente con precios
@@ -502,6 +510,12 @@ const ProductosPage = () => {
           const ultimo = todosLotes[todosLotes.length - 1];
           nuevoPrecioCompra = parseFloat(ultimo.precioCompraUnitario || 0);
         }
+        stockTotal = 0;
+      } else {
+        // Sin lotes: conservar precios actuales del producto
+        nuevoPrecioCompra      = parseFloat(productoActual.precioCompraDefault || 0);
+        nuevoPrecioVenta       = parseFloat(productoActual.precioVentaDefault || 0);
+        nuevoPrecioVentaMinimo = parseFloat(productoActual.precioVentaMinimo || 0);
         stockTotal = 0;
       }
 
