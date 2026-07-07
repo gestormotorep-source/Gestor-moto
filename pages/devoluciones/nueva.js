@@ -111,7 +111,7 @@ const NuevaDevolucionPage = () => {
       setItemsADevolver([]);
       setSearchTerm('');
       setVentasEncontradas([]);
-      setDevolucionData({ motivo: '', descripcionMotivo: '', montoADevolver: 0, observaciones: '' });
+      setDevolucionData({ motivo: '', descripcionMotivo: '', montoADevolver: 0, observaciones: '', metodoPagoDevolucion: 'efectivo' });
     } catch (err) {
       setError('Error al cargar los productos de la venta');
     }
