@@ -230,7 +230,7 @@ const AuditoriaPage = () => {
         if (m === 'efectivo') obj.efectivo = (obj.efectivo||0) + monto;
         else if (m === 'yape') obj.yape = (obj.yape||0) + monto;
         else if (m === 'plin') obj.plin = (obj.plin||0) + monto;
-        else if (['tarjeta','tarjeta_credito','tarjeta_debito'].includes(m)) obj.tarjeta = (obj.tarjeta||0) + monto;
+        else if (['tarjeta','tarjeta_credito','tarjeta_debito','transferencia'].includes(m)) obj.tarjeta = (obj.tarjeta||0) + monto;
       };
 
       const totVentas = { efectivo:0, yape:0, plin:0, tarjeta:0, total:0 };

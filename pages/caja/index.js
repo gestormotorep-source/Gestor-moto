@@ -984,7 +984,7 @@ const cerrarCaja = async () => {
             case 'efectivo': brutoEfectivo += a; break;
             case 'yape': brutoYape += a; break;
             case 'plin': brutoPlin += a; break;
-            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': brutoTarjeta += a; break;
+            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': brutoTarjeta += a; break;
           }
         });
       } else {
@@ -992,7 +992,7 @@ const cerrarCaja = async () => {
           case 'efectivo': brutoEfectivo += totalVenta; break;
           case 'yape': brutoYape += totalVenta; break;
           case 'plin': brutoPlin += totalVenta; break;
-          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': brutoTarjeta += totalVenta; break;
+          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': brutoTarjeta += totalVenta; break;
         }
       }
     });
@@ -1024,7 +1024,7 @@ const cerrarCaja = async () => {
             case 'efectivo': efectivo += a; break;
             case 'yape': yape += a; break;
             case 'plin': plin += a; break;
-            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': tarjeta += a; break;
+            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': tarjeta += a; break;
           }
         });
       } else {
@@ -1032,7 +1032,7 @@ const cerrarCaja = async () => {
           case 'efectivo': efectivo += totalVenta; break;
           case 'yape': yape += totalVenta; break;
           case 'plin': plin += totalVenta; break;
-          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': tarjeta += totalVenta; break;
+          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': tarjeta += totalVenta; break;
         }
       }
     });
@@ -1064,7 +1064,7 @@ const cerrarCaja = async () => {
         case 'efectivo': devEfectivo += monto; efectivo -= monto; break;
         case 'yape': devYape += monto; yape -= monto; break;
         case 'plin': devPlin += monto; plin -= monto; break;
-        case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': devTarjeta += monto; tarjeta -= monto; break;
+        case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': devTarjeta += monto; tarjeta -= monto; break;
       }
     };
 
@@ -1079,7 +1079,7 @@ const cerrarCaja = async () => {
         case 'efectivo': retiroEfectivo += monto; efectivo -= monto; break;
         case 'yape': retiroYape += monto; yape -= monto; break;
         case 'plin': retiroPlin += monto; plin -= monto; break;
-        case 'tarjeta': retiroTarjeta += monto; tarjeta -= monto; break;
+        case 'tarjeta': case 'transferencia': retiroTarjeta += monto; tarjeta -= monto; break;
         default: retiroEfectivo += monto; efectivo -= monto; break;
       }
     });
@@ -1092,7 +1092,7 @@ const cerrarCaja = async () => {
         case 'efectivo': efectivo -= monto; break;
         case 'yape':     yape -= monto;     break;
         case 'plin':     plin -= monto;     break;
-        case 'tarjeta':  tarjeta -= monto;  break;
+        case 'tarjeta': case 'transferencia':  tarjeta -= monto;  break;
         default:         efectivo -= monto; break;
       }
     });

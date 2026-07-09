@@ -363,7 +363,7 @@
 
     // Dibuja el encabezado de empresa con logo, en cada página que lo necesite
     const drawEmpresaHeader = (pdf, fontName, logoBase64, margin, pageWidth) => {
-        let y = 15;
+        let y = 20;
         const logoSize = 18;
 
         if (logoBase64) {
@@ -377,7 +377,7 @@
         const textX = logoBase64 ? margin + logoSize + 4 : margin;
 
         pdf.setFont(fontName, 'bold');
-        pdf.setFontSize(12);
+        pdf.setFontSize(15);
         pdf.setTextColor(0, 0, 0);
         pdf.text(EMPRESA.nombre.toUpperCase(), textX, y);
 
@@ -440,24 +440,42 @@
 
             let currentY = drawEmpresaHeader(pdf, fontName, logoBase64, margin, pageWidth);
 
-            // Número de venta (derecha)
-            pdf.setFont(fontName, 'bold');
-            pdf.setFontSize(12);
             const numeroVenta = ventaData.numeroVenta || `V-${ventaData.id?.slice(-8) || 'N/A'}`;
-            pdf.text(`VENTA NRO. ${numeroVenta}`, pageWidth - margin, currentY, { align: 'right' });
-            currentY += 9;
 
+            // Cuadro "NOTA DE VENTA" - posición fija independiente del logo
+            const boxWidth = 52;
+            const boxHeight = 14;
+            const boxX = pageWidth - margin - boxWidth - 8;
+            const boxY = 11;
+
+            pdf.setDrawColor(0, 0, 0);
+            pdf.setLineWidth(0.3);
+            pdf.rect(boxX, boxY, boxWidth, boxHeight, 'S');
+
+            pdf.setFillColor(200, 200, 200);
+            pdf.rect(boxX + 0.5, boxY + 0.5, boxWidth - 1, 5.5, 'F');
+
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFont(fontName, 'bold');
+            pdf.setFontSize(9);
+            pdf.text('NOTA DE VENTA', boxX + boxWidth / 2, boxY + 4.5, { align: 'center' });
+
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFontSize(10);
+            pdf.text(`N° ${numeroVenta}`, boxX + boxWidth / 2, boxY + 12, { align: 'center' });
+
+            pdf.setTextColor(0, 0, 0);
+
+            // Info empresa debajo del logo
+            currentY += 12;
             pdf.setFontSize(8);
-pdf.setFont(fontName, 'normal');
+            pdf.setFont(fontName, 'normal');
 
-// COLUMNA IZQUIERDA: DIRECCION + EMAIL
-pdf.text(`DIRECCION: ${EMPRESA.direccion}`, margin, currentY);
-pdf.text(`EMAIL: ${EMPRESA.email}`, margin, currentY + 4);
+            pdf.text(`DIRECCION: ${EMPRESA.direccion}`, margin, currentY);
+            pdf.text(`EMAIL: ${EMPRESA.email}`, margin, currentY + 4);
+            pdf.text(`TELEFONO: ${EMPRESA.telefono}`, pageWidth * 0.6, currentY);
 
-// COLUMNA DERECHA: TELEFONO
-pdf.text(`TELEFONO: ${EMPRESA.telefono}`, pageWidth * 0.6, currentY);
-
-currentY += 13;
+            currentY += 13;
 
 // Estado de devolución
 const estadoDevVenta = ventaData.estadoDevolucion;
