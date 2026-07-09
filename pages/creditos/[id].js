@@ -511,9 +511,10 @@ const ClienteCreditoDetalle = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                   >
                     <option value="efectivo">Efectivo</option>
+                    <option value="tarjeta">Tarjeta</option>
+                    <option value="transferencia">Transferencia</option>
                     <option value="yape">Yape</option>
                     <option value="plin">Plin</option>
-                    <option value="tarjeta">Tarjeta</option>
                   </select>
                 </div>
                 

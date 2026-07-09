@@ -31,10 +31,10 @@ import ProductModelsModal from '../../../components/modals/ProductModelsModal';
 // ── Métodos de pago disponibles ────────────────────────────────────────────
 const METODOS_PAGO = [
   { value: 'efectivo', label: 'Efectivo' },
-  { value: 'yape',     label: 'Yape'     },
-  { value: 'plin',     label: 'Plin'     },
   { value: 'tarjeta',  label: 'Tarjeta'  },
   { value: 'transferencia', label: 'Transferencia' },
+  { value: 'yape',     label: 'Yape'     },
+  { value: 'plin',     label: 'Plin'     },
 ];
 
 const CreditoAcumulativoPage = () => {
