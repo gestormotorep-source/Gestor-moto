@@ -41,3 +41,5 @@ firebase-debug.*.log
 *.lock
 *.tgz
 .DS_Store
+.vercel
+.env*
