@@ -70,8 +70,7 @@ const getProductDetails = async (productoId) => {
 };
 
 const getMetodoPagoLabel = (m) => ({
-    efectivo: 'EFECTIVO', tarjeta_credito: 'TARJETA CREDITO',
-    tarjeta_debito: 'TARJETA DEBITO', tarjeta: 'TARJETA',
+    efectivo: 'EFECTIVO', tarjeta: 'TARJETA',
     yape: 'YAPE', plin: 'PLIN', transferencia: 'TRANSFERENCIA',
     deposito: 'DEPOSITO', cheque: 'CHEQUE', mixto: 'PAGO MIXTO', otro: 'OTRO',
 }[m?.toLowerCase()] || m?.toUpperCase() || 'EFECTIVO');

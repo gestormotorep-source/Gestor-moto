@@ -307,8 +307,6 @@ const CotizacionesIndexPage = () => {
   const getMetodoPagoLabel = (metodo) => {
     const metodos = {
       efectivo: 'EFECTIVO',
-      tarjeta_credito: 'T. CRÉDITO',
-      tarjeta_debito: 'T. DÉBITO',
       tarjeta: 'TARJETA',
       yape: 'YAPE',
       plin: 'PLIN',
@@ -330,8 +328,6 @@ const CotizacionesIndexPage = () => {
       case 'efectivo':
         return '💵';
       case 'tarjeta':
-      case 'tarjeta_credito':
-      case 'tarjeta_debito':
         return '💳';
       case 'transferencia':
         return '🏦';

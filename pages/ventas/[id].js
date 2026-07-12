@@ -155,8 +155,7 @@ const VentaDetailPage = () => {
   const getPaymentMethodIcon = (method) => {
     const icons = {
       'efectivo': '💵',
-      'tarjeta_credito': '💳',
-      'tarjeta_debito': '💳',
+      'tarjeta': '💳',
       'transferencia': '🏦',
       'yape': '📱',
       'plin': '📲',
@@ -170,8 +169,7 @@ const VentaDetailPage = () => {
   const getPaymentMethodLabel = (method) => {
     const labels = {
       'efectivo': 'Efectivo',
-      'tarjeta_credito': 'Tarjeta de Crédito',
-      'tarjeta_debito': 'Tarjeta de Débito',
+      'tarjeta': 'Tarjeta',
       'transferencia': 'Transferencia Bancaria',
       'yape': 'Yape',
       'plin': 'Plin',

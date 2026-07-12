@@ -80,8 +80,6 @@ const getProductDetails = async (productoId) => {
 
 const getMetodoPagoLabel = (metodo) => ({
     efectivo: 'EFECTIVO',
-    tarjeta_credito: 'TARJETA DE CREDITO',
-    tarjeta_debito: 'TARJETA DE DEBITO',
     tarjeta: 'TARJETA',
     yape: 'YAPE',
     plin: 'PLIN',

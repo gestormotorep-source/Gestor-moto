@@ -82,7 +82,7 @@ const DatePickerPopover = ({ selected, onChange }) => {
 const fmt = n => new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(n || 0);
 
 const metodoPagoLabel = m => {
-  const map = { efectivo:'Efectivo', yape:'Yape', plin:'Plin', tarjeta:'Tarjeta', tarjeta_credito:'T.Crédito', tarjeta_debito:'T.Débito', mixto:'Mixto' };
+  const map = { efectivo:'Efectivo', yape:'Yape', plin:'Plin', tarjeta:'Tarjeta/Transferencia', transferencia:'Transferencia', mixto:'Mixto' };
   return map[(m||'').toLowerCase()] || (m||'N/A');
 };
 
@@ -92,8 +92,7 @@ const metodoBadgeClass = m => {
     yape: 'bg-purple-100 text-purple-800',
     plin: 'bg-blue-100 text-blue-800',
     tarjeta: 'bg-gray-100 text-gray-800',
-    tarjeta_credito: 'bg-gray-100 text-gray-800',
-    tarjeta_debito: 'bg-gray-100 text-gray-800',
+    transferencia: 'bg-gray-100 text-gray-800',
     mixto: 'bg-orange-100 text-orange-800',
   };
   return map[(m||'').toLowerCase()] || 'bg-gray-100 text-gray-800';
@@ -230,7 +229,7 @@ const AuditoriaPage = () => {
         if (m === 'efectivo') obj.efectivo = (obj.efectivo||0) + monto;
         else if (m === 'yape') obj.yape = (obj.yape||0) + monto;
         else if (m === 'plin') obj.plin = (obj.plin||0) + monto;
-        else if (['tarjeta','tarjeta_credito','tarjeta_debito','transferencia'].includes(m)) obj.tarjeta = (obj.tarjeta||0) + monto;
+        else if (['tarjeta','transferencia'].includes(m)) obj.tarjeta = (obj.tarjeta||0) + monto;
       };
 
       const totVentas = { efectivo:0, yape:0, plin:0, tarjeta:0, total:0 };
@@ -347,7 +346,7 @@ const AuditoriaPage = () => {
                 <p className="text-2xl font-bold">{fmt(data.netoPlin)}</p>
               </div>
               <div className="bg-gradient-to-br from-gray-600 to-gray-700 rounded-xl p-5 text-white shadow">
-                <p className="text-gray-200 text-xs font-semibold uppercase tracking-wide mb-1">Tarjeta</p>
+                <p className="text-gray-200 text-xs font-semibold uppercase tracking-wide mb-1">Tarjeta/Transferencia</p>
                 <p className="text-2xl font-bold">{fmt(data.netoTarjeta)}</p>
               </div>
             </div>
@@ -393,7 +392,7 @@ const AuditoriaPage = () => {
                       { label:'💵 Efectivo', key:'efectivo', inicial: data.dineroInicial },
                       { label:'📱 Yape',     key:'yape',     inicial: 0 },
                       { label:'📲 Plin',     key:'plin',     inicial: 0 },
-                      { label:'💳 Tarjeta',  key:'tarjeta',  inicial: 0 },
+                      { label:'💳 Tarjeta/Transferencia',  key:'tarjeta',  inicial: 0 },
                     ].map(row => {
                         const neto = data.totVentas[row.key] + data.totAbonos[row.key] 
                                     - data.totDev[row.key] - data.totRetiros[row.key] 
@@ -779,7 +778,7 @@ const AuditoriaPage = () => {
                   <p className="text-2xl font-bold text-blue-400">{fmt(data.netoPlin)}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Tarjeta</p>
+                  <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Tarjeta/Transferencia</p>
                   <p className="text-2xl font-bold text-slate-300">{fmt(data.netoTarjeta)}</p>
                 </div>
                 <div className="border-l border-slate-700 pl-4">

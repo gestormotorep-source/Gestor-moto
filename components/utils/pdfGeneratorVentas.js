@@ -171,8 +171,6 @@
     const getMetodoPagoLabel = (metodo) => {
         const metodos = {
             efectivo: 'EFECTIVO',
-            tarjeta_credito: 'TARJETA DE CREDITO',
-            tarjeta_debito: 'TARJETA DE DEBITO',
             tarjeta: 'TARJETA',
             yape: 'YAPE',
             plin: 'PLIN',

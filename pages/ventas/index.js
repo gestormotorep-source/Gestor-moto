@@ -287,18 +287,24 @@ const VentasIndexPage = () => {
     // Si es "all", siempre retorna true
     if (methodToCheck === 'all') return true;
 
+    // Agrupar tarjeta + transferencia (como en caja)
+    const isTarjetaGroup = (m) => ['tarjeta', 'transferencia'].includes(m?.toLowerCase());
+
     // Si tiene paymentData (ventas nuevas con soporte para pagos mixtos)
     if (venta.paymentData && venta.paymentData.paymentMethods) {
       // Verificar si alguno de los métodos de pago coincide
-      const hasMethod = venta.paymentData.paymentMethods.some(pm => 
-        pm.method && pm.method.toLowerCase() === methodToCheck.toLowerCase() && pm.amount > 0
-      );
+      const hasMethod = venta.paymentData.paymentMethods.some(pm => {
+        if (!pm.method || pm.amount <= 0) return false;
+        if (methodToCheck === 'tarjeta') return isTarjetaGroup(pm.method);
+        return pm.method.toLowerCase() === methodToCheck.toLowerCase();
+      });
       
       if (hasMethod) return true;
     }
 
     // Fallback para ventas antiguas sin paymentData - usar metodoPago directo
     if (venta.metodoPago) {
+      if (methodToCheck === 'tarjeta') return isTarjetaGroup(venta.metodoPago);
       return venta.metodoPago.toLowerCase() === methodToCheck.toLowerCase();
     }
 
@@ -801,8 +807,6 @@ const handleAnularVenta = async (id) => {
   const getMetodoPagoLabel = (metodo) => {
     const metodos = {
       efectivo: 'EFECTIVO',
-      tarjeta_credito: 'T. CRÉDITO',
-      tarjeta_debito: 'T. DÉBITO',
       tarjeta: 'TARJETA',
       yape: 'YAPE',
       plin: 'PLIN',
@@ -824,8 +828,6 @@ const handleAnularVenta = async (id) => {
       case 'efectivo':
         return '💵';
       case 'tarjeta':
-      case 'tarjeta_credito':
-      case 'tarjeta_debito':
         return '💳';
       case 'transferencia':
         return '🏦';
@@ -1304,7 +1306,7 @@ const handleAnularVenta = async (id) => {
                 >
                   <option value="all">Método de Pago</option>
                   <option value="efectivo">EFECTIVO</option>
-                  <option value="tarjeta">TARJETA</option>
+                   <option value="tarjeta">TARJETA/TRANSFERENCIA</option>
                   <option value="yape">YAPE</option>
                   <option value="plin">PLIN</option>
                   <option value="otro">OTRO</option>

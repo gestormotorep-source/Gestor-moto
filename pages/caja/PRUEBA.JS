@@ -159,8 +159,7 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
   const getMetodoPagoLabel = (metodo) => {
     const m = {
       efectivo: 'Efectivo', yape: 'Yape', plin: 'Plin',
-      tarjeta: 'Tarjeta', tarjeta_credito: 'T. Crédito',
-      tarjeta_debito: 'T. Débito', transferencia: 'Transferencia',
+      tarjeta: 'Tarjeta', transferencia: 'Transferencia',
     };
     return m[metodo?.toLowerCase()] || metodo || 'N/A';
   };
@@ -602,7 +601,7 @@ const CajaPage = () => {
             case 'efectivo': efectivo += a; break;
             case 'yape': yape += a; break;
             case 'plin': plin += a; break;
-            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': tarjeta += a; break;
+            case 'tarjeta': case 'transferencia': tarjeta += a; break;
           }
         });
       } else {
@@ -610,7 +609,7 @@ const CajaPage = () => {
           case 'efectivo': efectivo += totalVenta; break;
           case 'yape': yape += totalVenta; break;
           case 'plin': plin += totalVenta; break;
-          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': tarjeta += totalVenta; break;
+          case 'tarjeta': case 'transferencia': tarjeta += totalVenta; break;
         }
       }
     });
@@ -640,7 +639,7 @@ const CajaPage = () => {
         case 'efectivo': devEfectivo += monto; efectivo -= monto; break;
         case 'yape': devYape += monto; yape -= monto; break;
         case 'plin': devPlin += monto; plin -= monto; break;
-        case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': devTarjeta += monto; tarjeta -= monto; break;
+        case 'tarjeta': case 'transferencia': devTarjeta += monto; tarjeta -= monto; break;
       }
     };
 
@@ -788,7 +787,7 @@ const CajaPage = () => {
       case 'efectivo': return <BanknotesIcon className="h-8 w-8" />;
       case 'yape': return <DevicePhoneMobileIcon className="h-8 w-8 text-purple-600" />;
       case 'plin': return <DevicePhoneMobileIcon className="h-8 w-8 text-blue-600" />;
-      case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': return <CreditCardIcon className="h-8 w-8" />;
+      case 'tarjeta': case 'transferencia': return <CreditCardIcon className="h-8 w-8" />;
       default: return <CurrencyDollarIcon className="h-8 w-8" />;
     }
   };
@@ -1045,7 +1044,7 @@ const CajaPage = () => {
           <div className="bg-gradient-to-br from-gray-600 to-gray-700 rounded-xl p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-100 text-sm font-medium">Tarjetas</p>
+                <p className="text-gray-100 text-sm font-medium">Tarjeta / Transferencia</p>
                 <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.tarjeta)}</p>
               </div>
               <CreditCardIcon className="h-12 w-12 text-gray-300" />
@@ -1261,7 +1260,7 @@ const CajaPage = () => {
                     <option value="efectivo">Efectivo (S/. {(dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros).toFixed(2)} disp.)</option>
                     <option value="yape">Yape (S/. {totalesDelDia.yape.toFixed(2)} disp.)</option>
                     <option value="plin">Plin (S/. {totalesDelDia.plin.toFixed(2)} disp.)</option>
-                    <option value="tarjeta">Tarjeta (S/. {totalesDelDia.tarjeta.toFixed(2)} disp.)</option>
+                    <option value="tarjeta">Tarjeta/Transferencia (S/. {totalesDelDia.tarjeta.toFixed(2)} disp.)</option>
                   </select>
                 </div>
                 <div>

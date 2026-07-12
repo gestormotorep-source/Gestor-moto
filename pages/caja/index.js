@@ -441,8 +441,7 @@ const ModalDetalleVenta = ({ show, onClose, data, formatCurrency }) => {
   const getMetodoPagoLabel = (metodo) => {
     const m = {
       efectivo: 'Efectivo', yape: 'Yape', plin: 'Plin',
-      tarjeta: 'Tarjeta', tarjeta_credito: 'T. Crédito',
-      tarjeta_debito: 'T. Débito', transferencia: 'Transferencia',
+      tarjeta: 'Tarjeta', transferencia: 'Transferencia',
     };
     return m[metodo?.toLowerCase()] || metodo || 'N/A';
   };
@@ -984,7 +983,7 @@ const cerrarCaja = async () => {
             case 'efectivo': brutoEfectivo += a; break;
             case 'yape': brutoYape += a; break;
             case 'plin': brutoPlin += a; break;
-            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': brutoTarjeta += a; break;
+            case 'tarjeta': case 'transferencia': brutoTarjeta += a; break;
           }
         });
       } else {
@@ -992,7 +991,7 @@ const cerrarCaja = async () => {
           case 'efectivo': brutoEfectivo += totalVenta; break;
           case 'yape': brutoYape += totalVenta; break;
           case 'plin': brutoPlin += totalVenta; break;
-          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': brutoTarjeta += totalVenta; break;
+          case 'tarjeta': case 'transferencia': brutoTarjeta += totalVenta; break;
         }
       }
     });
@@ -1024,7 +1023,7 @@ const cerrarCaja = async () => {
             case 'efectivo': efectivo += a; break;
             case 'yape': yape += a; break;
             case 'plin': plin += a; break;
-            case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': tarjeta += a; break;
+            case 'tarjeta': case 'transferencia': tarjeta += a; break;
           }
         });
       } else {
@@ -1032,7 +1031,7 @@ const cerrarCaja = async () => {
           case 'efectivo': efectivo += totalVenta; break;
           case 'yape': yape += totalVenta; break;
           case 'plin': plin += totalVenta; break;
-          case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': tarjeta += totalVenta; break;
+          case 'tarjeta': case 'transferencia': tarjeta += totalVenta; break;
         }
       }
     });
@@ -1064,7 +1063,7 @@ const cerrarCaja = async () => {
         case 'efectivo': devEfectivo += monto; efectivo -= monto; break;
         case 'yape': devYape += monto; yape -= monto; break;
         case 'plin': devPlin += monto; plin -= monto; break;
-        case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': case 'transferencia': devTarjeta += monto; tarjeta -= monto; break;
+        case 'tarjeta': case 'transferencia': devTarjeta += monto; tarjeta -= monto; break;
       }
     };
 
@@ -1258,7 +1257,7 @@ const cerrarCaja = async () => {
       case 'efectivo': return <BanknotesIcon className="h-8 w-8" />;
       case 'yape': return <DevicePhoneMobileIcon className="h-8 w-8 text-purple-600" />;
       case 'plin': return <DevicePhoneMobileIcon className="h-8 w-8 text-blue-600" />;
-      case 'tarjeta': case 'tarjeta_credito': case 'tarjeta_debito': return <CreditCardIcon className="h-8 w-8" />;
+      case 'tarjeta': case 'transferencia': return <CreditCardIcon className="h-8 w-8" />;
       default: return <CurrencyDollarIcon className="h-8 w-8" />;
     }
   };
@@ -1643,7 +1642,7 @@ const cerrarCaja = async () => {
           {/* TARJETA */}
           <div className="bg-gradient-to-br from-gray-600 to-gray-700 rounded-xl p-6 text-white shadow-lg">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-gray-100 text-sm font-medium">Tarjetas</p>
+              <p className="text-gray-100 text-sm font-medium">Tarjeta / Transferencia</p>
               <CreditCardIcon className="h-10 w-10 text-gray-300" />
             </div>
             <p className="text-2xl font-bold">{formatCurrency(totalesDelDia.tarjeta)}</p>
@@ -1771,7 +1770,7 @@ const cerrarCaja = async () => {
             { value: 'efectivo', label: 'Efectivo' },
             { value: 'yape', label: 'Yape' },
             { value: 'plin', label: 'Plin' },
-            { value: 'tarjeta', label: 'Tarjeta' },
+            { value: 'tarjeta', label: 'Tarjeta/Transferencia' },
             { value: 'abono', label: 'Abonos' },
           ].map(opt => (
             <button
@@ -1957,7 +1956,7 @@ const cerrarCaja = async () => {
                     <option value="efectivo">Efectivo (S/. {Math.max(0, dineroEnCaja.efectivoFisico).toFixed(2)} disp.)</option>
                     <option value="yape">Yape (S/. {Math.max(0, totalesDelDia.yape).toFixed(2)} disp.)</option>
                     <option value="plin">Plin (S/. {Math.max(0, totalesDelDia.plin).toFixed(2)} disp.)</option>
-                    <option value="tarjeta">Tarjeta (S/. {Math.max(0, totalesDelDia.tarjeta).toFixed(2)} disp.)</option>
+                    <option value="tarjeta">Tarjeta/Transferencia (S/. {Math.max(0, totalesDelDia.tarjeta).toFixed(2)} disp.)</option>
                   </select>
                 </div>
                 <div>

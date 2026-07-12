@@ -57,8 +57,7 @@ const loadLogoImage = async () => {
 };
 
 const getMetodoPagoLabel = (metodo) => ({
-    efectivo: 'EFECTIVO', tarjeta_credito: 'TARJETA DE CREDITO',
-    tarjeta_debito: 'TARJETA DE DEBITO', tarjeta: 'TARJETA',
+    efectivo: 'EFECTIVO', tarjeta: 'TARJETA',
     yape: 'YAPE', plin: 'PLIN', transferencia: 'TRANSFERENCIA BANCARIA',
     deposito: 'DEPOSITO BANCARIO', cheque: 'CHEQUE',
     mixto: 'PAGO MIXTO', otro: 'OTRO',
